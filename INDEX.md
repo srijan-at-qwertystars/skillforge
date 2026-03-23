@@ -89,3 +89,6 @@
 | java | [java-modern-features](java/java-modern-features/) | Records, sealed classes, pattern matching, virtual threads, structured concurrency, FFM API, and Java 17-24 migration |
 | web | [cloudflare-workers](web/cloudflare-workers/) | V8 isolates, Wrangler, KV, R2, D1, Durable Objects, Queues, Workers AI, caching, and edge computing |
 | databases | [database-indexing](databases/database-indexing/) | B-tree, GIN, GiST, BRIN, composite ordering, covering indexes, partial indexes, EXPLAIN analysis, and maintenance |
+| docker | [docker-compose-patterns](docker/docker-compose-patterns/) | Services, networking, volumes, healthchecks, profiles, watch mode, multi-file overrides, and common stacks |
+| typescript | [typescript-generics](typescript/typescript-generics/) | Conditional types, mapped types, template literals, infer, variadic tuples, branded types, and utility types |
+| aws | [s3-patterns](aws/s3-patterns/) | Bucket security, presigned URLs, storage classes, lifecycle policies, multipart upload, Express One Zone, and CRR |
