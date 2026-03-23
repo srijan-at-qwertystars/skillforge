@@ -1,0 +1,41 @@
+# gleam.toml — Template for Gleam web projects
+# Docs: https://gleam.run/writing-gleam/gleam-toml/
+
+name = "my_app"
+version = "1.0.0"
+description = "A Gleam web application"
+target = "erlang"
+
+# Required for publishing to Hex
+# licences = ["Apache-2.0"]
+# repository = { type = "github", user = "username", repo = "my_app" }
+
+# Minimum Gleam version
+gleam = ">= 1.0.0"
+
+# ── Core Dependencies ────────────────────────────────────────────────────────
+[dependencies]
+gleam_stdlib = ">= 0.60.0 and < 2.0.0"
+gleam_erlang = ">= 0.34.0 and < 1.0.0"
+gleam_http = ">= 3.7.0 and < 4.0.0"
+gleam_json = ">= 2.1.0 and < 3.0.0"
+
+# Web framework + HTTP server
+wisp = ">= 1.3.0 and < 2.0.0"
+mist = ">= 4.0.0 and < 5.0.0"
+
+# OTP (actors, supervisors)
+# gleam_otp = ">= 0.14.0 and < 1.0.0"
+
+# ── Database (uncomment as needed) ───────────────────────────────────────────
+# gleam_pgo = ">= 0.14.0 and < 1.0.0"    # PostgreSQL
+# sqlight = ">= 0.9.0 and < 1.0.0"       # SQLite
+
+# ── Optional ──────────────────────────────────────────────────────────────────
+# gleam_crypto = ">= 1.4.0 and < 2.0.0"  # Hashing, HMAC
+# simplifile = ">= 2.2.0 and < 3.0.0"    # File I/O
+# dot_env = ">= 3.0.0 and < 4.0.0"       # .env loading
+# argv = ">= 1.0.0 and < 2.0.0"          # CLI arguments
+
+[dev-dependencies]
+gleeunit = ">= 1.0.0 and < 2.0.0"

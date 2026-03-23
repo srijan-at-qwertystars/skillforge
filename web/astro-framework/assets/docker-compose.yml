@@ -1,0 +1,144 @@
+# Docker Compose — Astro SSR Deployment
+#
+# Prerequisites:
+#   - Astro project configured with @astrojs/node adapter (mode: 'standalone')
+#   - Dockerfile in project root (see below)
+#
+# Usage:
+#   docker compose up -d          # start all services
+#   docker compose up --build     # rebuild and start
+#   docker compose logs -f astro  # follow Astro logs
+#   docker compose down           # stop all services
+#
+# Dockerfile (place in project root):
+#
+#   # Stage 1: Build
+#   FROM node:20-alpine AS build
+#   WORKDIR /app
+#   COPY package*.json ./
+#   RUN npm ci
+#   COPY . .
+#   RUN npm run build
+#
+#   # Stage 2: Production
+#   FROM node:20-alpine AS runtime
+#   WORKDIR /app
+#   RUN apk add --no-cache wget
+#   COPY --from=build /app/dist ./dist
+#   COPY --from=build /app/node_modules ./node_modules
+#   COPY --from=build /app/package.json ./
+#   ENV HOST=0.0.0.0
+#   ENV PORT=4321
+#   EXPOSE 4321
+#   USER node
+#   HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+#     CMD wget -q --spider http://localhost:4321/api/health || exit 1
+#   CMD ["node", "dist/server/entry.mjs"]
+
+services:
+  # --- Astro SSR Application ---
+  astro:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: astro-app
+    ports:
+      - "${ASTRO_PORT:-4321}:4321"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=4321
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-astro}
+      # Add your environment variables here:
+      # - PUBLIC_SITE_URL=https://example.com
+      # - API_SECRET=${API_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4321/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - app-network
+
+  # --- PostgreSQL Database ---
+  db:
+    image: postgres:16-alpine
+    container_name: astro-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-astro}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Mount init scripts:
+      # - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # --- Nginx Reverse Proxy ---
+  nginx:
+    image: nginx:alpine
+    container_name: astro-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # SSL certificates (use certbot or similar):
+      # - ./certs:/etc/nginx/certs:ro
+    depends_on:
+      astro:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  # --- Redis Cache (optional) ---
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: astro-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #   restart: unless-stopped
+  #   networks:
+  #     - app-network
+
+volumes:
+  pgdata:
+    driver: local
+  # redis-data:
+  #   driver: local
+
+networks:
+  app-network:
+    driver: bridge
+
+# --- .env file template ---
+# Create a .env file in the same directory with:
+#
+# ASTRO_PORT=4321
+# DB_USER=postgres
+# DB_PASSWORD=change-me-in-production
+# DB_NAME=astro
+# DB_PORT=5432
+# API_SECRET=your-api-secret

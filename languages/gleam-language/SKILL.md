@@ -440,3 +440,35 @@ let updated_user = User(..user, name: "New Name")  // record update syntax
 8. **Field access works but no method chaining.** Use pipe `|>` instead.
 9. **`let assert` panics on mismatch.** Reserve for truly impossible states, not error handling.
 10. **`use` is not `async/await`.** It's callback flattening sugar that works with any function taking a callback as its last argument.
+
+## Resources
+
+### References
+
+In-depth guides in `references/`:
+
+| File | Contents |
+|------|----------|
+| `advanced-patterns.md` | Opaque/phantom types, `use` chains, builder pattern, bit arrays, advanced pattern matching (guards, alternatives, nested), higher-order functions, gleam_otp concurrency (actors, selectors, supervisors, ETS), process architecture |
+| `web-development.md` | Wisp (routing, middleware, JSON, forms, static files), Lustre (TEA, effects, server components), Mist (HTTP, TLS, WebSockets), database access (gleam_pgo, sqlight), auth patterns, API design |
+| `ecosystem-guide.md` | Key packages (stdlib, http, json, erlang, javascript), testing (gleeunit, property-based), JSON encode/decode, simplifile I/O, env vars/config, FFI patterns (Erlang + JS), publishing to Hex |
+
+### Scripts
+
+Executable helpers in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| `setup-gleam.sh` | Install Gleam + Erlang/OTP, optionally create sample project |
+| `new-gleam-web.sh` | Scaffold Wisp + Mist web project with routing, middleware, tests |
+| `gleam-ci.sh` | CI pipeline: format check, build, test (supports both targets) |
+
+### Assets
+
+Templates in `assets/`:
+
+| File | Purpose |
+|------|---------|
+| `gleam.toml` | Template gleam.toml with common web project dependencies |
+| `wisp-app-template.gleam` | Complete starter Wisp app with routing, JSON, CRUD pattern |
+| `dockerfile` | Multi-stage Dockerfile for Gleam projects (build + minimal runtime) |

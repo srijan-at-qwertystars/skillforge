@@ -198,7 +198,7 @@ Effect.runPromise(
 )
 ```
 
-**Rule:** Build layers bottom-up. Compose with `Layer.provide`. Never call `Effect.runPromise` except at the application entry point.
+**Rule:** Build layers bottom-up. Compose with `Layer.provide`. Never call `Effect.runPromise` except at the entry point.
 
 ## Concurrency
 
@@ -238,7 +238,6 @@ const program = Effect.gen(function* () {
   return yield* conn.query("SELECT 1")
 })
 
-// Scope ensures release even on error/interruption
 Effect.runPromise(Effect.scoped(program))
 ```
 
@@ -288,7 +287,7 @@ const Trimmed = Schema.String.pipe(
 )
 ```
 
-**Rule:** Use `Schema.decodeUnknown` (not `Schema.decode`) for external/untrusted data. Use `Schema.decode` only when the input type is already known.
+**Rule:** Use `Schema.decodeUnknown` (not `Schema.decode`) for external data. Use `Schema.decode` only when input type is known.
 
 ## Streaming (Stream, Sink)
 
@@ -317,7 +316,7 @@ const processed = stream.pipe(
 ## Config
 
 ```typescript
-import { Config, Effect } from "effect"
+import { Config, Effect, ConfigProvider, Layer } from "effect"
 
 const program = Effect.gen(function* () {
   const port = yield* Config.number("PORT")
@@ -326,14 +325,8 @@ const program = Effect.gen(function* () {
   return { port, host, dbUrl }
 })
 
-// Config reads from environment variables by default.
 // Override with ConfigProvider for testing:
-import { ConfigProvider, Layer } from "effect"
-
-const testConfig = ConfigProvider.fromMap(new Map([
-  ["PORT", "3000"],
-  ["HOST", "localhost"],
-]))
+const testConfig = ConfigProvider.fromMap(new Map([["PORT", "3000"], ["HOST", "localhost"]]))
 const testLayer = Layer.setConfigProvider(testConfig)
 ```
 
@@ -385,7 +378,6 @@ Effect.runPromise(fetchTodo.pipe(Effect.provide(NodeHttpClient.layer)))
 ```
 
 ## HTTP Server (@effect/platform)
-
 ```typescript
 import { HttpRouter, HttpServer, HttpServerResponse } from "@effect/platform"
 import { NodeHttpServer } from "@effect/platform-node"
@@ -411,12 +403,10 @@ Layer.launch(server).pipe(Effect.runFork)
 ## Running Effects
 
 ```typescript
-// At application boundary only:
 Effect.runSync(effect)          // Synchronous — throws on async or failure
 Effect.runPromise(effect)       // Returns Promise<A> — rejects on failure
 Effect.runFork(effect)          // Returns Fiber — non-blocking
-
-// In libraries/modules: NEVER call run*. Return Effect values instead.
+// In libraries: NEVER call run*. Return Effect values instead.
 ```
 
 ## Pattern: Migrating from Promise-based code
@@ -444,23 +434,23 @@ const getUser = (id: string) =>
 
 ## Common Pitfalls
 
-1. **Calling `Effect.runPromise` inside effects** — never nest runtime calls. Compose with `flatMap`/`gen` instead.
-2. **Using `Effect.promise` for fallible promises** — use `Effect.tryPromise` with explicit `catch` mapper.
-3. **Forgetting `Effect.scoped`** — HTTP responses, file handles, and DB connections acquired via `acquireRelease` need a scope.
-4. **Unbounded `Effect.all`** — always set `{ concurrency: N }` for collections of unknown size.
-5. **Returning `Promise` from service methods** — service methods should return `Effect`, not `Promise`.
-6. **Ignoring the error channel** — don't use `as any` or `catchAll(() => Effect.void)` to silence errors. Handle them explicitly.
-7. **Constructing layers at call sites** — build layers once, provide at composition root.
-8. **Using `Schema.decode` for untrusted input** — use `Schema.decodeUnknown` which accepts `unknown`.
+1. **`Effect.runPromise` inside effects** — compose with `flatMap`/`gen` instead.
+2. **`Effect.promise` for fallible promises** — use `Effect.tryPromise` with `catch`.
+3. **Forgetting `Effect.scoped`** — HTTP responses, file handles need a scope.
+4. **Unbounded `Effect.all`** — always set `{ concurrency: N }`.
+5. **Returning `Promise` from services** — return `Effect`, not `Promise`.
+6. **Silencing errors** — don't use `catchAll(() => Effect.void)`. Handle explicitly.
+7. **Constructing layers at call sites** — build once, provide at composition root.
+8. **`Schema.decode` for untrusted input** — use `Schema.decodeUnknown`.
 
 ## Performance Notes
 
 - Effects are lazy descriptions — no work happens until `run*` is called.
 - `Effect.gen` has minimal overhead; use it freely.
-- `Stream` is chunked internally for throughput — prefer `Stream` over manual batching.
+- `Stream` is chunked internally — prefer over manual batching.
 - Fibers are lightweight (not OS threads) — thousands are fine.
-- `Layer.merge` shares resources across consumers; use it to avoid duplicate initialization.
-- Use `Effect.cached` or `Effect.cachedWithTTL` for expensive computations that should be memoized.
+- `Layer.merge` shares resources; avoids duplicate initialization.
+- Use `Effect.cached` / `Effect.cachedWithTTL` for memoization.
 
 ## Key Imports
 
@@ -477,3 +467,34 @@ import { BunHttpServer } from "@effect/platform-bun"
 import { SqlClient } from "@effect/sql"
 import { PgClient } from "@effect/sql-pg"
 ```
+
+## References
+
+Detailed guides in `references/`:
+
+| File | Topics |
+|------|--------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Layer composition (merge, provide, ManagedRuntime), Scope/acquireRelease, Fiber management, Ref/Queue/Hub, Schedule/retry, Cause/defects, tracing/spans, @effect/platform patterns |
+| [schema-guide.md](references/schema-guide.md) | Primitives, branded types, transformations, filters, decode/encode asymmetry, Schema.Class, property signatures, optional fields, composition, HTTP integration |
+| [migration-guide.md](references/migration-guide.md) | Promise→Effect, fp-ts→Effect, Zod→Schema, Express→@effect/platform, side-by-side comparisons, incremental adoption strategies |
+
+## Scripts
+
+Utility scripts in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| [setup-effect-project.sh](scripts/setup-effect-project.sh) | Scaffold a new Effect project with deps, tsconfig, sample code. Usage: `./setup-effect-project.sh my-app [--with-platform] [--with-sql]` |
+| [effect-layer-viz.ts](scripts/effect-layer-viz.ts) | Visualize Layer dependency graph from source. Usage: `npx tsx effect-layer-viz.ts ./src [--format=mermaid\|dot]` |
+| [migrate-promises.sh](scripts/migrate-promises.sh) | Find Promise-based patterns for migration. Usage: `./migrate-promises.sh ./src [--verbose] [--json]` |
+
+## Assets
+
+Starter templates in `assets/`:
+
+| File | Purpose |
+|------|---------|
+| [tsconfig.json](assets/tsconfig.json) | TypeScript config optimized for Effect (strict, exactOptionalPropertyTypes, NodeNext) |
+| [package.json](assets/package.json) | Starter package.json with Effect core + platform + SQL deps |
+| [http-service-template.ts](assets/http-service-template.ts) | Complete HTTP service with routes, layers, error handling, schemas |
+| [repository-pattern.ts](assets/repository-pattern.ts) | Repository pattern with service tags, layers, in-memory test impl |

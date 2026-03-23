@@ -1,0 +1,60 @@
+# Dockerfile for Gleam projects
+#
+# Multi-stage build:
+#   Stage 1 — Build the Gleam project on the full Erlang/OTP image
+#   Stage 2 — Run the compiled BEAM bytecode on a minimal Erlang runtime
+#
+# Usage:
+#   docker build -t my-gleam-app .
+#   docker run -p 8000:8000 my-gleam-app
+#
+# Build args:
+#   GLEAM_VERSION   — Gleam compiler version (default: 1.9.1)
+#   ERLANG_VERSION  — Erlang/OTP version (default: 27)
+
+# ── Stage 1: Build ────────────────────────────────────────────────────────────
+ARG ERLANG_VERSION=27
+ARG GLEAM_VERSION=1.9.1
+
+FROM ghcr.io/gleam-lang/gleam:v${GLEAM_VERSION}-erlang-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependency manifests first for layer caching
+COPY gleam.toml manifest.toml ./
+
+# Download dependencies
+RUN gleam deps download
+
+# Copy source code
+COPY src/ src/
+COPY test/ test/
+COPY priv/ priv/ 2>/dev/null || true
+
+# Build release
+RUN gleam export erlang-shipment
+
+# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
+FROM erlang:${ERLANG_VERSION}-alpine AS runtime
+
+RUN apk add --no-cache libstdc++ openssl ncurses-libs
+
+WORKDIR /app
+
+# Copy the compiled release from builder
+COPY --from=builder /app/build/erlang-shipment /app
+
+# Create non-root user
+RUN addgroup -S gleam && adduser -S gleam -G gleam
+USER gleam
+
+# Default port (change as needed)
+EXPOSE 8000
+
+# Health check (adjust endpoint as needed)
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8000/health || exit 1
+
+# Run the application
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["run"]

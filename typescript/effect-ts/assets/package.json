@@ -1,0 +1,32 @@
+{
+  "name": "effect-app",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "effect": "^3.12.0",
+    "@effect/platform": "^0.72.0",
+    "@effect/platform-node": "^0.66.0",
+    "@effect/schema": "^0.75.0",
+    "@effect/sql": "^0.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "vitest": "^2.1.0",
+    "eslint": "^9.15.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

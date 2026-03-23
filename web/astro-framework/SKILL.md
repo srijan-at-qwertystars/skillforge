@@ -483,3 +483,11 @@ For static output, export `getStaticPaths`. For SSR, set `output: 'server'` or `
 8. **Using `Astro.glob` in Astro 5.** Prefer `getCollection` with the Content Layer API. `Astro.glob` is legacy and lacks type safety.
 9. **SSR endpoints returning plain objects.** Always return a `Response` object from API routes, not raw JS objects.
 10. **View transitions breaking client state.** Add `transition:persist` to interactive islands that must retain state across navigations.
+
+## Supplemental Resources
+
+**`references/`** — `advanced-patterns.md` (content collections, view transitions, middleware, REST APIs, cross-framework state, i18n, Astro DB, Actions, Server Islands), `troubleshooting.md` (hydration, client directives, SSR adapters, images, CSS, schemas, deployment), `deployment-guide.md` (static/SSR/hybrid/Docker/edge/CI-CD).
+
+**`scripts/`** — `create-astro-project.sh` (scaffold with integrations), `content-collection-scaffold.sh` (collection boilerplate), `lighthouse-audit.sh` (audit with thresholds). All executable, use `--help`.
+
+**`assets/`** — `astro.config.mjs` (production config template), `blog-layout.astro` (SEO meta, view transitions, dark mode), `content-config.ts` (multi-collection with references), `docker-compose.yml` (SSR with Postgres/Nginx/Redis).
