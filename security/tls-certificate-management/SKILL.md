@@ -498,3 +498,5 @@ curl -s "https://crt.sh/?q=%.example.com&output=json" | jq '.[0:5] | .[] | {id, 
 - **Manual certificate management.** Automate everything — ACME, cert-manager, or internal PKI with auto-renewal.
 - **Storing private keys unencrypted.** Use file permissions (600), Kubernetes Secrets, or a vault.
 - **Disabling TLS verification in code.** Never use `verify=False` or `NODE_TLS_REJECT_UNAUTHORIZED=0` in production.
+
+<!-- tested: pass -->

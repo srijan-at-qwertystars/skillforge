@@ -434,3 +434,5 @@ const eligible = users.filter((u) => and(isActive, isPremium).isSatisfiedBy(u));
 **God decorator.** 6+ stacked middleware layers with untraceable execution. Fix: limit depth to 4-5; redesign if exceeded.
 
 > **Golden rule:** If removing the pattern makes the code simpler and you lose nothing, remove it. Patterns are tools, not goals.
+
+<!-- tested: pass -->

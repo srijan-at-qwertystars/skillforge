@@ -491,3 +491,5 @@ Avoid these mistakes:
 - **No `--version`**: Use `click.version_option()` or `typer.Option(is_eager=True)`.
 - **Ignoring signals**: Handle `SIGINT`/`SIGTERM` for cleanup. Exit code 130 for Ctrl+C.
 - **Requiring interactivity**: Accept all input via flags; prompts as fallback only.
+
+<!-- tested: pass -->
