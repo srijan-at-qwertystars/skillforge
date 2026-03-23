@@ -494,3 +494,7 @@ Use dead views (standard controller + template) when page is fully static/cachea
 - **Memory** — each LiveView is a process (~2-5KB base). Monitor process count. Use streams to minimize per-process memory.
 - **Reconnection** — LiveView auto-reconnects. `mount/3` re-runs on reconnect. Ensure mount is idempotent.
 - **CSP headers** — allow `wss://` in `connect-src`. Don't route health checks through the LiveView pipeline.
+
+## Resources
+
+**references/** — `advanced-patterns.md` (nested components, wizards, state machines, real-time collab, optimistic UI, race conditions, distributed LiveView) · `troubleshooting.md` (re-renders, stale state, memory leaks, uploads, hooks, WebSocket, profiling, changeset errors) · `testing-guide.md` (LiveView/component tests, forms, uploads, PubSub, async, factories)

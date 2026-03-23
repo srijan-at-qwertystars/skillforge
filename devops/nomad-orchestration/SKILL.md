@@ -459,3 +459,25 @@ Use `template` blocks with `{{ service "dependency" }}` to block until upstream 
 - **Do not ignore Raft quorum.** Losing quorum = cluster down. Monitor with `raft list-peers`; back up with `nomad operator snapshot save`.
 - **Do not skip TLS and gossip encryption.** All production clusters must enforce mTLS and gossip keys.
 - **Avoid single-region for critical services.** Use multi-region federation for DR.
+
+## Resources
+
+### references/ — Deep-Dive Documentation
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Parameterized/dispatch jobs, periodic batches, multi-region deployments, Nomad Pack, Nomad Variables, CSI volumes in production, template stanza patterns, constraint/affinity strategies, spread scheduling, preemption, device plugins and GPU scheduling.
+- **[troubleshooting.md](references/troubleshooting.md)** — Debugging allocation placement failures, "no nodes available", task driver errors, networking issues (bridge mode, port exhaustion), Consul service mesh problems, health check failures, OOM kills, GC pressure, leader election, snapshot/restore procedures.
+- **[security-hardening.md](references/security-hardening.md)** — ACL bootstrapping, token management, mTLS setup, gossip encryption, Sentinel policies, namespace isolation, task security (read-only rootfs, no-new-privileges, capability dropping), Vault integration security, audit logging, network segmentation, workload identity, hardening checklist.
+
+### scripts/ — Executable Helpers
+
+- **[nomad-job-validate.sh](scripts/nomad-job-validate.sh)** — Validates a Nomad job file using `nomad job validate` plus custom checks for common mistakes (missing update stanza, no health checks, unpinned images, missing resources).
+- **[nomad-cluster-health.sh](scripts/nomad-cluster-health.sh)** — Checks cluster health: server status, Raft consensus, client nodes, blocked evaluations, Consul connectivity, Vault availability.
+- **[nomad-deploy.sh](scripts/nomad-deploy.sh)** — Safe deployment pipeline: validate → plan → show diff → prompt for confirmation → deploy with check-index → monitor deployment until success/failure.
+
+### assets/ — Templates and Boilerplate
+
+- **[web-service.nomad.hcl](assets/web-service.nomad.hcl)** — Production web service with canary deploys, Consul Connect service mesh, Vault secrets, health checks, spread scheduling, resource limits, and log shipping sidecar.
+- **[batch-job.nomad.hcl](assets/batch-job.nomad.hcl)** — Both periodic (cron) and parameterized (dispatch) batch job templates with retry logic, artifact fetching, and Vault integration.
+- **[system-job.nomad.hcl](assets/system-job.nomad.hcl)** — System jobs for node-level agents (log collector with Vector, monitoring with Prometheus node-exporter) with host volume mounts and constraints.
+- **[nomad-server.hcl](assets/nomad-server.hcl)** — Production server config with TLS, ACLs, Consul/Vault integration, autopilot, gossip encryption, telemetry, and GC tuning.
+- **[nomad-client.hcl](assets/nomad-client.hcl)** — Production client config with host volumes, Docker driver options, reserved resources, CNI path, chroot_env, and GPU plugin setup.

@@ -430,3 +430,31 @@ SET distributed_aggregation_memory_efficient = 1;
 SET join_algorithm = 'auto';                   -- auto-pick hash/merge/partial
 SET max_rows_in_join = 100000000;
 ```
+
+## Resources
+
+### references/ — Deep-Dive Documentation
+
+| File | Description |
+|---|---|
+| `references/advanced-patterns.md` | Window functions, array/map operations, WITH FILL for time-series gaps, JSON extraction, approximate algorithms, parameterized views, external dictionaries from multiple sources, integration engines (PostgreSQL, MySQL, S3, Kafka), ClickHouse Keeper setup, and query profiling with system.query_log. |
+| `references/troubleshooting.md` | Diagnosing and fixing: slow queries, too many parts, merge bottlenecks, memory limit exceeded, distributed query failures, replication lag, ZooKeeper/Keeper issues, corrupted parts recovery, stuck mutations, and readonly mode. Includes system tables reference. |
+| `references/migration-guide.md` | Migrating to ClickHouse from PostgreSQL, MySQL, Elasticsearch, and BigQuery. Covers data type mapping, schema translation, query syntax differences, transfer tools (clickhouse-local, clickhouse-copier, dbt-clickhouse), and ETL pipeline setup. |
+
+### scripts/ — Executable Helpers
+
+| File | Description |
+|---|---|
+| `scripts/ch-health-check.sh` | Checks server status, replication health, merge activity, disk usage, running queries, parts count, and pending mutations. Supports `--host`, `--port`, `--user`, `--password`, `--secure` flags. |
+| `scripts/ch-slow-query-report.sh` | Queries system.query_log for slow queries and formats a report with top queries by duration/memory/data scanned, frequent patterns, and hourly distribution. Use `--threshold MS` to set the slow query cutoff. |
+| `scripts/ch-table-stats.sh` | Shows table statistics: row count, disk size, part count, column compression ratios, partition details, and potential issues. Use `--database` and `--table` to drill into a specific table. |
+
+### assets/ — Templates and Boilerplate
+
+| File | Description |
+|---|---|
+| `assets/analytics-schema.sql` | Complete analytics schema: raw events table (MergeTree), daily aggregation (AggregatingMergeTree), materialized view for auto-aggregation, projection for alternative sort order, and funnel table (SummingMergeTree). Includes TTL and data skipping indexes. |
+| `assets/clickhouse-server-config.xml` | Production server config with memory limits, merge settings, compression (LZ4/ZSTD), storage policies (hot/cold tiering), query logging with TTL, and distributed DDL settings. |
+| `assets/clickhouse-users.xml` | User configuration with 4 profiles (default, readonly, ingestion, analyst), quotas with rate limits, and row-level security examples via SQL row policies. |
+| `assets/grafana-dashboard.json` | Grafana dashboard JSON for ClickHouse monitoring: queries/sec, query latency percentiles, memory usage, active merges, parts count, merge throughput, replication lag, and disk usage gauges. |
+| `assets/docker-compose.yml` | Docker Compose for local development: 2 shards × 2 replicas (4 ClickHouse nodes) + 3-node ClickHouse Keeper cluster, with inline XML configs for cluster topology and macros. |

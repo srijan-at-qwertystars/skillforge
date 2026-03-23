@@ -1,0 +1,323 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "ClickHouse server monitoring dashboard — query rate, merge activity, parts count, memory usage, replication health, and disk utilization.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "title": "Server Overview",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Queries per Second",
+      "type": "timeseries",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 20,
+            "gradientMode": "scheme",
+            "spanNulls": false
+          },
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT toStartOfInterval(event_time, INTERVAL 1 minute) AS time, countIf(type = 'QueryStart') AS select_qps, countIf(type = 'QueryStart' AND query_kind = 'Insert') AS insert_qps FROM system.query_log WHERE event_date >= today() - 1 AND event_time >= now() - INTERVAL $__interval_ms MILLISECOND GROUP BY time ORDER BY time",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "title": "Query Duration (p50, p95, p99)",
+      "type": "timeseries",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT toStartOfInterval(event_time, INTERVAL 1 minute) AS time, quantile(0.50)(query_duration_ms) AS p50, quantile(0.95)(query_duration_ms) AS p95, quantile(0.99)(query_duration_ms) AS p99 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= today() - 1 GROUP BY time ORDER BY time",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 1 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 30,
+            "gradientMode": "scheme"
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT event_time AS time, toUInt64(value) AS memory_tracking FROM system.asynchronous_metric_log WHERE metric = 'MemoryTracking' AND event_date >= today() - 1 ORDER BY time",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "title": "Merge & Parts",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Active Merges",
+      "type": "timeseries",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 25
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT event_time AS time, toUInt64(value) AS active_merges FROM system.metric_log WHERE metric_name = 'Merge' AND event_date >= today() - 1 ORDER BY time",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "title": "Total Active Parts (Top Tables)",
+      "type": "barchart",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT concat(database, '.', table) AS tbl, count() AS parts FROM system.parts WHERE active AND database NOT IN ('system', 'information_schema') GROUP BY tbl ORDER BY parts DESC LIMIT 15",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Merge Throughput (rows/min)",
+      "type": "timeseries",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 10 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "green", "mode": "fixed" },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 60
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT toStartOfMinute(event_time) AS time, sum(rows) AS rows_merged FROM system.part_log WHERE event_type = 'MergeParts' AND event_date >= today() - 1 GROUP BY time ORDER BY time",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "title": "Replication & Disk",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Replication Lag (seconds)",
+      "type": "table",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "delay_sec" },
+            "properties": [
+              { "id": "thresholds", "value": { "mode": "absolute", "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 60 },
+                { "color": "red", "value": 300 }
+              ] } },
+              { "id": "custom.displayMode", "value": "color-background" }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT database, table, is_leader, total_replicas, active_replicas, queue_size, absolute_delay AS delay_sec FROM system.replicas ORDER BY absolute_delay DESC",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Disk Usage",
+      "type": "gauge",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 85 }
+            ]
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT name, 1 - (free_space / total_space) AS used_ratio FROM system.disks",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Running Queries",
+      "type": "stat",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 19 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 150 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT count() AS running_queries FROM system.processes",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    },
+    {
+      "title": "Pending Mutations",
+      "type": "stat",
+      "datasource": { "type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 23 },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT count() AS pending_mutations FROM system.mutations WHERE is_done = 0",
+          "refId": "A",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["clickhouse", "monitoring", "database"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "label": "ClickHouse Datasource",
+        "name": "DS_CLICKHOUSE",
+        "options": [],
+        "query": "grafana-clickhouse-datasource",
+        "refresh": 1,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "ClickHouse Server Monitoring",
+  "uid": "clickhouse-monitoring-v1",
+  "version": 1
+}

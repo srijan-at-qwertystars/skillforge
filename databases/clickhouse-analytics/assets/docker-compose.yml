@@ -1,0 +1,357 @@
+# docker-compose.yml
+# ClickHouse local development: 2 shards, 2 replicas per shard, 3-node ClickHouse Keeper
+# Usage: docker compose up -d
+
+services:
+  # =========================================================================
+  # ClickHouse Keeper cluster (3 nodes for quorum)
+  # =========================================================================
+  keeper1:
+    image: clickhouse/clickhouse-keeper:latest
+    hostname: keeper1
+    ports:
+      - "9181:9181"
+    volumes:
+      - keeper1_data:/var/lib/clickhouse-keeper
+    environment:
+      - KEEPER_SERVER_ID=1
+    configs:
+      - source: keeper1_config
+        target: /etc/clickhouse-keeper/keeper_config.xml
+    networks:
+      - ch_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 9181 | grep -q imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  keeper2:
+    image: clickhouse/clickhouse-keeper:latest
+    hostname: keeper2
+    volumes:
+      - keeper2_data:/var/lib/clickhouse-keeper
+    environment:
+      - KEEPER_SERVER_ID=2
+    configs:
+      - source: keeper2_config
+        target: /etc/clickhouse-keeper/keeper_config.xml
+    networks:
+      - ch_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 9181 | grep -q imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  keeper3:
+    image: clickhouse/clickhouse-keeper:latest
+    hostname: keeper3
+    volumes:
+      - keeper3_data:/var/lib/clickhouse-keeper
+    environment:
+      - KEEPER_SERVER_ID=3
+    configs:
+      - source: keeper3_config
+        target: /etc/clickhouse-keeper/keeper_config.xml
+    networks:
+      - ch_network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 9181 | grep -q imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # =========================================================================
+  # Shard 1, Replica 1
+  # =========================================================================
+  ch-s1-r1:
+    image: clickhouse/clickhouse-server:latest
+    hostname: ch-s1-r1
+    ports:
+      - "8123:8123"   # HTTP
+      - "9000:9000"   # Native TCP
+    volumes:
+      - ch_s1r1_data:/var/lib/clickhouse
+      - ch_s1r1_logs:/var/log/clickhouse-server
+    environment:
+      - SHARD=01
+      - REPLICA=s1-r1
+    configs:
+      - source: ch_config
+        target: /etc/clickhouse-server/config.d/cluster.xml
+      - source: ch_macros_s1r1
+        target: /etc/clickhouse-server/config.d/macros.xml
+    depends_on:
+      keeper1: { condition: service_healthy }
+      keeper2: { condition: service_healthy }
+      keeper3: { condition: service_healthy }
+    networks:
+      - ch_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # =========================================================================
+  # Shard 1, Replica 2
+  # =========================================================================
+  ch-s1-r2:
+    image: clickhouse/clickhouse-server:latest
+    hostname: ch-s1-r2
+    ports:
+      - "8124:8123"
+      - "9001:9000"
+    volumes:
+      - ch_s1r2_data:/var/lib/clickhouse
+      - ch_s1r2_logs:/var/log/clickhouse-server
+    environment:
+      - SHARD=01
+      - REPLICA=s1-r2
+    configs:
+      - source: ch_config
+        target: /etc/clickhouse-server/config.d/cluster.xml
+      - source: ch_macros_s1r2
+        target: /etc/clickhouse-server/config.d/macros.xml
+    depends_on:
+      keeper1: { condition: service_healthy }
+      keeper2: { condition: service_healthy }
+      keeper3: { condition: service_healthy }
+    networks:
+      - ch_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # =========================================================================
+  # Shard 2, Replica 1
+  # =========================================================================
+  ch-s2-r1:
+    image: clickhouse/clickhouse-server:latest
+    hostname: ch-s2-r1
+    ports:
+      - "8125:8123"
+      - "9002:9000"
+    volumes:
+      - ch_s2r1_data:/var/lib/clickhouse
+      - ch_s2r1_logs:/var/log/clickhouse-server
+    environment:
+      - SHARD=02
+      - REPLICA=s2-r1
+    configs:
+      - source: ch_config
+        target: /etc/clickhouse-server/config.d/cluster.xml
+      - source: ch_macros_s2r1
+        target: /etc/clickhouse-server/config.d/macros.xml
+    depends_on:
+      keeper1: { condition: service_healthy }
+      keeper2: { condition: service_healthy }
+      keeper3: { condition: service_healthy }
+    networks:
+      - ch_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # =========================================================================
+  # Shard 2, Replica 2
+  # =========================================================================
+  ch-s2-r2:
+    image: clickhouse/clickhouse-server:latest
+    hostname: ch-s2-r2
+    ports:
+      - "8126:8123"
+      - "9003:9000"
+    volumes:
+      - ch_s2r2_data:/var/lib/clickhouse
+      - ch_s2r2_logs:/var/log/clickhouse-server
+    environment:
+      - SHARD=02
+      - REPLICA=s2-r2
+    configs:
+      - source: ch_config
+        target: /etc/clickhouse-server/config.d/cluster.xml
+      - source: ch_macros_s2r2
+        target: /etc/clickhouse-server/config.d/macros.xml
+    depends_on:
+      keeper1: { condition: service_healthy }
+      keeper2: { condition: service_healthy }
+      keeper3: { condition: service_healthy }
+    networks:
+      - ch_network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+# ===========================================================================
+# Volumes
+# ===========================================================================
+volumes:
+  keeper1_data:
+  keeper2_data:
+  keeper3_data:
+  ch_s1r1_data:
+  ch_s1r1_logs:
+  ch_s1r2_data:
+  ch_s1r2_logs:
+  ch_s2r1_data:
+  ch_s2r1_logs:
+  ch_s2r2_data:
+  ch_s2r2_logs:
+
+# ===========================================================================
+# Network
+# ===========================================================================
+networks:
+  ch_network:
+    driver: bridge
+
+# ===========================================================================
+# Configs (inline XML)
+# ===========================================================================
+configs:
+  # --- Keeper configs ---
+  keeper1_config:
+    content: |
+      <clickhouse>
+          <keeper_server>
+              <tcp_port>9181</tcp_port>
+              <server_id>1</server_id>
+              <log_storage_path>/var/lib/clickhouse-keeper/log</log_storage_path>
+              <snapshot_storage_path>/var/lib/clickhouse-keeper/snapshots</snapshot_storage_path>
+              <coordination_settings>
+                  <operation_timeout_ms>10000</operation_timeout_ms>
+                  <session_timeout_ms>30000</session_timeout_ms>
+                  <raft_logs_level>warning</raft_logs_level>
+              </coordination_settings>
+              <raft_configuration>
+                  <server><id>1</id><hostname>keeper1</hostname><port>9234</port></server>
+                  <server><id>2</id><hostname>keeper2</hostname><port>9234</port></server>
+                  <server><id>3</id><hostname>keeper3</hostname><port>9234</port></server>
+              </raft_configuration>
+          </keeper_server>
+      </clickhouse>
+
+  keeper2_config:
+    content: |
+      <clickhouse>
+          <keeper_server>
+              <tcp_port>9181</tcp_port>
+              <server_id>2</server_id>
+              <log_storage_path>/var/lib/clickhouse-keeper/log</log_storage_path>
+              <snapshot_storage_path>/var/lib/clickhouse-keeper/snapshots</snapshot_storage_path>
+              <coordination_settings>
+                  <operation_timeout_ms>10000</operation_timeout_ms>
+                  <session_timeout_ms>30000</session_timeout_ms>
+                  <raft_logs_level>warning</raft_logs_level>
+              </coordination_settings>
+              <raft_configuration>
+                  <server><id>1</id><hostname>keeper1</hostname><port>9234</port></server>
+                  <server><id>2</id><hostname>keeper2</hostname><port>9234</port></server>
+                  <server><id>3</id><hostname>keeper3</hostname><port>9234</port></server>
+              </raft_configuration>
+          </keeper_server>
+      </clickhouse>
+
+  keeper3_config:
+    content: |
+      <clickhouse>
+          <keeper_server>
+              <tcp_port>9181</tcp_port>
+              <server_id>3</server_id>
+              <log_storage_path>/var/lib/clickhouse-keeper/log</log_storage_path>
+              <snapshot_storage_path>/var/lib/clickhouse-keeper/snapshots</snapshot_storage_path>
+              <coordination_settings>
+                  <operation_timeout_ms>10000</operation_timeout_ms>
+                  <session_timeout_ms>30000</session_timeout_ms>
+                  <raft_logs_level>warning</raft_logs_level>
+              </coordination_settings>
+              <raft_configuration>
+                  <server><id>1</id><hostname>keeper1</hostname><port>9234</port></server>
+                  <server><id>2</id><hostname>keeper2</hostname><port>9234</port></server>
+                  <server><id>3</id><hostname>keeper3</hostname><port>9234</port></server>
+              </raft_configuration>
+          </keeper_server>
+      </clickhouse>
+
+  # --- ClickHouse cluster config (shared by all nodes) ---
+  ch_config:
+    content: |
+      <clickhouse>
+          <remote_servers>
+              <analytics_cluster>
+                  <shard>
+                      <internal_replication>true</internal_replication>
+                      <replica><host>ch-s1-r1</host><port>9000</port></replica>
+                      <replica><host>ch-s1-r2</host><port>9000</port></replica>
+                  </shard>
+                  <shard>
+                      <internal_replication>true</internal_replication>
+                      <replica><host>ch-s2-r1</host><port>9000</port></replica>
+                      <replica><host>ch-s2-r2</host><port>9000</port></replica>
+                  </shard>
+              </analytics_cluster>
+          </remote_servers>
+          <zookeeper>
+              <node><host>keeper1</host><port>9181</port></node>
+              <node><host>keeper2</host><port>9181</port></node>
+              <node><host>keeper3</host><port>9181</port></node>
+              <session_timeout_ms>30000</session_timeout_ms>
+          </zookeeper>
+      </clickhouse>
+
+  # --- Per-node macros ---
+  ch_macros_s1r1:
+    content: |
+      <clickhouse>
+          <macros>
+              <shard>01</shard>
+              <replica>s1-r1</replica>
+              <cluster>analytics_cluster</cluster>
+          </macros>
+      </clickhouse>
+
+  ch_macros_s1r2:
+    content: |
+      <clickhouse>
+          <macros>
+              <shard>01</shard>
+              <replica>s1-r2</replica>
+              <cluster>analytics_cluster</cluster>
+          </macros>
+      </clickhouse>
+
+  ch_macros_s2r1:
+    content: |
+      <clickhouse>
+          <macros>
+              <shard>02</shard>
+              <replica>s2-r1</replica>
+              <cluster>analytics_cluster</cluster>
+          </macros>
+      </clickhouse>
+
+  ch_macros_s2r2:
+    content: |
+      <clickhouse>
+          <macros>
+              <shard>02</shard>
+              <replica>s2-r2</replica>
+              <cluster>analytics_cluster</cluster>
+          </macros>
+      </clickhouse>
