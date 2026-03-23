@@ -392,3 +392,5 @@ Reporters: `default` (terminal), `verbose`, `dot` (CI), `junit` (XML), `json`, `
 | `assets/vitest-workspace.ts` | Monorepo workspace config — unit, component, integration, and edge runtime projects |
 | `assets/setup-files.ts` | Test setup with custom matchers (`toBeWithinRange`, `toBeISODate`, `toResolveWithin`), browser API stubs, cleanup |
 | `assets/component-test-utils.tsx` | React/Vue component testing helpers — provider wrappers, mock fetch, IntersectionObserver mock, test data factories |
+
+<!-- tested: pass -->

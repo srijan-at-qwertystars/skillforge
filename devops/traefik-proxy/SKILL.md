@@ -495,3 +495,5 @@ Choose Traefik for dynamic service discovery and container-native environments. 
 | `assets/traefik.yml` | Production static config with entrypoints, providers, ACME, logging, and metrics |
 | `assets/dynamic-config.yml` | Dynamic config template: middleware chains, TLS options, rate limiting |
 | `assets/kubernetes-values.yml` | Helm values for HA Traefik on Kubernetes with autoscaling, security, and observability |
+
+<!-- tested: pass -->

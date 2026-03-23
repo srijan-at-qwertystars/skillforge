@@ -494,3 +494,5 @@ still **required** unless you set `= None` as the default.
 **scripts/** — `pydantic-migrate.sh` (v1→v2 scanner + bump-pydantic) · `pydantic-schema-gen.sh` (JSON Schema from model) · `pydantic-validate-config.py` (validate JSON/YAML against model).
 
 **assets/** — `base_model_template.py` (v2 model template) · `settings_template.py` (BaseSettings template) · `fastapi_models.py` (request/response patterns) · `discriminated_union_example.py` (tagged unions + serialization).
+
+<!-- tested: needs-fix -->
