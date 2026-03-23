@@ -444,36 +444,40 @@ hadolint Dockerfile
 docker run --rm -i hadolint/hadolint < Dockerfile
 ```
 
-## Quick Reference: Dockerfile Template
+## Quick Start
 
-```dockerfile
-# syntax=docker/dockerfile:1
+Copy a production-ready template from `assets/` — available for Node.js, Python, Go, Rust, and Java. Each includes multi-stage builds, non-root users, cache mounts, and health checks.
 
-# --- Build stage ---
-FROM node:22-alpine AS build
-WORKDIR /app
-COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm npm ci
-COPY . .
-RUN npm run build
+## References
 
-# --- Production stage ---
-FROM node:22-alpine AS production
-WORKDIR /app
-ENV NODE_ENV=production
-RUN addgroup -S app && adduser -S app -G app -u 1001
+| File | When to read |
+|------|-------------|
+| `references/advanced-patterns.md` | Multi-platform builds, ARG scoping, ONBUILD, init systems (tini/dumb-init), monorepo caching, reproducible builds, OCI labels |
+| `references/troubleshooting.md` | Build cache issues, permission errors, platform mismatches, OOM kills, context too large, health check failures, debugging with dive |
+| `references/language-specific.md` | Optimized Dockerfiles for Rust (cargo-chef), Java (JLink), .NET (trimming/AOT), PHP (FPM+Nginx), Ruby, Elixir |
 
-COPY --from=build --chown=app:app /app/dist ./dist
-COPY --from=build --chown=app:app /app/node_modules ./node_modules
-COPY --from=build --chown=app:app /app/package.json ./
+## Scripts
 
-USER app
-EXPOSE 3000
+| Script | Usage |
+|--------|-------|
+| `scripts/lint-dockerfile.sh [path]` | Hadolint wrapper — categorizes findings by severity, CI-friendly exit codes |
+| `scripts/analyze-image.sh <image>` | Audits an image for best-practice compliance (root user, healthcheck, size, secrets) |
+| `scripts/generate-dockerignore.sh [--force]` | Auto-detects project language and generates a tailored `.dockerignore` |
+| `scripts/optimize-image-size.sh <image>` | Analyzes layers, identifies bloat, suggests specific size optimizations |
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:3000/health || exit 1
+## Assets
 
-CMD ["node", "dist/index.js"]
-```
+Ready-to-use templates — copy and customize:
+
+| Template | Description |
+|----------|-------------|
+| `assets/Dockerfile.node` | Node.js 3-stage build with npm cache mounts |
+| `assets/Dockerfile.python` | Python venv-copy pattern with gunicorn |
+| `assets/Dockerfile.go` | Go with distroless nonroot final stage |
+| `assets/Dockerfile.rust` | Rust cargo-chef 4-stage caching pattern |
+| `assets/Dockerfile.java` | Java with JLink custom runtime + layered JARs |
+| `assets/compose.production.yaml` | Hardened compose with API + PostgreSQL + Redis |
+| `assets/hadolint.yaml` | Hadolint config with sensible defaults |
+| `assets/dockerignore-templates/` | Language-specific .dockerignore files (node, python, go, rust, java) |
 
 <!-- tested: pass -->

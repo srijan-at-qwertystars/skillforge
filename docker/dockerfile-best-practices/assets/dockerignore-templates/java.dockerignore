@@ -1,0 +1,89 @@
+# =============================================================================
+# .dockerignore for Java Projects (Maven / Gradle)
+# =============================================================================
+# Java build artifacts (target/, build/) can be hundreds of MBs.
+# Excluding them dramatically speeds up Docker context transfer.
+# =============================================================================
+
+# --- Version Control ---
+.git
+.gitignore
+.gitattributes
+
+# --- Maven Build Artifacts ---
+# The container runs its own Maven build; host artifacts are stale
+target/
+
+# --- Gradle Build Artifacts ---
+# Same as above for Gradle-based projects
+build/
+.gradle/
+
+# --- Environment & Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- IDE & Editor ---
+# IDE project files are development-only and often contain local paths
+.vscode
+.idea
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+*.swp
+*.swo
+*~
+.DS_Store
+# NetBeans
+nb-configuration.xml
+nbproject/
+
+# --- Docker ---
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+compose*.yml
+compose*.yaml
+.dockerignore
+
+# --- Documentation ---
+README.md
+CHANGELOG.md
+LICENSE
+docs/
+
+# --- Testing ---
+# Test reports and coverage data are not needed in the production image
+src/test/
+**/test-results/
+**/surefire-reports/
+**/failsafe-reports/
+jacoco.exec
+*.exec
+
+# --- CI/CD ---
+.github
+.gitlab-ci.yml
+.circleci
+.travis.yml
+Jenkinsfile
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Misc ---
+tmp/
+temp/
+*.bak
+*.tmp
+
+# --- Kubernetes / Helm ---
+k8s/
+helm/
+charts/
+deploy/

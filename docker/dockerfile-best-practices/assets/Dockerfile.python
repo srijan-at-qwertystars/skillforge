@@ -1,0 +1,102 @@
+# syntax=docker/dockerfile:1
+
+# =============================================================================
+# Production-Ready Python Dockerfile (FastAPI / Django / Flask)
+# =============================================================================
+# Multi-stage build using the venv-copy pattern:
+#   1. Builder stage  — installs deps into a virtualenv
+#   2. Runtime stage  — copies the pre-built virtualenv into a slim image
+#
+# This keeps the final image free of compilers, header files, and pip cache.
+#
+# Build with BuildKit enabled:
+#   DOCKER_BUILDKIT=1 docker build -t myapp .
+#
+# Pin your base image digest for reproducibility:
+#   python:3.12-slim@sha256:<digest>
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Builder — install dependencies into a virtualenv
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS builder
+# Pin digest: @sha256:<paste-digest-here>
+
+# Prevent Python from writing .pyc files and enable unbuffered output
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install build-essential only if you have C-extension dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends gcc libpq-dev && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create a virtualenv so we can copy it cleanly to the runtime stage
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy dependency manifests first for better layer caching
+COPY requirements.txt ./
+
+# Use BuildKit cache mount so pip's download cache persists across builds
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-compile --upgrade pip setuptools wheel && \
+    pip install --no-compile -r requirements.txt
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime — slim image with only what's needed to run
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim AS runtime
+# Pin digest: @sha256:<paste-digest-here>
+
+# Metadata labels following OCI image spec
+LABEL org.opencontainers.image.source="https://github.com/your-org/your-repo" \
+      org.opencontainers.image.description="Production Python application" \
+      org.opencontainers.image.licenses="MIT"
+
+# Runtime settings
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    # Point PATH to the virtualenv so the right Python and packages are used
+    PATH="/opt/venv/bin:$PATH"
+
+# Install only runtime system libraries (no compilers)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libpq5 curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy the pre-built virtualenv from the builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+WORKDIR /app
+
+# Copy application source code
+COPY . .
+
+# Create a non-root user with a fixed UID/GID
+RUN groupadd --gid 1001 appuser && \
+    useradd --uid 1001 --gid appuser --shell /bin/false --create-home appuser && \
+    chown -R appuser:appuser /app
+
+# Drop to non-root user
+USER 1001
+
+# Expose the application port
+EXPOSE 8000
+
+# Health check — adjust the endpoint to match your app
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["curl", "-f", "http://localhost:8000/health", "||", "exit", "1"]
+
+# Run with gunicorn for production
+# Adjust the module path (myapp.main:app) and workers to match your project
+# Workers = 2 × CPU cores + 1 is a common starting point
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "4", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "myapp.main:app"]

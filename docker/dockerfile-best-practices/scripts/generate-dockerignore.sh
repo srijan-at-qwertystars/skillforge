@@ -1,0 +1,268 @@
+#!/usr/bin/env bash
+# =============================================================================
+# generate-dockerignore.sh — Generate a .dockerignore for the detected project
+#
+# Usage:
+#   ./generate-dockerignore.sh [--force] [DIRECTORY]
+#   ./generate-dockerignore.sh                     # current dir, won't overwrite
+#   ./generate-dockerignore.sh --force              # overwrite existing file
+#   ./generate-dockerignore.sh /path/to/project     # target a specific directory
+#   ./generate-dockerignore.sh --force /path/to/app
+#
+# Auto-detects language/framework from project files and generates
+# language-specific ignore rules plus universal defaults.
+#
+# Supported: Node.js, Go, Python, Rust, Java/Maven, Java/Gradle, Ruby,
+#            PHP/Composer, .NET/C#, Elixir, and generic fallback.
+# =============================================================================
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Color helpers
+# ---------------------------------------------------------------------------
+if [[ -t 1 ]]; then
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  RED='\033[0;31m'
+  BOLD='\033[1m'
+  RESET='\033[0m'
+else
+  GREEN='' YELLOW='' RED='' BOLD='' RESET=''
+fi
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+FORCE=false
+TARGET_DIR="."
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --force) FORCE=true; shift ;;
+    *)       TARGET_DIR="$1"; shift ;;
+  esac
+done
+
+TARGET_FILE="${TARGET_DIR}/.dockerignore"
+
+if [[ ! -d "$TARGET_DIR" ]]; then
+  echo -e "${RED}Error: directory '${TARGET_DIR}' does not exist.${RESET}"
+  exit 1
+fi
+
+if [[ -f "$TARGET_FILE" && "$FORCE" != "true" ]]; then
+  echo -e "${YELLOW}A .dockerignore already exists at '${TARGET_FILE}'.${RESET}"
+  echo "Use --force to overwrite."
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Universal rules (always included)
+# ---------------------------------------------------------------------------
+UNIVERSAL_RULES="# ---- Universal ----
+.git
+.gitignore
+.github
+.vscode
+.idea
+*.md
+!README.md
+LICENSE
+Dockerfile*
+docker-compose*
+.dockerignore
+.env
+.env.*
+.editorconfig
+.prettierrc
+.eslintrc*
+.terraform
+*.swp
+*.swo
+*~"
+
+# ---------------------------------------------------------------------------
+# Language detection & rules
+# ---------------------------------------------------------------------------
+DETECTED=()
+LANG_RULES=""
+
+# Node.js
+if [[ -f "${TARGET_DIR}/package.json" ]]; then
+  DETECTED+=("Node.js")
+  LANG_RULES+="
+# ---- Node.js ----
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn
+dist
+build
+coverage
+.nyc_output
+.next
+.nuxt
+.cache
+"
+fi
+
+# Go
+if [[ -f "${TARGET_DIR}/go.mod" ]]; then
+  DETECTED+=("Go")
+  LANG_RULES+="
+# ---- Go ----
+vendor/
+*.exe
+*.test
+*.out
+__debug_bin
+"
+fi
+
+# Python
+if [[ -f "${TARGET_DIR}/requirements.txt" || -f "${TARGET_DIR}/pyproject.toml" || -f "${TARGET_DIR}/setup.py" || -f "${TARGET_DIR}/Pipfile" ]]; then
+  DETECTED+=("Python")
+  LANG_RULES+="
+# ---- Python ----
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.eggs
+.venv
+venv
+env
+.mypy_cache
+.pytest_cache
+.tox
+htmlcov
+*.whl
+"
+fi
+
+# Rust
+if [[ -f "${TARGET_DIR}/Cargo.toml" ]]; then
+  DETECTED+=("Rust")
+  LANG_RULES+="
+# ---- Rust ----
+target/
+**/*.rs.bk
+"
+fi
+
+# Java — Maven
+if [[ -f "${TARGET_DIR}/pom.xml" ]]; then
+  DETECTED+=("Java/Maven")
+  LANG_RULES+="
+# ---- Java / Maven ----
+target/
+*.class
+*.jar
+*.war
+*.ear
+.settings/
+.classpath
+.project
+.factorypath
+"
+fi
+
+# Java — Gradle
+if [[ -f "${TARGET_DIR}/build.gradle" || -f "${TARGET_DIR}/build.gradle.kts" ]]; then
+  DETECTED+=("Java/Gradle")
+  LANG_RULES+="
+# ---- Java / Gradle ----
+build/
+.gradle/
+*.class
+*.jar
+*.war
+*.ear
+"
+fi
+
+# Ruby
+if [[ -f "${TARGET_DIR}/Gemfile" ]]; then
+  DETECTED+=("Ruby")
+  LANG_RULES+="
+# ---- Ruby ----
+.bundle
+vendor/bundle
+log/
+tmp/
+coverage/
+spec/reports
+"
+fi
+
+# PHP / Composer
+if [[ -f "${TARGET_DIR}/composer.json" ]]; then
+  DETECTED+=("PHP/Composer")
+  LANG_RULES+="
+# ---- PHP ----
+vendor/
+storage/
+bootstrap/cache/
+*.log
+"
+fi
+
+# .NET / C#
+if compgen -G "${TARGET_DIR}/*.csproj" >/dev/null 2>&1 || compgen -G "${TARGET_DIR}/*.sln" >/dev/null 2>&1; then
+  DETECTED+=(".NET/C#")
+  LANG_RULES+="
+# ---- .NET ----
+bin/
+obj/
+*.user
+*.suo
+packages/
+"
+fi
+
+# Elixir
+if [[ -f "${TARGET_DIR}/mix.exs" ]]; then
+  DETECTED+=("Elixir")
+  LANG_RULES+="
+# ---- Elixir ----
+_build/
+deps/
+*.beam
+"
+fi
+
+# Fallback: tests & docs directories
+LANG_RULES+="
+# ---- Tests / Docs ----
+tests/
+test/
+__tests__/
+docs/
+"
+
+# ---------------------------------------------------------------------------
+# Write the file
+# ---------------------------------------------------------------------------
+{
+  echo "# .dockerignore — auto-generated by generate-dockerignore.sh"
+  if [[ ${#DETECTED[@]} -gt 0 ]]; then
+    echo "# Detected: $(IFS=', '; echo "${DETECTED[*]}")"
+  else
+    echo "# Detected: generic project"
+  fi
+  echo ""
+  echo "$UNIVERSAL_RULES"
+  echo "$LANG_RULES"
+} > "$TARGET_FILE"
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+if [[ ${#DETECTED[@]} -gt 0 ]]; then
+  echo -e "${GREEN}✔ Generated .dockerignore for: $(IFS=', '; echo "${DETECTED[*]}")${RESET}"
+else
+  echo -e "${GREEN}✔ Generated generic .dockerignore (no specific framework detected)${RESET}"
+fi
+echo -e "  → ${TARGET_FILE}"

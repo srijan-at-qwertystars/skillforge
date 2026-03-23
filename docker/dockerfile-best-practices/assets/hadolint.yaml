@@ -1,0 +1,98 @@
+# =============================================================================
+# Hadolint Configuration
+# =============================================================================
+# Hadolint is a Dockerfile linter that checks for best practices and common
+# mistakes. This configuration provides sensible production defaults.
+#
+# Usage:
+#   hadolint --config hadolint.yaml Dockerfile
+#
+# Rule reference: https://github.com/hadolint/hadolint#rules
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Trusted Registries
+# ---------------------------------------------------------------------------
+# Only allow base images from these registries.
+# This prevents accidentally pulling from untrusted or public registries.
+# Uncomment and customize for your organization:
+#
+# trustedRegistries:
+#   - docker.io
+#   - gcr.io
+#   - ghcr.io
+#   - your-registry.example.com
+
+# ---------------------------------------------------------------------------
+# Global Severity Override
+# ---------------------------------------------------------------------------
+# Set the minimum severity level to report
+# Options: error, warning, info, style
+failure-threshold: info
+
+# ---------------------------------------------------------------------------
+# Ignored Rules
+# ---------------------------------------------------------------------------
+# Suppress specific rules that conflict with your workflow.
+# Each ignore is documented with the rationale.
+ignored:
+  # DL3008: "Pin versions in apt-get install"
+  # Reason: Pinning apt package versions is impractical in most cases because
+  # Debian/Ubuntu repositories frequently rotate package versions. Use pinned
+  # base image digests instead for reproducibility.
+  - DL3008
+
+  # DL3013: "Pin versions in pip install"
+  # Reason: We pin versions in requirements.txt, not in the Dockerfile RUN
+  # command itself. Hadolint can't see the requirements file.
+  - DL3013
+
+  # DL3059: "Multiple consecutive RUN instructions"
+  # Reason: Sometimes splitting RUN instructions improves readability and
+  # cache granularity, especially in multi-stage builds.
+  - DL3059
+
+# ---------------------------------------------------------------------------
+# Severity Overrides
+# ---------------------------------------------------------------------------
+# Promote or demote specific rules to match your team's priorities.
+override:
+  # --- Promote to Error (must fix) ---
+
+  # DL3000: Use absolute WORKDIR
+  # Running in relative paths leads to unpredictable behavior
+  error:
+    - DL3000
+
+  # --- Promote to Warning ---
+  warning:
+    # DL3042: Avoid cache directory in COPY
+    - DL3042
+
+    # DL3025: Use JSON notation for CMD/ENTRYPOINT (exec form)
+    # Shell form doesn't pass signals to the process
+    - DL3025
+
+  # --- Demote to Info ---
+  info:
+    # DL3007: "Using latest is prone to errors"
+    # We handle this via digest pinning in CI, not hadolint
+    - DL3007
+
+  # --- Demote to Style ---
+  style:
+    # DL4006: Set the SHELL option -o pipefail before a RUN with a pipe
+    # Good practice but not always needed, especially in multi-stage builds
+    - DL4006
+
+# ---------------------------------------------------------------------------
+# Label Schema (optional)
+# ---------------------------------------------------------------------------
+# Require specific labels on every image for compliance/governance.
+# Uncomment to enforce:
+#
+# label-schema:
+#   maintainer: text
+#   org.opencontainers.image.source: url
+#   org.opencontainers.image.description: text
+#   org.opencontainers.image.licenses: text

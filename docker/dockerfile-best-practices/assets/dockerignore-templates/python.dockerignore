@@ -1,0 +1,103 @@
+# =============================================================================
+# .dockerignore for Python Projects
+# =============================================================================
+# Prevents unnecessary files from entering the Docker build context.
+# Speeds up builds, prevents secret leaks, and improves cache efficiency.
+# =============================================================================
+
+# --- Version Control ---
+# Git history is not needed inside the container
+.git
+.gitignore
+.gitattributes
+
+# --- Python Virtual Environments ---
+# The container builds its own virtualenv; host venvs are architecture-specific
+venv/
+.venv/
+env/
+.env/
+
+# --- Byte-compiled / Cached Files ---
+# Python regenerates these at import time; no need to COPY them
+__pycache__
+*.py[cod]
+*$py.class
+*.pyo
+
+# --- Distribution / Packaging ---
+# Build artifacts from setuptools/wheel are not needed
+*.egg-info/
+*.egg
+dist/
+build/
+sdist/
+wheels/
+
+# --- Environment & Secrets ---
+# NEVER include secrets — pass them at runtime via env vars or Docker secrets
+.env
+.env.*
+!.env.example
+
+# --- IDE & Editor ---
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Docker ---
+# Avoid recursive inclusion of Docker configs
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+compose*.yml
+compose*.yaml
+.dockerignore
+
+# --- Documentation ---
+README.md
+CHANGELOG.md
+LICENSE
+docs/
+
+# --- Testing ---
+# Test code and coverage data are not needed in production
+tests/
+test/
+*.test.py
+pytest.ini
+.pytest_cache
+htmlcov/
+.coverage
+.coverage.*
+.tox
+.nox
+
+# --- CI/CD ---
+.github
+.gitlab-ci.yml
+.circleci
+.travis.yml
+Jenkinsfile
+
+# --- Type Checking / Linting ---
+# Static analysis configs are development-only
+.mypy_cache
+.ruff_cache
+.flake8
+pyproject.toml
+setup.cfg
+tox.ini
+
+# --- Jupyter Notebooks ---
+# Notebooks are for exploration, not production
+*.ipynb
+.ipynb_checkpoints
+
+# --- Misc ---
+*.log
+tmp/
+temp/

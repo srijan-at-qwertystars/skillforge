@@ -1,0 +1,90 @@
+# syntax=docker/dockerfile:1
+
+# =============================================================================
+# Production-Ready Node.js Dockerfile
+# =============================================================================
+# Multi-stage build: deps → build → production
+#
+# IMPORTANT: Create a .dockerignore file to exclude node_modules, .git,
+# .env files, and other non-essential files. See dockerignore-templates/node.dockerignore
+#
+# Build with BuildKit enabled:
+#   DOCKER_BUILDKIT=1 docker build -t myapp .
+#
+# Pin your base image digest for reproducibility:
+#   node:22-slim@sha256:<digest>
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Install production + dev dependencies
+# ---------------------------------------------------------------------------
+FROM node:22-slim AS deps
+# Pin digest for reproducibility: @sha256:<paste-digest-here>
+
+WORKDIR /app
+
+# Copy only package files first to maximise layer caching
+COPY package.json package-lock.json ./
+
+# Use BuildKit cache mount so npm's cache persists across builds
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
+
+# ---------------------------------------------------------------------------
+# Stage 2: Build the application (TypeScript, bundler, etc.)
+# ---------------------------------------------------------------------------
+FROM deps AS build
+
+WORKDIR /app
+
+# Copy source code (deps already present from previous stage)
+COPY . .
+
+# Run the build step (adjust to your project's build script)
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# Stage 3: Production image — minimal, non-root, hardened
+# ---------------------------------------------------------------------------
+FROM node:22-slim AS production
+# Pin digest for reproducibility: @sha256:<paste-digest-here>
+
+# Metadata labels following OCI image spec
+LABEL org.opencontainers.image.source="https://github.com/your-org/your-repo" \
+      org.opencontainers.image.description="Production Node.js application" \
+      org.opencontainers.image.licenses="MIT"
+
+# Set production environment *before* npm ci so npm skips devDependencies
+ENV NODE_ENV=production
+
+WORKDIR /app
+
+# Copy package manifests and install production-only dependencies
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev && \
+    # Remove npm cache and unnecessary files to shrink the image
+    npm cache clean --force
+
+# Copy built artifacts from the build stage
+COPY --from=build /app/dist ./dist
+
+# Create a non-root user with a fixed UID/GID for reproducibility
+RUN groupadd --gid 1001 nodejs && \
+    useradd --uid 1001 --gid nodejs --shell /bin/false --create-home nodejs
+
+# Own the app directory
+RUN chown -R nodejs:nodejs /app
+
+# Drop to non-root user
+USER 1001
+
+# Expose the application port (adjust as needed)
+EXPOSE 3000
+
+# Health check — adjust the endpoint to match your app's health route
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["node", "-e", "require('http').get('http://localhost:3000/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"]
+
+# Use exec form so Node.js receives OS signals (SIGTERM, etc.) directly
+CMD ["node", "dist/index.js"]

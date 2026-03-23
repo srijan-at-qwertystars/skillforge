@@ -1,0 +1,79 @@
+# =============================================================================
+# .dockerignore for Go Projects
+# =============================================================================
+# Go images are typically small and fast to build.
+# This file ensures only Go source and module files enter the build context.
+# =============================================================================
+
+# --- Version Control ---
+.git
+.gitignore
+.gitattributes
+
+# --- Compiled Binaries ---
+# The binary is compiled inside the container; host binaries may be wrong arch
+# Adjust the binary name to match your project
+/myapp
+*.exe
+*.dll
+*.so
+*.dylib
+
+# --- Vendor (optional) ---
+# Uncomment if you use `go mod download` instead of vendoring
+# vendor/
+
+# --- Environment & Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- IDE & Editor ---
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Docker ---
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+compose*.yml
+compose*.yaml
+.dockerignore
+
+# --- Documentation ---
+README.md
+CHANGELOG.md
+LICENSE
+docs/
+
+# --- Testing Artifacts ---
+# Test binaries and coverage profiles add bloat without runtime value
+*.test
+*.out
+coverage.txt
+coverage.html
+*.prof
+
+# --- CI/CD ---
+.github
+.gitlab-ci.yml
+.circleci
+.travis.yml
+Jenkinsfile
+Makefile
+
+# --- Misc ---
+*.log
+tmp/
+temp/
+
+# --- Kubernetes / Helm ---
+# Deployment manifests are for the cluster, not the image
+k8s/
+helm/
+charts/
+deploy/

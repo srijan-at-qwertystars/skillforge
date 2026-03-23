@@ -1,0 +1,75 @@
+# =============================================================================
+# .dockerignore for Rust Projects
+# =============================================================================
+# Rust builds are slow — keeping the build context clean is essential
+# to avoid unnecessary cache invalidation and context transfer time.
+# =============================================================================
+
+# --- Version Control ---
+.git
+.gitignore
+.gitattributes
+
+# --- Build Artifacts ---
+# The target/ directory can be very large (GBs); the container compiles its own
+target/
+
+# --- Environment & Secrets ---
+.env
+.env.*
+!.env.example
+
+# --- IDE & Editor ---
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Docker ---
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+compose*.yml
+compose*.yaml
+.dockerignore
+
+# --- Documentation ---
+README.md
+CHANGELOG.md
+LICENSE
+docs/
+
+# --- Testing & Benchmarks ---
+# Benchmark data and test fixtures not needed in production
+benches/
+tests/
+*.profraw
+*.profdata
+
+# --- CI/CD ---
+.github
+.gitlab-ci.yml
+.circleci
+.travis.yml
+Jenkinsfile
+
+# --- Rust-Specific ---
+# Rustfmt and Clippy configs are development-only
+rustfmt.toml
+.rustfmt.toml
+clippy.toml
+.clippy.toml
+rust-toolchain.toml
+
+# --- Misc ---
+*.log
+tmp/
+temp/
+
+# --- Kubernetes / Helm ---
+k8s/
+helm/
+charts/
+deploy/

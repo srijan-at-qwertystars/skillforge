@@ -1,0 +1,87 @@
+# =============================================================================
+# .dockerignore for Node.js Projects
+# =============================================================================
+# This file prevents unnecessary files from being sent to the Docker daemon
+# during builds, which:
+#   1. Speeds up builds (smaller build context)
+#   2. Prevents secrets from leaking into images
+#   3. Avoids invalidating layer cache with irrelevant changes
+# =============================================================================
+
+# --- Version Control ---
+# Git history and config are never needed inside a container
+.git
+.gitignore
+.gitattributes
+
+# --- Dependencies ---
+# Dependencies are installed inside the container via npm ci
+# Sending host node_modules would be slow and potentially architecture-incompatible
+node_modules
+
+# --- Build Artifacts ---
+# Build output is generated inside the container; host build artifacts are stale
+dist
+build
+out
+coverage
+
+# --- Environment & Secrets ---
+# NEVER include secrets in the Docker image — use runtime env vars or secrets
+.env
+.env.*
+!.env.example
+
+# --- IDE & Editor ---
+# Editor configs and workspace files are development-only
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Docker ---
+# Prevent recursive inclusion of Docker files
+Dockerfile*
+docker-compose*.yml
+docker-compose*.yaml
+compose*.yml
+compose*.yaml
+.dockerignore
+
+# --- Documentation ---
+# Docs add bloat without runtime value
+README.md
+CHANGELOG.md
+LICENSE
+docs/
+
+# --- Testing ---
+# Test files and configs are not needed in production images
+__tests__
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+jest.config.*
+.nyc_output
+cypress
+playwright
+
+# --- CI/CD ---
+# Pipeline configs are for CI systems, not the container
+.github
+.gitlab-ci.yml
+.circleci
+.travis.yml
+Jenkinsfile
+
+# --- Misc ---
+# Logs and temp files from development
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+tmp/
+temp/

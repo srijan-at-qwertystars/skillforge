@@ -1,0 +1,110 @@
+# syntax=docker/dockerfile:1
+
+# =============================================================================
+# Production-Ready Rust Dockerfile — cargo-chef Pattern
+# =============================================================================
+# Uses cargo-chef for efficient dependency caching across rebuilds:
+#
+#   1. Chef     — installs cargo-chef tool
+#   2. Planner  — analyzes the project and creates a "recipe" of dependencies
+#   3. Builder  — cooks the recipe (builds deps only), then builds the app
+#   4. Runtime  — copies the final binary into a minimal image
+#
+# WHY cargo-chef?
+#   Rust builds are slow because cargo compiles all dependencies from scratch
+#   whenever any source file changes (invalidating the COPY . . layer).
+#   cargo-chef solves this by:
+#     a) Creating a "recipe.json" that captures dependency info without source
+#     b) Building dependencies in a separate layer (the "cook" step)
+#     c) Only source code changes trigger a recompile — deps are cached
+#
+# Build with BuildKit enabled:
+#   DOCKER_BUILDKIT=1 docker build -t myapp .
+#
+# Pin your base image digest for reproducibility:
+#   rust:1.82-slim@sha256:<digest>
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Chef — base image with cargo-chef installed
+# ---------------------------------------------------------------------------
+FROM rust:1.82-slim AS chef
+# Pin digest: @sha256:<paste-digest-here>
+
+RUN cargo install cargo-chef
+
+WORKDIR /app
+
+# ---------------------------------------------------------------------------
+# Stage 2: Planner — generate the dependency recipe
+# ---------------------------------------------------------------------------
+FROM chef AS planner
+
+# Copy the full source so cargo-chef can analyze dependencies
+COPY . .
+
+# Prepare produces recipe.json — a dependency-only lockfile
+# This file changes only when Cargo.toml or Cargo.lock change
+RUN cargo chef prepare --recipe-path recipe.json
+
+# ---------------------------------------------------------------------------
+# Stage 3: Builder — compile dependencies (cached), then the application
+# ---------------------------------------------------------------------------
+FROM chef AS builder
+
+# Cook the recipe: compiles all dependencies WITHOUT your source code
+# This layer is cached as long as recipe.json (i.e., dependencies) don't change
+COPY --from=planner /app/recipe.json recipe.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo chef cook --release --recipe-path recipe.json
+
+# Now copy the actual source code and build the application
+# Only this step re-runs when source code changes — deps are already compiled
+COPY . .
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && \
+    # Move binary out of target/ so it survives cache mount cleanup
+    cp /app/target/release/myapp /app/myapp
+
+# ---------------------------------------------------------------------------
+# Stage 4: Runtime — minimal image with only the compiled binary
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim AS runtime
+# Alternative: use gcr.io/distroless/cc-debian12:nonroot for even smaller image
+# (requires that your binary doesn't need a shell or additional system libs)
+
+# Metadata labels following OCI image spec
+LABEL org.opencontainers.image.source="https://github.com/your-org/your-repo" \
+      org.opencontainers.image.description="Production Rust application" \
+      org.opencontainers.image.licenses="MIT"
+
+# Install only runtime dependencies (TLS certificates, timezone data)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user with a fixed UID/GID
+RUN groupadd --gid 1001 appuser && \
+    useradd --uid 1001 --gid appuser --shell /bin/false --create-home appuser
+
+WORKDIR /app
+
+# Copy the compiled binary from the builder stage
+COPY --from=builder /app/myapp /app/myapp
+
+# Own the app directory
+RUN chown -R appuser:appuser /app
+
+# Drop to non-root user
+USER 1001
+
+# Expose the application port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["curl", "-f", "http://localhost:8080/health", "||", "exit", "1"]
+
+ENTRYPOINT ["/app/myapp"]
