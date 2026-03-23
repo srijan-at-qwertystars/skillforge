@@ -86,3 +86,6 @@
 | languages | [node-streams](languages/node-streams/) | Readable, Writable, Transform, pipeline, backpressure, Web Streams API, async generators, and ETL patterns |
 | devops | [pulumi-iac](devops/pulumi-iac/) | Programs, component resources, stack references, Pulumi ESC, Automation API, testing, and Terraform migration |
 | api | [openapi-specification](api/openapi-specification/) | OpenAPI 3.1, schemas, code generation, API-first design, Spectral linting, Redocly, and versioning strategies |
+| java | [java-modern-features](java/java-modern-features/) | Records, sealed classes, pattern matching, virtual threads, structured concurrency, FFM API, and Java 17-24 migration |
+| web | [cloudflare-workers](web/cloudflare-workers/) | V8 isolates, Wrangler, KV, R2, D1, Durable Objects, Queues, Workers AI, caching, and edge computing |
+| databases | [database-indexing](databases/database-indexing/) | B-tree, GIN, GiST, BRIN, composite ordering, covering indexes, partial indexes, EXPLAIN analysis, and maintenance |
