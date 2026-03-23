@@ -486,3 +486,5 @@ Ready-to-use templates and configs in `assets/`:
 | [docker-compose.yml](assets/docker-compose.yml) | Full observability stack: Collector (contrib), Jaeger (with persistent storage), Prometheus, Grafana (with pre-provisioned datasources) |
 | [node-tracing.ts](assets/node-tracing.ts) | Node.js/TypeScript tracing setup module with auto-instrumentation, all three signals, resource detectors, graceful shutdown, health check filtering |
 | [otel-env.sh](assets/otel-env.sh) | Environment variables template for OTel SDK — `source` before running your app, with development/production presets |
+
+<!-- tested: pass -->

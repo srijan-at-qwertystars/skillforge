@@ -497,3 +497,4 @@ const client = new Client({ // Cloud client
 - **[workflow-template.ts](assets/workflow-template.ts)** — Workflow with signals, queries, saga, continueAsNew
 - **[worker-template.ts](assets/worker-template.ts)** — Worker with mTLS, graceful shutdown, health check
 - **[github-actions-ci.yml](assets/github-actions-ci.yml)** — CI: lint, type-check, unit/integration/replay tests
+<!-- tested: pass -->

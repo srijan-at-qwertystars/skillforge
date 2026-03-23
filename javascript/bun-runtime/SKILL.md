@@ -498,3 +498,4 @@ Run with `bash scripts/<name>.sh`:
 - **[server-template.ts](assets/server-template.ts)** — Production Bun.serve with routing, CORS, WebSocket, logging, and error handling.
 - **[Dockerfile](assets/Dockerfile)** — Multi-stage Dockerfile (oven/bun base) with health checks and non-root user.
 - **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose for dev: Bun app + PostgreSQL + Redis with hot reload.
+<!-- tested: needs-fix -->
