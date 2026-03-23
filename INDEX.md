@@ -44,3 +44,6 @@
 | security | [container-security](security/container-security/) | Image scanning, supply chain security (SBOM/cosign), runtime hardening, seccomp/AppArmor, rootless, and Pod Security |
 | typescript | [zod-validation](typescript/zod-validation/) | Schema primitives, transforms, refinements, type inference, error handling, and integrations (RHF/tRPC/Next.js) |
 | databases | [mongodb-patterns](databases/mongodb-patterns/) | Schema design patterns, indexing strategies, aggregation pipeline, transactions, Mongoose, and sharding |
+| testing | [playwright-e2e-testing](testing/playwright-e2e-testing/) | Locators, page object model, fixtures, network mocking, visual regression, auth, and CI/CD with sharding |
+| api | [rest-api-design](api/rest-api-design/) | Resource naming, HTTP methods/status codes, RFC 9457 errors, pagination, versioning, rate limiting, and OpenAPI |
+| devops | [systemd-service-management](devops/systemd-service-management/) | Unit files, service types, timers, socket activation, security hardening, journald, and resource limits |
