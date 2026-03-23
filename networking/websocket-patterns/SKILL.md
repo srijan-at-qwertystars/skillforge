@@ -497,3 +497,5 @@ CLI: `npx wscat -c ws://localhost:8080` or `websocat ws://localhost:8080`. Load 
 | Ideal for             | Trading, gaming, IoT, high-freq    | Chat, collab, notifications        |
 
 **Use `ws`** when performance and protocol control matter. **Use Socket.IO** when developer velocity and built-in reliability matter. Both scale with Redis.
+
+<!-- tested: pass -->

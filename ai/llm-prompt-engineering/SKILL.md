@@ -498,3 +498,5 @@ Rate output 1-5 on: Accuracy, Completeness, Format adherence, Conciseness.
 - Few-shot examples more critical than for frontier models.
 - Keep prompts shorter — smaller context windows.
 - Test with lower temperature (0.1-0.3) for factual tasks.
+
+<!-- tested: pass -->
