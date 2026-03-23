@@ -476,3 +476,5 @@ rm "$file"
 ### Avoid Uppercase Variable Names for Local Use
 
 Reserve `UPPER_CASE` for environment variables and exported vars. Use `lower_case` for script-local variables to avoid collisions with `PATH`, `HOME`, `IFS`, etc.
+
+<!-- tested: pass -->

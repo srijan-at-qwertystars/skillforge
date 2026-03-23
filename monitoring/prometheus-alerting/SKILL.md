@@ -487,3 +487,5 @@ sum(rate(http_requests_total[5m]))
 # CORRECT: preserve labels needed for routing and debugging
 sum by (job, method) (rate(http_requests_total[5m]))
 ```
+
+<!-- tested: pass -->

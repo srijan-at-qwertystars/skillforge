@@ -475,3 +475,5 @@ kafka-reassign-partitions.sh --bootstrap-server broker:9092 \
 - **Ignoring schema evolution:** Changing schemas without registry enforcement breaks downstream consumers silently.
 - **Single consumer group for all services:** Use separate groups so each service tracks its own offsets independently.
 - **Over-relying on auto-commit:** Leads to message loss or duplication. Prefer manual commit for critical workloads.
+
+<!-- tested: pass -->
