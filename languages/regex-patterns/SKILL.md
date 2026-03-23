@@ -497,3 +497,5 @@ def test_email(email, expected):
 - Store patterns as named constants, not inline literals
 - Document what the pattern matches and what it rejects
 - Include test cases alongside every production regex
+
+<!-- tested: pass -->

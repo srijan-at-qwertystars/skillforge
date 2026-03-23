@@ -495,4 +495,6 @@ class Settings(BaseSettings):
     WORKERS: int = 4
 
 settings = Settings()
+
+<!-- tested: pass -->
 ```

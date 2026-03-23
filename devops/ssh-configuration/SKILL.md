@@ -497,3 +497,5 @@ KexAlgorithms diffie-hellman-group1-sha1   # Weak DH group
 - Using `StrictHostKeyChecking no` in production.
 - Running sshd on port 22 without fail2ban or rate limiting.
 - Leaving default `authorized_keys` entries from former employees.
+
+<!-- tested: pass -->
