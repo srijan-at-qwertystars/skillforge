@@ -17,3 +17,6 @@
 | kubernetes | [helm-chart-patterns](kubernetes/helm-chart-patterns/) | Chart structure, template functions, helpers, values design, dependencies, hooks, testing, and security |
 | python | [python-async-concurrency](python/python-async-concurrency/) | asyncio fundamentals, TaskGroups, concurrency primitives, patterns, pytest-asyncio, and sync integration |
 | databases | [redis-patterns](databases/redis-patterns/) | Data structures, caching strategies, distributed locks, rate limiting, Streams, Lua scripting, and cluster patterns |
+| go | [go-concurrency-patterns](go/go-concurrency-patterns/) | Goroutines, channels, select, sync primitives, errgroup, worker pools, race detection, and graceful shutdown |
+| web | [css-grid-flexbox](web/css-grid-flexbox/) | Grid vs Flexbox decision guide, layout recipes, subgrid, container queries, responsive patterns, and pitfalls |
+| security | [oauth2-openid-connect](security/oauth2-openid-connect/) | OAuth 2.1 grant types, PKCE flow, OIDC, BFF pattern, token rotation, provider integration, and vulnerabilities |
