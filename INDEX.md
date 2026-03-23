@@ -20,3 +20,6 @@
 | go | [go-concurrency-patterns](go/go-concurrency-patterns/) | Goroutines, channels, select, sync primitives, errgroup, worker pools, race detection, and graceful shutdown |
 | web | [css-grid-flexbox](web/css-grid-flexbox/) | Grid vs Flexbox decision guide, layout recipes, subgrid, container queries, responsive patterns, and pitfalls |
 | security | [oauth2-openid-connect](security/oauth2-openid-connect/) | OAuth 2.1 grant types, PKCE flow, OIDC, BFF pattern, token rotation, provider integration, and vulnerabilities |
+| react | [react-server-components](react/react-server-components/) | Server vs client components, directives, server actions, streaming, caching, App Router patterns, and migration |
+| databases | [sql-query-optimization](databases/sql-query-optimization/) | Execution plans, join strategies, subquery refactoring, sargable predicates, pagination, ORM N+1, and anti-patterns |
+| devops | [nginx-configuration](devops/nginx-configuration/) | Reverse proxy, load balancing, SSL/TLS, location blocks, rate limiting, security hardening, and performance tuning |
