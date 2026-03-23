@@ -53,3 +53,6 @@
 | python | [python-type-hints](python/python-type-hints/) | Type annotations, TypeVar, Protocol, ParamSpec, TypeGuard, mypy/pyright config, and gradual typing strategy |
 | aws | [aws-lambda-patterns](aws/aws-lambda-patterns/) | Handler patterns, Powertools, cold starts, event sources, SAM/CDK deployment, layers, and performance tuning |
 | architecture | [microservices-patterns](architecture/microservices-patterns/) | Decomposition, API gateway, circuit breaker, service mesh, sagas, CQRS, observability, and deployment |
+| testing | [load-testing-k6](testing/load-testing-k6/) | k6 script structure, scenarios, thresholds, checks, browser module, CI integration, and performance testing patterns |
+| web | [tailwind-css-patterns](web/tailwind-css-patterns/) | Tailwind v4 CSS-first config, utility patterns, dark mode, responsive design, CVA components, and plugin development |
+| databases | [elasticsearch-patterns](databases/elasticsearch-patterns/) | Mappings, Query DSL, analyzers, aggregations, ILM hot-warm-cold, performance tuning, and data modeling |
