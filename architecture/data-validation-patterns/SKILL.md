@@ -401,3 +401,5 @@ const Status = stringEnum(["active", "inactive", "pending"] as const);
 | One giant validation function | Untestable, unreusable | Compose small validators |
 | Validating the same data repeatedly | Performance waste, inconsistency | Validate once at entry, use typed values downstream |
 | Different rules client vs server | Drift causes confusion | Share schemas or generate from single source |
+
+<!-- tested: pass -->

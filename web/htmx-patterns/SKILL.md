@@ -498,3 +498,5 @@ Organize templates so partials work for both full renders and htmx responses:
 - **Duplicating server logic on client**: If you're writing JS to validate or filter data the server handles, move it server-side and return correct HTML.
 - **Using htmx as a JSON client**: htmx expects HTML responses. For JSON, use `fetch()` directly.
 - **Ignoring HTTP status codes**: Return `422` for validation errors, `204` for no-content deletes, `286` to stop polling. Use `response-targets` extension for status-based routing.
+
+<!-- tested: pass -->

@@ -498,3 +498,5 @@ Load and run: `docker load < $(nix build .#docker --print-out-paths)`.
 - **Do not ignore `flake.lock`** — commit it. Missing lockfiles break reproducibility.
 - **Do not put secrets in Nix files** — use `sops-nix` or `agenix` for secret management.
 - **Avoid IFD (import from derivation)** — slows evaluation and breaks caching.
+
+<!-- tested: pass -->
