@@ -110,3 +110,6 @@
 | elixir | [phoenix-liveview](elixir/phoenix-liveview/) | Phoenix LiveView lifecycle, LiveComponents, forms, PubSub, Streams, JS hooks, testing, and performance patterns | tested |
 | devops | [nomad-orchestration](devops/nomad-orchestration/) | HashiCorp Nomad job specs, task drivers, Consul/Vault integration, deployments, autoscaling, and multi-region federation | tested |
 | databases | [clickhouse-analytics](databases/clickhouse-analytics/) | ClickHouse MergeTree engines, columnar schema design, materialized views, query optimization, ingestion, and distributed tables | tested |
+| cpp | [cmake-patterns](cpp/cmake-patterns/) | Modern CMake targets, FetchContent, presets, generator expressions, CTest, cross-compilation, and anti-patterns | created |
+| databases | [duckdb-analytics](databases/duckdb-analytics/) | DuckDB embedded OLAP, Parquet/CSV/S3 queries, Python integration, window functions, and ETL patterns | created |
+| devops | [caddy-server](devops/caddy-server/) | Caddy automatic HTTPS, Caddyfile syntax, reverse proxy, middleware, xcaddy plugins, and Docker deployment | created |
