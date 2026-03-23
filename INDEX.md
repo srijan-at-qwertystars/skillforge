@@ -32,3 +32,6 @@
 | web | [web-accessibility-a11y](web/web-accessibility-a11y/) | WCAG 2.2, semantic HTML, ARIA patterns, keyboard navigation, color contrast, forms, and testing tools |
 | networking | [grpc-protobuf](networking/grpc-protobuf/) | Protobuf schema design, gRPC streaming, error handling, interceptors, Buf CLI, load balancing, and testing |
 | devops | [kubernetes-troubleshooting](devops/kubernetes-troubleshooting/) | Pod failures, networking/DNS diagnosis, resource pressure, RBAC debugging, kubectl power commands, and decision trees |
+| databases | [database-migration-strategies](databases/database-migration-strategies/) | Migration tools, zero-downtime patterns, expand-contract, large table strategies, rollback, and CI/CD integration |
+| security | [cors-configuration](security/cors-configuration/) | CORS headers, preflight requests, credentials, framework configs (Express/Django/Spring/Nginx), errors, and debugging |
+| java | [spring-boot-patterns](java/spring-boot-patterns/) | REST controllers, Spring Data JPA, SecurityFilterChain, testing pyramid, Actuator, and Spring Boot 3.x patterns |
