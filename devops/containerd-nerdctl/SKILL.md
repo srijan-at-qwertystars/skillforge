@@ -498,3 +498,5 @@ sudo systemctl status buildkit
 - [assets/buildkitd.toml](assets/buildkitd.toml) — BuildKit daemon config with containerd worker, GC policies, multi-platform.
 - [assets/cni-bridge.conflist](assets/cni-bridge.conflist) — CNI bridge network with portmap, firewall, host-local IPAM.
 - [assets/nerdctl-compose.yml](assets/nerdctl-compose.yml) — Multi-service compose (web, API, Postgres, Redis, worker) with health checks.
+
+<!-- tested: needs-fix -->

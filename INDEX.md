@@ -113,6 +113,6 @@
 | cpp | [cmake-patterns](cpp/cmake-patterns/) | Modern CMake targets, FetchContent, presets, generator expressions, CTest, cross-compilation, and anti-patterns | tested |
 | databases | [duckdb-analytics](databases/duckdb-analytics/) | DuckDB embedded OLAP, Parquet/CSV/S3 queries, Python integration, window functions, and ETL patterns | tested |
 | devops | [caddy-server](devops/caddy-server/) | Caddy automatic HTTPS, Caddyfile syntax, reverse proxy, middleware, xcaddy plugins, and Docker deployment | tested |
-| networking | [wireguard-vpn](networking/wireguard-vpn/) | WireGuard VPN configuration, key management, topologies, NAT traversal, split tunneling, and cloud deployment | enriched |
-| databases | [sqlite-patterns](databases/sqlite-patterns/) | SQLite WAL mode, PRAGMA tuning, FTS5, JSON support, concurrency, extensions, and production patterns | enriched |
-| devops | [containerd-nerdctl](devops/containerd-nerdctl/) | containerd runtime, nerdctl CLI, CNI networking, rootless containers, BuildKit, and Docker migration | enriched |
+| networking | [wireguard-vpn](networking/wireguard-vpn/) | WireGuard VPN configuration, key management, topologies, NAT traversal, split tunneling, and cloud deployment | tested |
+| databases | [sqlite-patterns](databases/sqlite-patterns/) | SQLite WAL mode, PRAGMA tuning, FTS5, JSON support, concurrency, extensions, and production patterns | tested |
+| devops | [containerd-nerdctl](devops/containerd-nerdctl/) | containerd runtime, nerdctl CLI, CNI networking, rootless containers, BuildKit, and Docker migration | tested |

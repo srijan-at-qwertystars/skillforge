@@ -482,3 +482,5 @@ change port to 443/UDP if needed.
 | [assets/client.conf](assets/client.conf) | Client config template with full/split tunnel options, kill switch, and DNS leak prevention |
 | [assets/docker-compose.yml](assets/docker-compose.yml) | Docker Compose for WireGuard with automatic config generation, health checks, and optional web UI |
 | [assets/wg-firewall.nft](assets/wg-firewall.nft) | nftables ruleset — input filtering, forwarding, NAT masquerade, MSS clamping, rate limiting |
+
+<!-- tested: pass -->

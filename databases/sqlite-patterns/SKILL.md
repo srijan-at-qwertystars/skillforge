@@ -498,3 +498,5 @@ VACUUM INTO 'compacted.db';
 | [assets/fts5-setup.sql](assets/fts5-setup.sql) | FTS5 full-text search setup with content table, sync triggers, and example queries |
 | [assets/migration-template.sql](assets/migration-template.sql) | Schema migration template with version tracking, up/down sections, and verification |
 | [assets/connection-pool.py](assets/connection-pool.py) | Python connection pool: single writer + multiple readers with WAL mode and context managers |
+
+<!-- tested: pass -->
