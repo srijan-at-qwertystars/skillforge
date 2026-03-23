@@ -35,3 +35,6 @@
 | databases | [database-migration-strategies](databases/database-migration-strategies/) | Migration tools, zero-downtime patterns, expand-contract, large table strategies, rollback, and CI/CD integration |
 | security | [cors-configuration](security/cors-configuration/) | CORS headers, preflight requests, credentials, framework configs (Express/Django/Spring/Nginx), errors, and debugging |
 | java | [spring-boot-patterns](java/spring-boot-patterns/) | REST controllers, Spring Data JPA, SecurityFilterChain, testing pyramid, Actuator, and Spring Boot 3.x patterns |
+| web | [web-performance-optimization](web/web-performance-optimization/) | Core Web Vitals, code splitting, image/font optimization, resource hints, bundle analysis, and performance budgets |
+| git | [git-hooks-automation](git/git-hooks-automation/) | Husky v9, lint-staged, pre-commit framework, commitlint, Conventional Commits, Lefthook, and team sharing |
+| architecture | [event-driven-architecture](architecture/event-driven-architecture/) | Event sourcing, CQRS, saga patterns, outbox pattern, idempotent consumers, schema evolution, and error handling |
