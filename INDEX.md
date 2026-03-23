@@ -38,3 +38,6 @@
 | web | [web-performance-optimization](web/web-performance-optimization/) | Core Web Vitals, code splitting, image/font optimization, resource hints, bundle analysis, and performance budgets |
 | git | [git-hooks-automation](git/git-hooks-automation/) | Husky v9, lint-staged, pre-commit framework, commitlint, Conventional Commits, Lefthook, and team sharing |
 | architecture | [event-driven-architecture](architecture/event-driven-architecture/) | Event sourcing, CQRS, saga patterns, outbox pattern, idempotent consumers, schema evolution, and error handling |
+| ai | [llm-prompt-engineering](ai/llm-prompt-engineering/) | Chain-of-thought, few-shot, system prompts, structured output, tool calling, prompt chaining, and provider tips |
+| networking | [websocket-patterns](networking/websocket-patterns/) | WebSocket protocol, server/client implementations, reconnection, heartbeat, scaling with Redis, and security |
+| devops | [logging-structured](devops/logging-structured/) | JSON logging, log levels, correlation IDs, context propagation, library examples (pino/structlog/slog), and redaction |
