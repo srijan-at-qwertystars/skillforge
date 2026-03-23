@@ -446,3 +446,5 @@ go process()
 time.Sleep(time.Second) // BUG: race, unreliable
 // FIX: use WaitGroup, errgroup, or channel signal.
 ```
+
+<!-- tested: pass -->

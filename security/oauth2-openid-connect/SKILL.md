@@ -471,3 +471,5 @@ For all providers: always fetch discovery document at startup. Cache JWKS with T
 [ ] Token revocation on logout and password change
 [ ] Sender-constrained tokens (DPoP/mTLS) where feasible
 ```
+
+<!-- tested: pass -->
