@@ -458,3 +458,5 @@ log.Printf("InUse=%d Idle=%d WaitCount=%d WaitDuration=%s",
 **Never recycling connections:** Stale connections hit firewall/load-balancer idle timeouts and fail silently. Always set `maxLifetime` / `pool_recycle`.
 
 **Sharing pools across unrelated workloads:** A slow analytics query in a shared pool starves fast OLTP queries. Use separate pools for different workload classes.
+
+<!-- tested: pass -->

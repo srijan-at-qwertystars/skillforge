@@ -493,3 +493,5 @@ pidstat 1 3               # per-process CPU breakdown
 ```
 
 If the triage points to a subsystem, dive deeper with perf, strace, or bpftrace as described above.
+
+<!-- tested: pass -->

@@ -409,3 +409,5 @@ Each environment gets its own module graph, plugin pipeline, and resolved config
 - **CSS in library mode**: Customizable output file names.
 - **Node.js**: Requires 18, 20, or 22+. Node 21 dropped.
 - **Rolldown** (future): Rust-based bundler integration in progress. Rollup plugin API remains compatible.
+
+<!-- tested: pass -->
