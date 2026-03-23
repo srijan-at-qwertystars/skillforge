@@ -1,0 +1,76 @@
+# =============================================================================
+# Dockerfile using mise for tool installation
+# =============================================================================
+# Installs tools from .mise.toml, builds the project, then creates a minimal
+# runtime image without mise.
+#
+# Usage:
+#   docker build -t myapp .
+#   docker run -p 3000:3000 myapp
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Install tools and build with mise
+# ---------------------------------------------------------------------------
+FROM ubuntu:22.04 AS builder
+
+# Avoid interactive prompts during apt-get
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    git \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install mise
+RUN curl -fsSL https://mise.run | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+# Copy mise config first (layer caching: only re-install tools if config changes)
+WORKDIR /app
+COPY .mise.toml mise.lock* ./
+
+# Install tools from .mise.toml
+RUN mise install
+
+# Add mise shims to PATH for non-interactive use
+ENV PATH="/root/.local/share/mise/shims:$PATH"
+
+# Copy application source
+COPY . .
+
+# Install dependencies and build
+# Uncomment and adjust for your project:
+# RUN npm install
+# RUN mise run build
+
+# ---------------------------------------------------------------------------
+# Stage 2: Runtime (minimal, no mise)
+# ---------------------------------------------------------------------------
+FROM ubuntu:22.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy built artifacts from builder stage
+# Adjust paths for your project:
+# COPY --from=builder /app/dist ./dist
+# COPY --from=builder /app/node_modules ./node_modules
+# COPY --from=builder /app/package.json ./
+
+# If you need the runtime itself (e.g., Node.js):
+# COPY --from=builder /root/.local/share/mise/installs/node /opt/node
+# ENV PATH="/opt/node/bin:$PATH"
+
+EXPOSE 3000
+
+# CMD ["node", "dist/server.js"]
+CMD ["echo", "Configure CMD for your application"]

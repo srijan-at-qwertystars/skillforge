@@ -66,20 +66,13 @@ app.delete('/users/:id', (c) => c.text('Deleted', 204))
 ### Path Parameters
 
 ```ts
-// Named params
 app.get('/users/:id', (c) => c.json({ id: c.req.param('id') }))
-
-// Multiple params
 app.get('/posts/:postId/comments/:commentId', (c) => {
-  const { postId, commentId } = c.req.param()
+  const { postId, commentId } = c.req.param()  // all params as object
   return c.json({ postId, commentId })
 })
-
-// Wildcard — everything after /files/
-app.get('/files/*', (c) => c.text(`File: ${c.req.param('*')}`))
-
-// Regex constraint
-app.get('/page/:slug{[a-z0-9-]+}', (c) => c.text(c.req.param('slug')))
+app.get('/files/*', (c) => c.text(`File: ${c.req.param('*')}`))     // wildcard
+app.get('/page/:slug{[a-z0-9-]+}', (c) => c.text(c.req.param('slug'))) // regex
 ```
 
 ### Route Groups
@@ -115,13 +108,11 @@ c.body(arrayBuffer)                // Raw body
 c.notFound()                       // 404 response
 c.header('X-Custom', 'value')      // Set response header
 c.status(201)                      // Set status code
-```
 
 ### Request Data
 
 ```ts
 const id = c.req.param('id')              // Path param
-const allParams = c.req.param()           // All params as object
 const q = c.req.query('q')               // Single query param
 const tags = c.req.queries('tag')         // Repeated query params as array
 const auth = c.req.header('Authorization')
@@ -129,7 +120,6 @@ const body = await c.req.json()           // Parse JSON body
 const form = await c.req.parseBody()      // Parse form/multipart
 const text = await c.req.text()           // Raw text body
 const url = c.req.url                     // Full URL
-const path = c.req.path                   // Path portion
 const method = c.req.method               // HTTP method
 const raw = c.req.raw                     // Original Request object
 ```
@@ -154,36 +144,23 @@ app.get('/', (c) => c.json({ requestId: c.get('requestId') }))
 ```ts
 import { cors } from 'hono/cors'
 import { logger } from 'hono/logger'
-import { basicAuth } from 'hono/basic-auth'
 import { jwt } from 'hono/jwt'
 import { compress } from 'hono/compress'
 import { cache } from 'hono/cache'
 import { etag } from 'hono/etag'
-import { timing } from 'hono/timing'
-import { prettyJSON } from 'hono/pretty-json'
 import { secureHeaders } from 'hono/secure-headers'
 
 app.use('*', logger())
 app.use('*', cors({ origin: 'https://example.com' }))
 app.use('*', secureHeaders())
-app.use('*', etag())
 app.use('/api/*', compress())
-
-// Basic auth on admin routes
-app.use('/admin/*', basicAuth({ username: 'admin', password: 'secret' }))
 
 // JWT auth — payload available via c.get('jwtPayload')
 app.use('/api/*', jwt({ secret: 'mySecretKey' }))
-app.get('/api/me', (c) => {
-  const payload = c.get('jwtPayload')
-  return c.json(payload)
-})
+app.get('/api/me', (c) => c.json(c.get('jwtPayload')))
 
 // Caching (Cloudflare Workers)
 app.use('/static/*', cache({ cacheName: 'my-app', cacheControl: 'max-age=3600' }))
-
-// Server-Timing header
-app.use('*', timing())
 ```
 
 ### Custom Middleware
@@ -345,11 +322,6 @@ app.use('*', jsxRenderer(({ children }) => (
   <html><body>{children}</body></html>
 ), { stream: true }))
 
-const AsyncData = async () => {
-  const data = await fetchExpensiveData()
-  return <div>{data}</div>
-}
-
 app.get('/stream', (c) => c.render(
   <Suspense fallback={<div>Loading...</div>}><AsyncData /></Suspense>
 ))
@@ -357,44 +329,26 @@ app.get('/stream', (c) => c.render(
 
 ## Testing
 
-Use `app.request()` for in-memory testing. No server needed. Works with Vitest, Jest, or any test runner.
+Use `app.request()` for in-memory testing — no server needed. Works with Vitest, Jest, or any test runner.
 
 ```ts
-import { Hono } from 'hono'
-import { describe, it, expect } from 'vitest'
-
 const app = new Hono()
 app.get('/hello', (c) => c.json({ message: 'Hello' }))
-app.post('/echo', async (c) => {
-  const body = await c.req.json()
-  return c.json(body)
-})
 
-describe('API', () => {
-  it('GET /hello returns greeting', async () => {
-    const res = await app.request('/hello')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ message: 'Hello' })
-  })
+// Test
+const res = await app.request('/hello')
+expect(res.status).toBe(200)
+expect(await res.json()).toEqual({ message: 'Hello' })
 
-  it('POST /echo returns body', async () => {
-    const res = await app.request('/echo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ foo: 'bar' }),
-    })
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ foo: 'bar' })
-  })
-
-  it('returns 404 for unknown routes', async () => {
-    const res = await app.request('/unknown')
-    expect(res.status).toBe(404)
-  })
+// POST with body
+const res2 = await app.request('/echo', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ foo: 'bar' }),
 })
 ```
 
-`app.request(path, init?, env?)` — `init` follows the standard `RequestInit` interface. Pass `env` for Cloudflare bindings in tests.
+`app.request(path, init?, env?)` — `init` follows `RequestInit`. Pass `env` for Cloudflare bindings in tests.
 
 ## Error Handling
 
@@ -470,8 +424,7 @@ export const handler = handle(app)
 
 ```ts
 import { getRuntimeKey } from 'hono/adapter'
-app.get('/runtime', (c) => c.text(getRuntimeKey()))
-// Returns: 'workerd' | 'deno' | 'bun' | 'node' | 'lagon' | ...
+app.get('/runtime', (c) => c.text(getRuntimeKey())) // 'workerd'|'deno'|'bun'|'node'|...
 ```
 
 ## Hono vs Express / Fastify
@@ -486,7 +439,7 @@ app.get('/runtime', (c) => c.text(getRuntimeKey()))
 | Perf (Bun) | ~150k req/s | ~25k req/s | ~60k req/s |
 | Middleware | Composable async | callback-based | plugin system |
 
-Migrate from Express: replace `req/res` with `c`, `res.json()` → `c.json()`, `req.params` → `c.req.param()`, `req.query` → `c.req.query()`.
+Migrate from Express: `req/res` → `c`, `res.json()` → `c.json()`, `req.params` → `c.req.param()`, `req.query` → `c.req.query()`.
 
 ## Common Pitfalls
 
@@ -498,3 +451,48 @@ Migrate from Express: replace `req/res` with `c`, `res.json()` → `c.json()`, `
 6. **Cloudflare bindings** — access via `c.env.BINDING_NAME`, not `process.env`. Type them with `Hono<{ Bindings: { ... } }>`.
 7. **Validator target mismatch** — `zValidator('json', schema)` validates JSON body. Use `'query'` for query params, `'param'` for path params. Mismatched targets silently pass.
 8. **Middleware order** — middleware runs in registration order. Place `cors()` and `logger()` before route-specific middleware. Place `onError` handler before routes that throw.
+
+## Reference Documents
+
+### `references/advanced-patterns.md`
+Deep dive into advanced Hono features: RPC client (`hc`) type inference, `InferRequestType`/`InferResponseType`, middleware composition (`every`/`some` from `hono/combine`), custom middleware authoring with `createMiddleware`, OpenAPI integration (`@hono/zod-openapi` + Swagger UI), WebSocket support (per-runtime `upgradeWebSocket`), streaming responses (`c.stream`, `c.streamText`), Server-Sent Events (`streamSSE`), session management (cookies, signed cookies), rate limiting patterns (in-memory, KV-backed), authentication (JWT, API keys, OAuth2), and multi-tenant patterns (subdomain, header, path-based).
+
+### `references/runtime-guide.md`
+Per-runtime deployment and configuration: Cloudflare Workers (wrangler.toml, KV, D1, R2 bindings, Durable Objects), Bun (`Bun.serve`, static files, SQLite), Deno (`Deno.serve`, Deno KV, deno.json imports), Node.js (`@hono/node-server`, HTTP/2, Dockerfile), AWS Lambda (`hono/aws-lambda`, SAM template), Vercel (edge/serverless, `hono/vercel`), Fastly Compute (`app.fire()`). Cross-runtime env access with `env()` helper and `getRuntimeKey()`. Performance comparison table.
+
+### `references/troubleshooting.md`
+Common issues and fixes: middleware ordering bugs (CORS before auth, logger first, `onError` placement), runtime-specific gotchas (CF Workers `c.env` vs `process.env`, Bun WebSocket setup, Deno permissions, Node adapter requirement), TypeScript type errors (RPC type loss, generics mismatch, `c.req.valid()` returning `never`, TS slowness with large chains), CORS preflight (OPTIONS 404, multi-origin, credentials), body parsing (double consumption, FormData files, `bodyLimit`), streaming failures (Worker CPU limits, SSE keepalive, proxy buffering), testing patterns per runtime (mocking CF bindings, auth helpers, middleware isolation, integration tests).
+
+## Scripts
+
+### `scripts/create-hono-app.sh`
+Scaffold a Hono project with runtime selection, TypeScript config, common middleware, test file, and runtime-specific entry point. Supports `--with-openapi` and `--with-auth` flags.
+
+```bash
+./scripts/create-hono-app.sh my-api --runtime bun --with-openapi
+```
+
+### `scripts/openapi-scaffold.sh`
+Generate `@hono/zod-openapi` route files from an OpenAPI 3.x spec (JSON or YAML). Creates typed route definitions, Zod schemas, and Swagger UI endpoint.
+
+```bash
+./scripts/openapi-scaffold.sh api-spec.yaml --output ./src/routes
+```
+
+### `scripts/hono-benchmark.sh`
+Benchmark a running Hono app using `wrk` or `autocannon`. Supports multiple endpoints, custom methods/bodies, warmup, and connection tuning.
+
+```bash
+./scripts/hono-benchmark.sh -u http://localhost:3000 -e / -e /api/users -d 30
+```
+
+## Assets
+
+### `assets/cloudflare-worker-template/`
+Ready-to-deploy Cloudflare Workers template: `wrangler.toml` with KV/D1/R2 binding stubs + `src/index.ts` with typed bindings, middleware stack, and error handling.
+
+### `assets/bun-server-template/`
+Bun server template: `package.json` with dev/build/test scripts + `src/index.ts` with static file serving, API routes, and hot reload support.
+
+### `assets/docker-compose.yml`
+Docker Compose for Hono Node.js app with Postgres 16 and Redis 7. Includes health checks, volume persistence, and a Dockerfile example in comments.

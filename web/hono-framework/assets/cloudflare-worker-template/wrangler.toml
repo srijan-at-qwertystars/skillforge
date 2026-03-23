@@ -1,0 +1,28 @@
+name = "hono-cloudflare-worker"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# Environment variables
+[vars]
+ENVIRONMENT = "production"
+
+# KV Namespace (uncomment and set ID after creating)
+# [[kv_namespaces]]
+# binding = "KV"
+# id = "<your-kv-namespace-id>"
+
+# D1 Database (uncomment and set ID after creating)
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "app-db"
+# database_id = "<your-d1-database-id>"
+
+# R2 Bucket (uncomment and set name after creating)
+# [[r2_buckets]]
+# binding = "BUCKET"
+# bucket_name = "app-bucket"
+
+# Development settings
+[dev]
+port = 8787
+local_protocol = "http"

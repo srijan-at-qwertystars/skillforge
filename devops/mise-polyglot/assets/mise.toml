@@ -1,0 +1,135 @@
+# =============================================================================
+# .mise.toml — Comprehensive Template
+# =============================================================================
+# Place in project root. Commit to version control.
+# Local overrides: .mise.local.toml (add to .gitignore)
+# Docs: https://mise.jdx.dev/configuration.html
+# =============================================================================
+
+# Minimum mise version required (errors if older)
+min_version = "2025.1.0"
+
+# =============================================================================
+# [tools] — Pin language/tool versions
+# =============================================================================
+[tools]
+node = "20"                        # latest 20.x (LTS)
+python = "3.12"                    # latest 3.12.x
+# go = "1.22"                      # uncomment as needed
+# ruby = "3.3"
+# java = "21"
+# rust = "stable"
+# terraform = "1.7"
+# erlang = "26"
+# elixir = "1.16"
+# bun = "latest"
+# deno = "latest"
+
+# --- Backend-installed tools ---
+# "npm:prettier" = "3"             # npm backend
+# "npm:eslint" = "9"
+# "npm:typescript" = "5"
+# "cargo:ripgrep" = "14"           # cargo backend
+# "pipx:black" = "latest"          # pipx backend
+# "aqua:cli/cli" = "2"             # aqua backend (GitHub CLI)
+# "go:golang.org/x/tools/gopls" = "latest"  # go backend
+
+# --- Tool with options ---
+# [tools.java]
+# version = "21"
+# options = { provider = "temurin" }
+
+# --- Multiple versions (first is default) ---
+# python = ["3.12", "3.11"]
+
+# =============================================================================
+# [env] — Environment variables (replaces direnv)
+# =============================================================================
+[env]
+NODE_ENV = "development"
+# DATABASE_URL = "postgresql://localhost/devdb"
+# API_URL = "http://localhost:3000"
+# SECRET_KEY = "dev-only-key"
+
+# Template syntax (Tera/Jinja2-like)
+# PROJECT_ROOT = "{{ config_root }}"
+# HOME_BIN = "{{ env.HOME }}/.local/bin"
+
+# Source .env files (loaded in order)
+_.file = [".env"]
+
+# Prepend to PATH
+_.path = ["./node_modules/.bin", "./scripts", "./bin"]
+
+# Source a shell script and capture exports
+# _.source = "./scripts/env.sh"
+
+# =============================================================================
+# [tasks] — Task runner (replaces Make, npm scripts, Just)
+# =============================================================================
+
+[tasks.setup]
+description = "Set up development environment"
+run = """
+echo '📦 Installing dependencies...'
+# npm install
+# pip install -r requirements.txt
+echo '✅ Setup complete!'
+"""
+
+[tasks.dev]
+description = "Start development server"
+run = "echo 'TODO: configure dev server command'"
+# depends = ["setup"]
+
+[tasks.build]
+description = "Build the project"
+run = "echo 'TODO: configure build command'"
+# sources = ["src/**/*"]
+# outputs = ["dist/**/*"]
+
+[tasks.test]
+description = "Run tests"
+run = "echo 'TODO: configure test command'"
+# env = { CI = "true" }
+
+[tasks.lint]
+description = "Lint code"
+run = "echo 'TODO: configure lint command'"
+
+[tasks.format]
+description = "Format code"
+run = "echo 'TODO: configure format command'"
+
+[tasks.ci]
+description = "Full CI pipeline"
+depends = ["lint", "test", "build"]
+run = "echo '✅ CI passed'"
+
+[tasks.clean]
+description = "Clean build artifacts"
+run = """
+rm -rf dist/ build/ .cache/
+echo '🧹 Cleaned'
+"""
+
+# =============================================================================
+# [hooks] — Shell hooks (require mise activate)
+# =============================================================================
+# [hooks]
+# enter = "echo '👋 Welcome to the project'"
+# leave = "echo '👋 Leaving project'"
+
+# Run a task on enter:
+# [hooks]
+# enter = { task = "setup" }
+
+# =============================================================================
+# [settings] — Mise behavior settings
+# =============================================================================
+[settings]
+legacy_version_file = true          # read .node-version, .python-version, etc.
+# always_keep_download = false
+# jobs = 4                          # parallel install jobs
+# yes = false                       # auto-confirm prompts
+# lockfile = true                   # generate mise.lock for reproducibility

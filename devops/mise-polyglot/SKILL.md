@@ -151,13 +151,13 @@ legacy_version_file = true          # read .node-version, .python-version, etc.
 always_keep_download = false
 ```
 
-### Config File Hierarchy (merged, later overrides earlier)
+### Config File Hierarchy (merged, later overrides)
 
-1. `~/.config/mise/config.toml` — global defaults
-2. `.mise.toml` — project config (committed)
+1. `~/.config/mise/config.toml` — global
+2. `.mise.toml` — project (committed)
 3. `.mise.local.toml` — local overrides (gitignored)
 4. `.mise/config.toml` — alternative project location
-5. `mise.<ENV>.toml` — environment-specific (e.g., `mise.production.toml`)
+5. `mise.<ENV>.toml` — environment-specific
 
 ## Environment Variables
 
@@ -182,9 +182,8 @@ _.path = ["./node_modules/.bin", "./scripts"]
 
 ### Precedence
 
-- `.mise.toml` `[env]` overrides shell env
-- `.mise.local.toml` overrides `.mise.toml`
-- `_.file` values are loaded in order; later files override earlier ones
+- `.mise.toml` `[env]` overrides shell env; `.mise.local.toml` overrides `.mise.toml`
+- `_.file` values loaded in order; later files override earlier
 - Use `_.source` to run a script and capture exported variables
 
 ### Example: Per-Environment Config
@@ -196,7 +195,6 @@ NODE_ENV = "production"
 DATABASE_URL = "postgresql://prod-host/proddb"
 LOG_LEVEL = "warn"
 ```
-
 Activate with: `MISE_ENV=production mise run deploy`
 
 ## Task Runner
@@ -320,24 +318,18 @@ No migration required — mise reads these alongside `.mise.toml`. When both exi
 
 ## Hooks
 
-Hooks run shell commands on directory events. Require `mise activate` in the shell.
+Hooks run shell commands on directory events. Require `mise activate`.
 
 ```toml
 [hooks]
-enter = "echo 'Entered project'"                  # once on first cd into project
-leave = "echo 'Left project'"                      # when leaving project tree
-cd = "echo 'Changed to {{cwd}}'"                   # every cd within project
-
-# Run a mise task as a hook
-[hooks]
-enter = { task = "setup" }
+enter = "echo 'Entered project'"         # once on first cd into project
+leave = "echo 'Left project'"            # when leaving project tree
+cd = "echo 'Changed to {{cwd}}'"         # every cd within project
+enter = { task = "setup" }               # run a mise task as hook
 ```
-
-Hooks fire only when mise is activated in the shell (via `eval "$(mise activate ...)"`).
-
 ## Settings
 
-Configure via `mise settings set KEY VALUE` or in `[settings]` block:
+Configure via `mise settings set KEY VALUE` or in `[settings]`:
 
 ```toml
 [settings]
@@ -349,11 +341,9 @@ raw = false                       # show raw install output
 yes = false                       # auto-confirm prompts
 ```
 
-Key settings:
 ```sh
 mise settings ls                  # list all settings and values
 mise settings set jobs 8          # set parallel jobs
-mise settings set yes true        # skip confirmation prompts
 ```
 
 ## Comparison with Other Tools
@@ -367,7 +357,7 @@ mise settings set yes true        # skip confirmation prompts
 | Legacy compat | ✅ | N/A | N/A | N/A | N/A |
 | Single binary | ✅ | ❌ | ❌ | ❌ | ✅ |
 
-Mise is a drop-in replacement for asdf with better performance and more features. It reads `.tool-versions` natively. Migration: just install mise and activate — existing `.tool-versions` files work immediately.
+Mise is a drop-in replacement for asdf with better performance and more features. It reads `.tool-versions` natively — just install mise and activate.
 
 ## Team Usage Patterns
 
@@ -388,10 +378,8 @@ mise run setup                      # run project setup task (if defined)
 repo/
 ├── .mise.toml              # shared tools (node, python)
 ├── services/
-│   ├── api/
-│   │   └── .mise.toml      # api-specific (go, extra env vars)
-│   └── web/
-│       └── .mise.toml      # web-specific (node version override)
+│   ├── api/.mise.toml      # api-specific (go, extra env vars)
+│   └── web/.mise.toml      # web-specific (node version override)
 ```
 
 Child `.mise.toml` files inherit and override parent settings.
@@ -410,7 +398,6 @@ mise.local.toml
 ```yaml
 name: CI
 on: [push, pull_request]
-
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -418,13 +405,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: jdx/mise-action@v2
         with:
-          install: true        # run mise install
-          cache: true          # cache tool installs
+          install: true
+          cache: true
       - run: mise run test
       - run: mise run build
 ```
 
-The action reads `.mise.toml` from the repo, installs all tools, and caches them. No separate setup-node/setup-python steps needed.
+The action reads `.mise.toml`, installs and caches all tools.
 
 ### Inline Config (no .mise.toml in repo)
 
@@ -448,14 +435,14 @@ mise run test
 
 ## Common Pitfalls
 
-1. **Forgot shell activation** — mise commands work but tool shims do not activate. Always add `eval "$(mise activate ...)"` to shell rc. Run `mise doctor` to diagnose.
-2. **Conflicting version files** — `.mise.toml` takes precedence over `.tool-versions` and `.node-version`. Remove duplicates to avoid confusion.
-3. **PATH not updated** — restart shell or `source` rc file after first install. Mise modifies PATH dynamically on cd.
-4. **asdf plugins disabled** — mise disables asdf backend by default on some platforms. Enable with `mise settings set disable_backends ""` if needed.
-5. **Global vs local** — `mise use node@20` writes to `.mise.toml` (local). Use `mise use -g node@20` for global default in `~/.config/mise/config.toml`.
-6. **Tasks not found** — ensure tasks are defined in `.mise.toml` or as executable files in `.mise/tasks/`. Run `mise tasks` to list available tasks.
-7. **Hooks not firing** — hooks require `mise activate` in the shell. They do not work with `mise exec` or `mise run` alone.
-8. **Lockfile** — use `mise.lock` to pin exact versions for reproducible builds. Generated automatically when using `mise use`.
+1. **Forgot shell activation** — tools don't activate. Add `eval "$(mise activate ...)"` to shell rc. Run `mise doctor`.
+2. **Conflicting version files** — `.mise.toml` takes precedence over `.tool-versions`/`.node-version`. Remove duplicates.
+3. **PATH not updated** — restart shell or `source` rc file after first install.
+4. **asdf plugins disabled** — enable with `mise settings set disable_backends ""` if needed.
+5. **Global vs local** — `mise use node@20` is local; use `-g` for global default.
+6. **Tasks not found** — check `.mise.toml` or `.mise/tasks/`. Run `mise tasks` to list.
+7. **Hooks not firing** — hooks require `mise activate`; they don't work with `mise exec` or `mise run`.
+8. **Lockfile** — use `mise.lock` for reproducible builds. Generated automatically by `mise use`.
 
 ## Quick Reference
 
@@ -485,3 +472,29 @@ mise self-update                # update mise itself
 mise cache clear                # clear download cache
 mise reshim                     # rebuild shims
 ```
+
+## Resources
+
+### Reference Guides (`references/`)
+
+| File | Contents |
+|------|----------|
+| `advanced-patterns.md` | File tasks, task dependencies/outputs/parallelism, watch mode, environment templates (Tera), backend-specific config (aqua, cargo, pipx, npm, go), full settings reference, hooks, plugin development, custom registries, profiles |
+| `team-workflow.md` | Adopting mise in repos, onboarding developers, CI/CD setup (GitHub Actions via jdx/mise-action, GitLab CI, CircleCI), migration from asdf/.tool-versions, migration from nvm/.nvmrc, migration from pyenv/.python-version, enforcing versions, Docker integration |
+| `troubleshooting.md` | Shell activation issues, PATH conflicts, tool install failures (Python/Node/Ruby), backend errors, legacy file conflicts, slow shell startup diagnosis, `mise doctor` interpretation, plugin compatibility |
+
+### Scripts (`scripts/`)
+
+| File | Purpose |
+|------|---------|
+| `install-mise.sh` | Install mise and configure shell activation (bash/zsh/fish). Supports `--no-activate` flag. |
+| `migrate-from-asdf.sh` | Convert `.tool-versions` to `.mise.toml` with tool name mapping (nodejs→node, golang→go). |
+| `mise-project-init.sh` | Detect languages in a project and generate `.mise.toml` with tools, tasks, and env vars. |
+
+### Templates & Assets (`assets/`)
+
+| File | Description |
+|------|-------------|
+| `mise.toml` | Comprehensive `.mise.toml` template with tools, env, tasks, hooks, and settings sections |
+| `github-action.yml` | GitHub Actions CI workflow using `jdx/mise-action` with lint/test/build/deploy jobs |
+| `dockerfile` | Multi-stage Dockerfile installing tools via mise, producing a minimal runtime image |

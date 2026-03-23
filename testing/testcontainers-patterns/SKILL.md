@@ -388,7 +388,7 @@ const pgContainer = env.getContainer("postgres-1");
 
 ## CI/CD Integration
 
-### GitHub Actions
+Docker is pre-installed on GitHub Actions `ubuntu-latest`. No extra config needed:
 
 ```yaml
 jobs:
@@ -396,91 +396,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-      - run: ./mvnw verify -Pfailsafe
-```
-
-Docker is pre-installed on `ubuntu-latest` runners. No extra config needed.
-
-### GitHub Actions with Testcontainers Cloud
-
-```yaml
-jobs:
-  integration-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: atomicjar/testcontainers-cloud-setup@v1
-        with:
-          token: ${{ secrets.TC_CLOUD_TOKEN }}
       - run: ./mvnw verify
 ```
 
-### GitLab CI with Docker-in-Docker
-
-```yaml
-integration-tests:
-  image: maven:3.9-eclipse-temurin-21
-  services:
-    - docker:dind
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-    TESTCONTAINERS_HOST_OVERRIDE: docker
-  script:
-    - mvn verify -Pfailsafe
-```
+For Testcontainers Cloud: add `atomicjar/testcontainers-cloud-setup@v1` step.
+For GitLab CI: use `docker:dind` service with `DOCKER_HOST=tcp://docker:2375` and
+`TESTCONTAINERS_HOST_OVERRIDE=docker`. See `references/troubleshooting.md` for details.
 
 ## Performance Optimization
 
-### Singleton Pattern (share container across test suite)
-
-```java
-public abstract class AbstractIntegrationTest {
-    static final PostgreSQLContainer<?> POSTGRES;
-    static {
-        POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withReuse(true);
-        POSTGRES.start();
-    }
-}
-// All test classes extend AbstractIntegrationTest
-```
-
-Enable reuse in `~/.testcontainers.properties`:
-```properties
-testcontainers.reuse.enable=true
-```
-
-### Python Singleton (session-scoped fixture)
-
-```python
-@pytest.fixture(scope="session")
-def postgres():
-    with PostgresContainer("postgres:16-alpine") as pg:
-        yield pg
-```
-
-### Key Performance Tips
-
-1. **Pin image tags** — avoid `:latest` to prevent unexpected pulls
-2. **Use alpine variants** — smaller images, faster pulls (`postgres:16-alpine`)
-3. **Session/class scope** — start expensive containers once, not per-test
-4. **Reuse containers** — `.withReuse(true)` keeps containers between test runs locally
-5. **Parallel tests** — each test class gets its own container; use random ports (default)
+1. **Singleton containers** — start once, share across test suite (see `references/advanced-patterns.md`)
+2. **Pin image tags** — avoid `:latest` to prevent unexpected pulls
+3. **Use alpine variants** — smaller images, faster pulls (`postgres:16-alpine`)
+4. **Session/class scope** — start expensive containers once, not per-test
+5. **Reuse containers** — `.withReuse(true)` + `testcontainers.reuse.enable=true` in `~/.testcontainers.properties`
 6. **Pre-pull images** in CI — add a `docker pull` step before tests
 7. **tmpfs for databases** — `withTmpFs(Map.of("/var/lib/postgresql/data", "rw"))`
-
-## Testcontainers Cloud
-
-Offloads container execution to a remote Docker environment. Benefits:
-- No local Docker daemon required
-- Faster CI (containers run on optimized infra)
-- Works behind corporate firewalls
-- Set `TC_CLOUD_TOKEN` env var; no code changes needed
+8. **Testcontainers Cloud** — offloads to remote Docker; set `TC_CLOUD_TOKEN` env var, no code changes
 
 ## Common Pitfalls
 
@@ -496,3 +428,30 @@ Offloads container execution to a remote Docker environment. Benefits:
 | Bind mounts fail in CI | Use `withCopyToContainer()` instead of host bind mounts |
 | OOM in CI | Limit concurrent containers; use session-scoped singletons |
 | Ryuk permission denied | Grant Docker socket access or set `TESTCONTAINERS_RYUK_DISABLED=true` |
+
+## Resources
+
+### References (`references/`)
+
+| File | Contents |
+|------|----------|
+| `advanced-patterns.md` | Singleton containers, container reuse, custom images, multi-container setups, network management, Docker Compose module, Testcontainers Cloud, parallel execution, custom wait strategies, init scripts, fixture management |
+| `language-guides.md` | Deep dives per language — Java (annotations, @DynamicPropertySource, Spring Boot, Quarkus), Python (fixtures, context managers), Node.js (Vitest/Jest, StartedTestContainer), Go (ContainerRequest, modules), .NET (xUnit, WebApplicationFactory) |
+| `troubleshooting.md` | Docker daemon issues, CI/CD DinD, Ryuk failures, port mapping, startup timeouts, cleanup, image pull rate limits, WSL2, Testcontainers Cloud diagnostics |
+
+### Scripts (`scripts/`) — all executable
+
+| Script | Purpose |
+|--------|---------|
+| `setup-testcontainers.sh <lang>` | Verify Docker, install Testcontainers for Java/Python/Node/Go/.NET |
+| `tc-health-check.sh` | Check prerequisites: Docker, Ryuk, network, disk/memory/CPU, config |
+| `generate-test-template.py <lang> <service>` | Generate a ready-to-run test file (7 services × 5 languages) |
+
+### Assets (`assets/`) — copy-paste templates
+
+| File | Description |
+|------|-------------|
+| `pytest-fixtures.py` | Python pytest fixtures for Postgres, MySQL, MongoDB, Redis, Kafka, LocalStack, Elasticsearch |
+| `junit5-base-test.java` | Java JUnit 5 base class with singleton Postgres + Redis, transaction rollback, helpers |
+| `vitest-setup.ts` | Node.js Vitest global setup — parallel Postgres + Redis start, env var export |
+| `docker-compose-test.yml` | Multi-service Compose file (Postgres, Redis, Kafka, MongoDB, Elasticsearch, LocalStack) |
