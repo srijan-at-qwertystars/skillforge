@@ -466,3 +466,4 @@ SELECT pg_prewarm('items_embedding_idx');
 | [`assets/docker-compose.yml`](assets/docker-compose.yml) | PostgreSQL + pgvector container, pre-configured for vector workloads |
 | [`assets/sqlalchemy-model.py`](assets/sqlalchemy-model.py) | SQLAlchemy 2.0 model with vector columns, similarity/filtered/hybrid search helpers |
 | [`assets/django-model.py`](assets/django-model.py) | Django model with VectorField, custom manager for similarity/hybrid/duplicate search |
+<!-- tested: pass -->

@@ -498,3 +498,4 @@ async def integration_test(self, source: dagger.Directory) -> str:
         .with_exec(["pytest", "tests/integration/", "-v"]).stdout()
     )
 ```
+<!-- tested: pass -->

@@ -465,3 +465,4 @@ Production-ready configuration templates:
 - **[celery-systemd.service](assets/celery-systemd.service)** — Systemd unit file for Celery workers with security hardening, multi-node support, and environment file configuration.
 - **[celerybeat-systemd.service](assets/celerybeat-systemd.service)** — Systemd unit file for Celery beat scheduler.
 - **[celeryconfig.py](assets/celeryconfig.py)** — Production-ready configuration template with all important settings commented and explained.
+<!-- tested: pass -->
