@@ -1,0 +1,80 @@
+# Python CI Workflow
+# Runs linting (ruff), type checking (mypy), and tests (pytest) across multiple
+# Python versions. Uses uv for fast, reproducible dependency installation and
+# uploads coverage as an artifact for downstream consumption.
+
+name: CI – Python
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-python-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # uv is an extremely fast Python package installer written in Rust.
+      # It replaces pip and pip-tools with sub-second installs.
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      # Ruff is a single tool that replaces flake8, isort, and more — with
+      # near-instant execution times.
+      - name: Lint with ruff
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Type check with mypy
+        run: uv run mypy .
+
+      # --cov generates a coverage report; --junitxml produces a JUnit XML file
+      # that GitHub can render in the Actions summary.
+      - name: Run tests with pytest
+        run: |
+          uv run pytest \
+            --cov=src \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term-missing \
+            --junitxml=junit.xml
+
+      # Upload coverage so it can be consumed by a separate reporting job or
+      # third-party service (Codecov, Coveralls, etc.).
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python-${{ matrix.python-version }}
+          path: |
+            coverage.xml
+            junit.xml
+          retention-days: 7

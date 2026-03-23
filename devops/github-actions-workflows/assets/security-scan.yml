@@ -1,0 +1,160 @@
+# Security Scanning Workflow
+# Combines multiple security tools into a single workflow:
+#   1. CodeQL — semantic code analysis for vulnerabilities
+#   2. Dependency Review — flag risky new deps in PRs
+#   3. Trivy — container image + filesystem vulnerability scanning
+#   4. Secret scanning — catch accidentally committed secrets
+#
+# Runs on PRs, pushes to main, and weekly schedule (catches newly disclosed CVEs
+# even when the code hasn't changed).
+
+name: Security Scan
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Monday 8 AM UTC — catches new CVEs in unchanged dependencies.
+    - cron: "0 8 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  # ── CodeQL Analysis ────────────────────────────────────────────────────
+  codeql:
+    name: CodeQL – ${{ matrix.language }}
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write  # upload SARIF results to GitHub Security tab
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Add or remove languages as needed.
+        # Supported: javascript/typescript, python, go, java/kotlin, ruby, etc.
+        language: [javascript-typescript]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Initializes the CodeQL tools and creates a database for analysis.
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Use the extended query suite for deeper analysis beyond the default
+          # set. This catches more issues at the cost of slightly longer runs.
+          queries: +security-extended
+
+      # Autobuild attempts to compile the code automatically.
+      # For compiled languages, you may need to replace this with manual build
+      # steps if autobuild fails.
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+
+  # ── Dependency Review ──────────────────────────────────────────────────
+  dependency-review:
+    name: Dependency review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    permissions:
+      contents: read
+      pull-requests: write  # post comments on the PR
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Compares the dependency tree before and after the PR to flag:
+      #   • Known vulnerabilities (CVEs)
+      #   • Restrictive or incompatible licenses
+      #   • Yanked / deprecated packages
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-3.0, AGPL-3.0
+          comment-summary-in-pr: always
+
+  # ── Trivy Container Scanning ───────────────────────────────────────────
+  trivy:
+    name: Trivy vulnerability scan
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Filesystem scan — catches vulnerabilities in lockfiles, IaC
+      # misconfigurations, and embedded secrets without needing a built image.
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs-results.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy filesystem results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-filesystem
+
+      # Container image scan — runs only when a Dockerfile exists.
+      - name: Build Docker image for scanning
+        id: docker-build
+        if: hashFiles('Dockerfile') != ''
+        run: docker build -t scan-target:${{ github.sha }} .
+
+      - name: Trivy image scan
+        if: steps.docker-build.outcome == 'success'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: scan-target:${{ github.sha }}
+          format: sarif
+          output: trivy-image-results.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload Trivy image results
+        if: steps.docker-build.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image
+
+  # ── Secret Scanning ────────────────────────────────────────────────────
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history so we scan all commits in the PR
+
+      # Trufflehog scans for high-entropy strings, known secret patterns, and
+      # verified credentials across the full commit history.
+      - name: Scan for secrets with TruffleHog
+        uses: trufflesecurity/trufflehog@v3.88.1
+        with:
+          extra_args: --only-verified

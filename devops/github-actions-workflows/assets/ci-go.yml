@@ -1,0 +1,62 @@
+# Go CI Workflow
+# Runs golangci-lint, tests (with race detection), and builds across multiple
+# Go versions. The race detector catches data-race bugs that are otherwise
+# extremely hard to reproduce.
+
+name: CI – Go
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-go-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Go ${{ matrix.go-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.22", "1.23"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          # setup-go caches ~/go/pkg/mod and ~/.cache/go-build automatically
+          # when go-version is set — no separate cache step needed.
+
+      # golangci-lint aggregates dozens of Go linters into a single fast run.
+      # Pin the version to avoid surprise breakage on linter updates.
+      - name: Lint with golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.61
+
+      # -race enables the race detector, which instruments memory accesses at
+      # compile time. -count=1 disables test caching so every run is fresh.
+      # -coverprofile writes a coverage file for optional later upload.
+      - name: Run tests
+        run: |
+          go test \
+            -race \
+            -count=1 \
+            -coverprofile=coverage.out \
+            -timeout=10m \
+            ./...
+
+      - name: Build
+        run: go build -v ./...

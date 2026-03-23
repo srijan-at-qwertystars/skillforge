@@ -426,77 +426,49 @@ Expression helpers: `contains()`, `startsWith()`, `endsWith()`, `format()`, `toJ
 
 ## Debugging
 
-### Debug Logging
-
 Set repo variable `ACTIONS_STEP_DEBUG=true` for verbose step output. Set `ACTIONS_RUNNER_DEBUG=true` for runner diagnostics. Or re-run with "Enable debug logging" in the UI.
 
-### Local Testing with `act`
-
-Run workflows locally using [nektos/act](https://github.com/nektos/act):
-
-```bash
-act                                    # Run default push event
-act -W .github/workflows/ci.yml       # Specific workflow
-act -j test                            # Specific job
-act -s GITHUB_TOKEN="$(gh auth token)" # Pass secrets
-```
-
-Limitations: `act` does not support all GitHub-hosted runner features, services, or OIDC.
-
-### Common Debug Techniques
-
-Dump context in a step: use `${{ github.event_name }}`, `${{ github.ref }}`, `${{ github.sha }}`, `${{ toJson(github.event) }}`.
+Run workflows locally with [nektos/act](https://github.com/nektos/act): `act -W .github/workflows/ci.yml -j test`. Dump context: `${{ toJson(github.event) }}`. See `references/troubleshooting.md` for more.
 
 ## Performance Optimization
 
-### Job Splitting
-
-Break monolithic jobs into parallel units. Use `needs` to fan-in results:
-
-```yaml
-jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps: [...]
-  unit-test:
-    runs-on: ubuntu-latest
-    steps: [...]
-  build:
-    needs: [lint, unit-test]
-    runs-on: ubuntu-latest
-    steps: [...]
-```
-
-### Self-Hosted Runners
-
-Use for specialized hardware, faster builds, or cost control. Keep runners in ephemeral mode for security. Use runner groups to isolate by environment.
-
-```yaml
-runs-on: [self-hosted, linux, x64, gpu]
-```
-
-### Other Optimizations
-
+- Split monolithic jobs into parallel units with `needs` fan-in.
 - Use `paths` filter to skip irrelevant workflows.
-- Cache aggressively (dependencies, build outputs, Docker layers).
-- Use `actions/setup-*` built-in caching (`cache: 'npm'`, `cache: 'pip'`).
-- Prefer smaller runner images (`ubuntu-latest` over custom large images).
-- Use `timeout-minutes` on jobs to prevent runaway processes.
-- Use `continue-on-error: true` for non-critical steps (e.g., optional linting).
+- Cache aggressively (`cache: 'npm'`, `cache: 'pip'` in setup actions).
+- Set `timeout-minutes` on jobs to prevent runaway processes.
+- Use self-hosted runners for specialized hardware or cost control (ephemeral mode for security).
 
-```yaml
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-      - run: npm ci
-      - run: npm run build
-```
+See `references/advanced-patterns.md` for self-hosted runner autoscaling and monorepo patterns.
+
+## References
+
+| File | When to read |
+|------|-------------|
+| `references/advanced-patterns.md` | Dynamic matrices, workflow_run chains, approval gates, deployment strategies, self-hosted runners, monorepo patterns, custom action development |
+| `references/troubleshooting.md` | Syntax errors, permission issues, cache debugging, silent failures, fork PR secrets, artifact v4 migration, workflow not triggering |
+| `references/security-best-practices.md` | OIDC setup (AWS/GCP/Azure), SHA pinning, script injection prevention, pull_request_target security, least-privilege tokens, CodeQL scanning |
+
+## Scripts
+
+| Script | Usage |
+|--------|-------|
+| `scripts/validate-workflows.sh` | Validates all workflow YAML files for syntax, required fields, deprecated features |
+| `scripts/pin-action-versions.sh [--dry-run]` | Resolves mutable action tags to SHA digests for supply chain security |
+| `scripts/estimate-workflow-cost.sh <workflow.yml>` | Estimates GitHub Actions cost per run based on runners and matrix |
+| `scripts/lint-workflow.sh [file]` | Wraps actionlint with severity categorization and fallback validation |
+
+## Assets
+
+Ready-to-use workflow templates:
+
+| Template | Description |
+|----------|-------------|
+| `assets/ci-node.yml` | Node.js CI with matrix (20, 22), caching, lint/test/build |
+| `assets/ci-python.yml` | Python CI with uv, ruff, mypy, pytest + coverage |
+| `assets/ci-go.yml` | Go CI with golangci-lint, race detection |
+| `assets/deploy-production.yml` | Staged deploy pipeline with OIDC AWS, rollback, Slack |
+| `assets/release-please.yml` | Conventional-commit releases with OIDC publishing |
+| `assets/security-scan.yml` | CodeQL + Trivy + dependency review + secret scanning |
+| `assets/reusable-docker-build.yml` | Multi-platform Docker builds with SBOM and cosign |
 
 <!-- tested: pass -->

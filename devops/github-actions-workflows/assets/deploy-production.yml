@@ -1,0 +1,215 @@
+# Production Deployment Workflow
+# Implements a staged rollout: build → staging → integration tests → production.
+# Each environment has its own protection rules configured in the repo settings
+# (required reviewers, wait timers, etc.). Uses OIDC to assume an AWS IAM role
+# — no long-lived secrets required.
+
+name: Deploy – Production
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to deploy (tag, branch, or SHA)"
+        required: true
+        default: main
+      skip-staging:
+        description: "Skip staging and deploy directly to production"
+        type: boolean
+        default: false
+
+concurrency:
+  # Only one deployment pipeline at a time — prevent overlapping rollouts.
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # Required for OIDC federation with AWS
+
+jobs:
+  # ── Build ──────────────────────────────────────────────────────────────
+  build:
+    name: Build artifacts
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+      image-tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Compute image tag
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.ref }}}"
+          TAG="${TAG//\//-}"  # replace slashes for branch names
+          echo "tag=${TAG}-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Build application
+        run: |
+          echo "::group::Build"
+          # Replace with your actual build command
+          echo "Building application..."
+          echo "::endgroup::"
+
+      - name: Upload build artifacts
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ steps.meta.outputs.tag }}
+          path: dist/
+          retention-days: 5
+
+  # ── Deploy to Staging ──────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to staging
+    needs: build
+    if: ${{ !inputs.skip-staging }}
+    runs-on: ubuntu-latest
+
+    # The "staging" environment must be configured in repo Settings → Environments.
+    # Add required reviewers and/or a wait timer there — the workflow will pause
+    # automatically until the rules are satisfied.
+    environment:
+      name: staging
+      url: https://staging.example.com
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ needs.build.outputs.image-tag }}
+          path: dist/
+
+      # OIDC removes the need for long-lived AWS access keys. The trust policy
+      # on the IAM role restricts which repos/branches can assume it.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN_STAGING }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying ${{ needs.build.outputs.image-tag }} to staging..."
+          # Replace with your deployment command, e.g.:
+          # aws ecs update-service --cluster staging --service app \
+          #   --force-new-deployment
+
+  # ── Integration Tests ──────────────────────────────────────────────────
+  integration-tests:
+    name: Integration tests
+    needs: [build, deploy-staging]
+    if: ${{ !inputs.skip-staging }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Run integration test suite
+        run: |
+          echo "Running integration tests against staging..."
+          # Replace with actual test commands, e.g.:
+          # npm run test:integration -- --base-url=https://staging.example.com
+        env:
+          TEST_BASE_URL: https://staging.example.com
+
+  # ── Deploy to Production ───────────────────────────────────────────────
+  deploy-production:
+    name: Deploy to production
+    needs: [build, integration-tests]
+    # Run if staging passed OR if staging was skipped.
+    if: ${{ always() && needs.build.result == 'success' && (needs.integration-tests.result == 'success' || needs.integration-tests.result == 'skipped') }}
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+      url: https://example.com
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-${{ needs.build.outputs.image-tag }}
+          path: dist/
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Deploy to production
+        id: deploy
+        run: |
+          echo "Deploying ${{ needs.build.outputs.image-tag }} to production..."
+          # Replace with your deployment command, e.g.:
+          # aws ecs update-service --cluster production --service app \
+          #   --force-new-deployment
+
+      - name: Notify Slack – success
+        if: success()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "✅ *Production deploy succeeded*\n• Tag: `${{ needs.build.outputs.image-tag }}`\n• Actor: ${{ github.actor }}\n• <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }
+
+  # ── Rollback ───────────────────────────────────────────────────────────
+  rollback:
+    name: Rollback production
+    needs: deploy-production
+    if: failure()
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN_PRODUCTION }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Rollback to previous version
+        run: |
+          echo "⚠️  Rolling back production deployment..."
+          # Replace with your rollback command, e.g.:
+          # aws ecs update-service --cluster production --service app \
+          #   --task-definition "$PREVIOUS_TASK_DEF"
+
+      - name: Notify Slack – rollback
+        if: always()
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🔴 *Production deploy FAILED — rollback triggered*\n• Tag: `${{ needs.build.outputs.image-tag }}`\n• Actor: ${{ github.actor }}\n• <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }

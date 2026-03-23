@@ -1,0 +1,64 @@
+# Node.js CI Workflow
+# Runs linting, tests, and build on every push to main and on pull requests.
+# Uses a matrix strategy to validate against multiple Node.js versions.
+
+name: CI – Node.js
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel redundant runs for the same branch/PR — keeps CI fast and avoids
+# wasting Actions minutes on superseded commits.
+concurrency:
+  group: ci-node-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least-privilege permissions — only grant what the workflow actually needs.
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: Node ${{ matrix.node-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      # Let every matrix leg finish so you see all failures at once instead of
+      # stopping at the first broken version.
+      fail-fast: false
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      # Caching node_modules via the built-in cache option in setup-node is the
+      # simplest approach. It hashes package-lock.json automatically.
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-node${{ matrix.node-version }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            npm-${{ runner.os }}-node${{ matrix.node-version }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

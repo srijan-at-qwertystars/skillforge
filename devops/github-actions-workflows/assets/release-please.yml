@@ -1,0 +1,133 @@
+# Automated Release Workflow
+# Uses release-please to automate versioning and changelogs from Conventional
+# Commits. When a release PR is merged, this workflow builds and publishes
+# packages to npm and/or PyPI using OIDC trusted publishing — no long-lived
+# tokens required.
+
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # create releases, push tags
+  pull-requests: write   # create/update the release PR
+  id-token: write        # OIDC for npm/PyPI trusted publishing
+
+jobs:
+  # ── Release Please ─────────────────────────────────────────────────────
+  release-please:
+    name: Create or update release PR
+    runs-on: ubuntu-latest
+    outputs:
+      release-created: ${{ steps.release.outputs.release_created }}
+      tag-name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+      upload-url: ${{ steps.release.outputs.upload_url }}
+
+    steps:
+      # release-please reads Conventional Commit messages since the last release,
+      # bumps the version accordingly (major/minor/patch), and opens a PR with
+      # the updated changelog. When that PR is merged, it creates a GitHub release.
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          # Supported types: node, python, go, rust, simple, etc.
+          # See https://github.com/googleapis/release-please#strategy-types
+          release-type: node
+
+  # ── Publish to npm ─────────────────────────────────────────────────────
+  publish-npm:
+    name: Publish to npm
+    needs: release-please
+    if: needs.release-please.outputs.release-created == 'true'
+    runs-on: ubuntu-latest
+
+    # Configure npm trusted publishing (provenance) in your npm account:
+    # https://docs.npmjs.com/generating-provenance-statements
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/<your-package>
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # --provenance links the published package to this CI run via Sigstore,
+      # so consumers can verify exactly which source code produced it.
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── Publish to PyPI ────────────────────────────────────────────────────
+  publish-pypi:
+    name: Publish to PyPI
+    needs: release-please
+    if: needs.release-please.outputs.release-created == 'true'
+    runs-on: ubuntu-latest
+
+    # PyPI trusted publishing uses OIDC — no API tokens needed.
+    # Configure at: https://docs.pypi.org/trusted-publishers/
+    environment:
+      name: pypi
+      url: https://pypi.org/project/<your-package>
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build package
+        run: uv build
+
+      # pypa/gh-action-pypi-publish uses OIDC automatically when id-token: write
+      # is granted and no password is supplied — true keyless publishing.
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # ── Upload Release Assets ─────────────────────────────────────────────
+  upload-assets:
+    name: Upload release assets
+    needs: release-please
+    if: needs.release-please.outputs.release-created == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build distributable
+        run: |
+          echo "Building release assets..."
+          # Replace with your build commands
+          # tar -czf dist.tar.gz dist/
+
+      - name: Upload assets to GitHub Release
+        if: hashFiles('dist.tar.gz') != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.release-please.outputs.tag-name }}
+          files: |
+            dist.tar.gz
