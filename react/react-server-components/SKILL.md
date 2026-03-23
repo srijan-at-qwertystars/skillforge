@@ -491,3 +491,5 @@ export const db = new PrismaClient();
 ```
 
 Importing this file in a `'use client'` module triggers a build error—catching leaks at compile time.
+
+<!-- tested: pass -->

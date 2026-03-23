@@ -497,3 +497,5 @@ For suffix or infix search, use full-text indexes (MySQL `FULLTEXT`, PostgreSQL 
 - MySQL: enable Performance Schema, use `sys.statement_analysis`.
 - PostgreSQL: enable `pg_stat_statements`, query by `mean_exec_time` and `calls`.
 - Set alerts on query duration percentiles (p95, p99), not just averages.
+
+<!-- tested: pass -->

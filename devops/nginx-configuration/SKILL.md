@@ -494,3 +494,5 @@ Returns active connections, accepts, handled, requests, and per-state connection
 - **504 Gateway Timeout** — upstream took too long. Increase `proxy_read_timeout`.
 - **413 Request Entity Too Large** — increase `client_max_body_size`.
 - **[emerg] bind() failed** — port already in use or insufficient permissions.
+
+<!-- tested: pass -->
