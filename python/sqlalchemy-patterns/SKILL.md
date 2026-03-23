@@ -452,3 +452,5 @@ class UserFactory(factory.alchemy.SQLAlchemyModelFactory):
 | Committing inside loops | Batch operations, commit once |
 | Ignoring `flush()` vs `commit()` | `flush()` sends SQL, `commit()` finalizes transaction |
 | Raw string SQL in ORM code | Use `text()` or Core constructs for raw SQL |
+
+<!-- tested: pass -->

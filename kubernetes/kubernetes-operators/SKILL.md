@@ -499,3 +499,5 @@ Only the leader runs reconciliation. Standbys take over on leader failure.
 - **Ignoring conflicts**: Handle `StatusConflict` and `ResourceConflict` by re-fetching and retrying.
 - **Hardcoded namespaces**: Use the resource's namespace from the request.
 - **Missing ObservedGeneration**: Clients cannot distinguish stale from current status.
+
+<!-- tested: pass -->

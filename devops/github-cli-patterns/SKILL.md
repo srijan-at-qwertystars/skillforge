@@ -498,3 +498,5 @@ for num in $(gh issue list --json number --jq '.[].number'); do
   sleep 0.5
 done
 ```
+
+<!-- tested: pass -->
