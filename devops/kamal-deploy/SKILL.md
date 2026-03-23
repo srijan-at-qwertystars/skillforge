@@ -486,3 +486,4 @@ Production-ready templates in `assets/`:
 | `assets/github-actions-deploy.yml` | GitHub Actions workflow — test, deploy staging on push, production on tag |
 | `assets/Dockerfile.production` | Multi-stage Dockerfile for Rails (jemalloc, non-root user, health check) |
 | `assets/.kamal-secrets.example` | Example secrets file with registry, DB, Redis, SMTP, cloud storage vars |
+<!-- tested: pass -->

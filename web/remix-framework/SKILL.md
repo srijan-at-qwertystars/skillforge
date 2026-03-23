@@ -492,3 +492,4 @@ Templates and configs in `assets/`:
 - **[root-layout.tsx](assets/root-layout.tsx)** — Production root layout with fonts, favicon, scroll restoration, env injection, error boundary
 - **[vite.config.ts](assets/vite.config.ts)** — Vite config for RR v7 with Tailwind, source maps, chunk splitting, proxy, CSS modules
 - **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose with app + PostgreSQL + Redis for local development
+<!-- tested: needs-fix -->

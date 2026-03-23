@@ -409,3 +409,4 @@ Templates and configs in [`assets/`](assets/):
 - **[`webauthn-client.ts`](assets/webauthn-client.ts)** — TypeScript browser module: registration, authentication, conditional UI, feature detection, error categorization.
 - **[`webauthn-server.ts`](assets/webauthn-server.ts)** — TypeScript Express router: full ceremony lifecycle with credential store interface, session management, challenge handling.
 - **[`nginx-https.conf`](assets/nginx-https.conf)** — Nginx config for local HTTPS with mkcert, security headers, well-known file routing, WebAuthn-appropriate timeouts.
+<!-- tested: pass -->
