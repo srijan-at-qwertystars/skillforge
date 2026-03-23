@@ -8,3 +8,6 @@
 | testing | [pytest-patterns](testing/pytest-patterns/) | Fixtures, parametrize, mocking, conftest organization, plugins, async testing, and anti-patterns |
 | networking | [http-caching](networking/http-caching/) | Cache-Control directives, ETags, CDN strategies, cache invalidation, service worker caching, and debugging |
 | security | [jwt-authentication](security/jwt-authentication/) | Token structure, algorithm selection, refresh token rotation, key management, vulnerabilities, and implementation patterns |
+| typescript | [typescript-strict-migration](typescript/typescript-strict-migration/) | Strict flag reference, incremental migration strategies, error fixes, narrowing patterns, and CI integration |
+| devops | [github-actions-workflows](devops/github-actions-workflows/) | Workflow anatomy, reusable workflows, composite actions, matrix builds, caching, security, and OIDC |
+| api | [graphql-schema-design](api/graphql-schema-design/) | Schema-first vs code-first, Relay pagination, error handling, federation, DataLoader, and authorization patterns |
