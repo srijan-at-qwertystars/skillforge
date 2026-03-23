@@ -422,3 +422,5 @@ Embedded replicas reduce row reads against Turso (local reads are free). Batch o
 - **[drizzle-config.ts](assets/drizzle-config.ts)** — Drizzle ORM configuration for Turso with example schema and client setup.
 
 - **[docker-compose.yml](assets/docker-compose.yml)** — Local `sqld` development setup. Run `docker compose up -d` for a local libSQL server on port 8080 — no Turso account required.
+
+<!-- tested: needs-fix -->

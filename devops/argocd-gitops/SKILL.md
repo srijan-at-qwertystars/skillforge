@@ -478,3 +478,5 @@ spec:
       restartPolicy: Never
   backoffLimit: 1
 ```
+
+<!-- tested: pass -->

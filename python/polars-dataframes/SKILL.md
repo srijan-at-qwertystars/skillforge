@@ -477,3 +477,5 @@ result = ctx.execute("""
 | `assets/cheatsheet.md` | Quick-reference cheatsheet — all common Polars operations in 1-2 lines each |
 | `assets/etl-template.py` | Production ETL pipeline template with schema validation, quality checks, lazy evaluation |
 | `assets/jupyter-starter.py` | Data exploration starter script with profiling, cleaning, analysis, and visualization sections |
+
+<!-- tested: needs-fix -->
