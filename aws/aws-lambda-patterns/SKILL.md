@@ -466,3 +466,5 @@ Set CloudWatch alarms on: `ConcurrentExecutions` (near account limit), `Throttle
 - **No idempotency**: Every source can deliver duplicates. Use Powertools Idempotency or conditional writes.
 - **Ignoring concurrency**: Set reserved concurrency to protect downstream services. Monitor throttles.
 - **Logging secrets**: Never log raw event payloads containing PII or credentials.
+
+<!-- tested: pass -->

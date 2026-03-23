@@ -497,3 +497,5 @@ x: int = some_call()  # type: ignore[assignment]      # mypy — use specific co
 x: int = some_call()  # pyright: ignore[reportAssignmentType]  # pyright
 # Never use bare `type: ignore` — it hides real bugs
 ```
+
+<!-- tested: pass -->

@@ -496,3 +496,5 @@ Multiple services read/write same tables. **Fix:** Extract an owning service. Co
 | Safe deployments               | Canary + feature flags         |
 | Validate cross-team contracts  | Pact contract testing          |
 | Prove resilience               | Chaos engineering              |
+
+<!-- tested: pass -->
