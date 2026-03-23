@@ -92,3 +92,6 @@
 | docker | [docker-compose-patterns](docker/docker-compose-patterns/) | Services, networking, volumes, healthchecks, profiles, watch mode, multi-file overrides, and common stacks |
 | typescript | [typescript-generics](typescript/typescript-generics/) | Conditional types, mapped types, template literals, infer, variadic tuples, branded types, and utility types |
 | aws | [s3-patterns](aws/s3-patterns/) | Bucket security, presigned URLs, storage classes, lifecycle policies, multipart upload, Express One Zone, and CRR |
+| devops | [github-cli-patterns](devops/github-cli-patterns/) | gh pr/issue/workflow, gh api (REST/GraphQL), releases, extensions, codespaces, search, and automation scripts |
+| python | [sqlalchemy-patterns](python/sqlalchemy-patterns/) | SQLAlchemy 2.0, declarative models, relationships, async, Alembic migrations, loading strategies, and performance |
+| kubernetes | [kubernetes-operators](kubernetes/kubernetes-operators/) | CRDs, kubebuilder, operator-sdk, controller-runtime, reconciliation, finalizers, webhooks, and envtest |
