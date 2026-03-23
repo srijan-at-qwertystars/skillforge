@@ -26,3 +26,6 @@
 | messaging | [kafka-event-streaming](messaging/kafka-event-streaming/) | Topic design, producer/consumer patterns, exactly-once semantics, Kafka Streams, Connect, and serialization |
 | shell | [bash-scripting-patterns](shell/bash-scripting-patterns/) | Strict mode, parameter expansion, arrays, trap handlers, ShellCheck fixes, portability, and anti-patterns |
 | monitoring | [prometheus-alerting](monitoring/prometheus-alerting/) | Metric types, PromQL patterns, alerting/recording rules, Alertmanager routing, service discovery, and USE/RED |
+| architecture | [twelve-factor-app](architecture/twelve-factor-app/) | All 12 factors with modern cloud-native guidance, plus API-first, telemetry, and security additions |
+| testing | [api-contract-testing](testing/api-contract-testing/) | Pact consumer-driven contracts, provider verification, Pact Broker, OpenAPI validation, and async contracts |
+| python | [python-packaging](python/python-packaging/) | pyproject.toml, build backends, package managers, src layout, versioning, PyPI publishing, and OIDC trusted publishing |
