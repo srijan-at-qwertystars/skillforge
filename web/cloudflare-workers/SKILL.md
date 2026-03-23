@@ -447,3 +447,5 @@ try {
 - **Stale `compatibility_date`.** Update periodically to get fixes and new APIs.
 - **Unstreamed LLM calls.** Workers AI without streaming risks CPU timeout.
 - **D1 over-fetching.** Always use `WHERE` and `LIMIT` — D1 has row scan limits.
+
+<!-- tested: pass -->

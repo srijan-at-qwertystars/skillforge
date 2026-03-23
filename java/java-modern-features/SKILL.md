@@ -497,3 +497,5 @@ int result = switch (day) {
 ```
 
 **Other mistakes:** Using `synchronized` with virtual threads on hot paths (use `ReentrantLock`). Writing non-exhaustive `switch` over sealed types (omit `default` — let the compiler enforce completeness). Using `String.format()` inside loops (prefer `.formatted()`).
+
+<!-- tested: pass -->

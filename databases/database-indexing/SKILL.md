@@ -435,3 +435,5 @@ CREATE INDEX CONCURRENTLY idx_big ON big_table (col);
 **Redundant indexes**: index `(a, b)` makes standalone index `(a)` redundant. Drop the single-column index.
 
 **Ignoring visibility map**: index-only scans require up-to-date visibility map. Tune autovacuum for hot tables or Heap Fetches will spike.
+
+<!-- tested: pass -->
