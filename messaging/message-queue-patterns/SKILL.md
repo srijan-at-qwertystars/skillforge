@@ -489,3 +489,5 @@ Multiple consumers read from the same queue. Broker delivers each message to one
 | Single consumer, no scaling | Queue depth grows unbounded under load           | Competing consumers + autoscaling          |
 | Synchronous over queues     | Defeats async purpose; adds latency              | Use HTTP/gRPC for sync; queues for async   |
 | No monitoring               | Silent failures, undetected message loss         | Alert on queue depth, DLQ, consumer lag    |
+
+<!-- tested: pass -->

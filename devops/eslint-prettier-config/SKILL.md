@@ -495,3 +495,5 @@ For maximum strictness, swap `recommendedTypeChecked` with `strictTypeChecked` a
 - **Ignoring type-checked rules** — `no-floating-promises` and `no-misused-promises` catch real bugs.
 - **Mixing legacy and flat config** — pick one. Flat config is the future.
 - **Global `eslint-disable` at file top** — use line-level disables with justification instead.
+
+<!-- tested: pass -->
