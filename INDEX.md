@@ -62,3 +62,6 @@
 | devops | [makefile-patterns](devops/makefile-patterns/) | GNU Make syntax, variables, pattern rules, functions, parallel execution, just/justfile, and project templates |
 | architecture | [feature-flags](architecture/feature-flags/) | Flag types, lifecycle, OpenFeature, targeting rules, trunk-based development, operational flags, and cleanup |
 | networking | [dns-configuration](networking/dns-configuration/) | Record types, email DNS (SPF/DKIM/DMARC), TTL strategy, DNSSEC, cloud DNS, debugging with dig, and migration |
+| web | [vite-build-tools](web/vite-build-tools/) | Vite config, HMR, code splitting, plugins, library mode, SSR, environment variables, and Webpack migration |
+| databases | [connection-pooling](databases/connection-pooling/) | Pool sizing, HikariCP, SQLAlchemy, node-pg, PgBouncer, PgCat, ProxySQL, serverless pooling, and monitoring |
+| devops | [linux-debugging](devops/linux-debugging/) | strace, perf, eBPF/bpftrace, flamegraphs, valgrind, core dumps, network debugging, and USE method triage |
