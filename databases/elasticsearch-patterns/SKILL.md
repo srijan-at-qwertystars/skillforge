@@ -461,3 +461,5 @@ GET /_search
 - **Single large index instead of time-based indices**: Use rollover with ILM for time-series data.
 - **Ignoring `_bulk` API**: Single-document indexing wastes network round trips. Always batch.
 - **Not setting `refresh_interval`**: Default 1s is aggressive for write-heavy workloads. Increase to 30s or disable during bulk loads.
+
+<!-- tested: pass -->

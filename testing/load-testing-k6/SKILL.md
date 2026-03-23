@@ -497,3 +497,5 @@ k6 run script.js --out json=r.json --out influxdb=http://localhost:8086/k6  # Mu
 - **Averages over percentiles:** Use `p(95)` or `p(99)`, not `avg`, for latency thresholds.
 - **Hardcoded URLs:** Use environment variables for base URLs.
 - **Too many browser VUs:** Use 1–5 for frontend metrics; use protocol VUs for load.
+
+<!-- tested: pass -->

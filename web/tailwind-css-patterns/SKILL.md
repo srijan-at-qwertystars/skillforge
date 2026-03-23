@@ -466,3 +466,5 @@ function Badge({ className, ...props }: React.HTMLAttributes<HTMLSpanElement>) {
 - **Inline `!important`.** Use `!` prefix sparingly (`!mt-0`). If needed often, the architecture has a problem.
 - **Nesting responsive inside state.** Write `md:hover:bg-blue-600`, not `hover:md:bg-blue-600`. Responsive prefixes come first.
 - **Ignoring semantic tokens.** Hardcoding `bg-blue-600` everywhere instead of `bg-primary` makes theme changes painful.
+
+<!-- tested: pass -->
