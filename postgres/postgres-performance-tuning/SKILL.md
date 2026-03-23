@@ -408,4 +408,31 @@ SET idle_in_transaction_session_timeout = '30s';
 SET statement_timeout = '60s';     -- hard upper bound per query
 ```
 
+## References
+
+| File | When to read |
+|------|-------------|
+| `references/advanced-explain-analysis.md` | Deep EXPLAIN interpretation: JSON/YAML formats, auto_explain, node types (Memoize, Incremental Sort, etc.), JIT stats, parallel plans, CTE materialization |
+| `references/troubleshooting.md` | Plan regressions, table/index bloat, XID wraparound, replication lag, OOM killer, checkpoint spikes, connection exhaustion |
+| `references/monitoring-queries.md` | 25+ production SQL queries with thresholds for database, table, index, query, lock, replication, WAL, and autovacuum monitoring |
+
+## Scripts
+
+| Script | Usage |
+|--------|-------|
+| `scripts/pg-health-check.sh` | Comprehensive health report: cache ratio, connections, dead tuples, index usage, replication, TXID age |
+| `scripts/find-missing-indexes.sh` | Identifies tables needing indexes and suggests CREATE INDEX statements |
+| `scripts/explain-analyze-wrapper.sh <query>` | Safe EXPLAIN ANALYZE in rolled-back transaction; highlights slow nodes; supports `--json`, `--no-execute` |
+| `scripts/vacuum-status.sh` | Vacuum health: dead tuples, stale autovacuum, running workers, wraparound risk |
+
+## Assets
+
+| File | Description |
+|------|-------------|
+| `assets/postgresql.conf.optimized` | Tuned config template for 16GB/4CPU/SSD baseline with scaling comments |
+| `assets/pgbouncer.ini.template` | Production PgBouncer config with pool size formulas and TLS stubs |
+| `assets/pg-partman-setup.sql` | pg_partman time-based partitioning setup with retention policy |
+| `assets/performance-baseline.sql` | Captures snapshots for performance trend tracking and comparison |
+| `assets/alerting-queries.sql` | 10 single-value queries for monitoring systems (Prometheus, Datadog) with thresholds |
+
 <!-- tested: pass -->

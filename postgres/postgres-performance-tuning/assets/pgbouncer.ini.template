@@ -1,0 +1,242 @@
+;; =============================================================================
+;; PgBouncer — Production Configuration Template
+;; =============================================================================
+;; PgBouncer sits between your application and PostgreSQL, multiplexing many
+;; short-lived app connections over a small pool of real database connections.
+;; This dramatically reduces connection overhead and memory consumption.
+;;
+;; Documentation: https://www.pgbouncer.org/config.html
+;; =============================================================================
+
+
+;; -----------------------------------------------------------------------------
+;; [databases] — Define which databases PgBouncer can connect to
+;; -----------------------------------------------------------------------------
+;; Syntax:  dbname = host=... port=... dbname=... [pool_size=N] [reserve_pool=N]
+;;
+;; The special wildcard entry "*" matches any database name not explicitly
+;; listed.  Remove it if you want to whitelist databases explicitly.
+
+[databases]
+
+;; Forward all database requests to the local PostgreSQL instance.
+;; Adjust host/port for remote PostgreSQL or replicas.
+* = host=127.0.0.1 port=5432
+
+;; Example: dedicated pool for a high-traffic database with a larger pool.
+;; myapp = host=127.0.0.1 port=5432 dbname=myapp pool_size=40
+
+;; Example: read-replica for analytics queries.
+;; myapp_ro = host=replica.internal port=5432 dbname=myapp pool_size=20
+
+
+;; -----------------------------------------------------------------------------
+;; [pgbouncer] — Main configuration section
+;; -----------------------------------------------------------------------------
+[pgbouncer]
+
+;; ---- Pooling Mode ----
+;;
+;; transaction  — Connection is returned to pool after each transaction.
+;;                Best balance of safety and efficiency.  Most applications
+;;                work correctly in this mode.
+;;                ⚠ Session-level features (SET, LISTEN/NOTIFY, prepared
+;;                  statements, advisory locks, temp tables) do NOT persist
+;;                  across transactions.
+;;
+;; session      — Connection is held for the entire client session.
+;;                Safe for all features but provides less multiplexing.
+;;                Use when app relies on session-level state.
+;;
+;; statement    — Connection returned after every statement.
+;;                Maximum multiplexing but breaks multi-statement transactions.
+;;                Only suitable for simple autocommit workloads.
+pool_mode = transaction
+
+
+;; ---- Connection Limits ----
+
+;; Maximum client connections PgBouncer will accept.
+;; This should be >= the sum of all application connection pool sizes.
+;; PgBouncer itself is very lightweight per connection (~2 KB).
+max_client_conn = 1000
+
+;; Default pool size per user/database pair.
+;; Formula:  (PostgreSQL max_connections - superuser_reserved - headroom)
+;;            / number_of_database_user_pairs
+;; Example:  (200 - 5 - 15) / 3 ≈ 60
+;; Start conservatively; increase if you see clients waiting.
+default_pool_size = 25
+
+;; Minimum pool size — PgBouncer keeps at least this many server connections
+;; open even when idle.  Eliminates connection-creation latency for the
+;; first queries after an idle period.
+min_pool_size = 5
+
+;; Reserve pool: extra connections allowed when the normal pool is exhausted
+;; and a client has waited longer than reserve_pool_timeout seconds.
+reserve_pool_size = 5
+reserve_pool_timeout = 3                ;; seconds before using reserve pool
+
+;; Hard cap on server connections per pool (user/database pair).
+;; Prevents a single pool from consuming all PostgreSQL connections.
+;; 0 = unlimited (uses default_pool_size as soft cap).
+max_db_connections = 60
+
+;; Hard cap on total server connections across all pools.
+;; Should be ≤ PostgreSQL max_connections minus headroom for direct
+;; admin/superuser connections.
+max_user_connections = 0                ;; 0 = unlimited; set if multi-tenant
+
+
+;; ---- Timeouts ----
+
+;; Time a client can be connected without making any request.
+;; Prevents idle clients from holding slots.
+client_idle_timeout = 300               ;; seconds; 0 = disabled
+
+;; How long a client waits in the queue for a server connection before
+;; being disconnected with an error.
+query_wait_timeout = 30                 ;; seconds; keep short to fail fast
+
+;; Maximum allowed query duration (server-side).
+;; 0 = disabled (prefer PostgreSQL statement_timeout instead).
+query_timeout = 0
+
+;; Unused server connections older than this are closed.
+server_idle_timeout = 300               ;; seconds
+
+;; Close server connection if it has been used for longer than this.
+;; Helps recycle connections to pick up PostgreSQL config changes.
+server_lifetime = 3600                  ;; seconds (1 hour)
+
+;; Time to wait for a TCP connection to PostgreSQL to complete.
+server_connect_timeout = 5              ;; seconds
+
+;; Time to wait for login (auth handshake) to complete.
+server_login_retry = 3                  ;; seconds between retries on login failure
+
+;; Cancel any in-flight query when a client disconnects unexpectedly.
+;; Prevents orphaned long-running queries from consuming resources.
+cancel_wait_timeout = 10                ;; seconds; PgBouncer 1.22+
+
+
+;; ---- Networking ----
+
+;; Address and port PgBouncer listens on.
+listen_addr = 0.0.0.0                   ;; Use 127.0.0.1 if only local access needed
+listen_port = 6432
+
+;; Unix socket directory (comment out to disable Unix sockets).
+unix_socket_dir = /var/run/pgbouncer
+
+;; TCP keepalive to detect dead connections to PostgreSQL.
+tcp_keepalive = 1
+tcp_keepidle = 60
+tcp_keepintvl = 10
+tcp_keepcnt = 6
+
+;; Socket buffer sizes (0 = OS default).
+;; Increase if you transfer large result sets.
+pkt_buf = 4096
+tcp_socket_buffer = 0
+
+
+;; ---- Authentication ----
+
+;; auth_type controls how PgBouncer authenticates incoming clients.
+;;
+;;   md5          — Classic MD5 password hashing (widely compatible).
+;;   scram-sha-256 — Modern auth; requires PgBouncer 1.14+ and PG 10+.
+;;   hba          — Use pg_hba.conf-style rules (auth_hba_file).
+;;   cert         — TLS client certificate authentication.
+;;   trust        — No authentication (DEVELOPMENT ONLY).
+auth_type = scram-sha-256
+
+;; File containing "username" "password-hash" pairs.
+;; Generate with:  SELECT '"' || rolname || '" "' || rolpassword || '"'
+;;                 FROM pg_authid WHERE rolcanlogin;
+;; Or use auth_query to fetch credentials dynamically.
+auth_file = /etc/pgbouncer/userlist.txt
+
+;; Alternatively, query PostgreSQL for user credentials at connect time.
+;; Requires a dedicated lookup user with minimal privileges.
+;; auth_query = SELECT usename, passwd FROM pg_shadow WHERE usename=$1
+;; auth_user = pgbouncer_auth
+
+;; HBA-style rules file (only used when auth_type = hba).
+;; auth_hba_file = /etc/pgbouncer/pg_hba.conf
+
+
+;; ---- TLS (client-facing) ----
+
+;; Uncomment to enable TLS for client connections.
+;; client_tls_sslmode = prefer           ;; prefer | require | verify-ca | verify-full
+;; client_tls_key_file = /etc/pgbouncer/server.key
+;; client_tls_cert_file = /etc/pgbouncer/server.crt
+;; client_tls_ca_file = /etc/pgbouncer/ca.crt
+
+;; ---- TLS (server-facing — connections to PostgreSQL) ----
+;; server_tls_sslmode = prefer
+;; server_tls_ca_file = /etc/pgbouncer/ca.crt
+
+
+;; ---- Logging ----
+
+;; Log file path.  Use syslog_* settings to send to syslog instead.
+logfile = /var/log/pgbouncer/pgbouncer.log
+
+;; Log level: debug, info, notice (default), warning, error, fatal.
+;; Use 'info' for production; 'debug' only when troubleshooting.
+log_connections = 1                     ;; Log successful connections
+log_disconnections = 1                  ;; Log disconnections
+log_pooler_errors = 1                   ;; Log pooler errors (full pool, timeouts)
+
+;; Prefix applied to every log line (use %p for PID, %d for database).
+;; Useful for log aggregation / parsing.
+;; log_line_prefix = %t [%p] %q%d
+
+;; Capture per-query statistics (avg_query_count, avg_query_time, etc.)
+;; exposed via SHOW STATS.
+stats_period = 60                       ;; seconds between stats logging
+verbose = 0                             ;; 0 = normal; 1 = debug noise
+
+
+;; ---- Admin Console ----
+
+;; Users allowed to connect to the virtual 'pgbouncer' database for admin
+;; commands (SHOW POOLS, RELOAD, PAUSE, etc.).
+admin_users = pgbouncer_admin
+
+;; Users allowed to run read-only SHOW commands.
+stats_users = pgbouncer_stats
+
+;; The admin console listens on the same listen_addr:listen_port.
+;; Connect with:  psql -h 127.0.0.1 -p 6432 -U pgbouncer_admin pgbouncer
+
+
+;; ---- Process Management ----
+
+;; PID file for service managers (systemd, supervisord).
+pidfile = /var/run/pgbouncer/pgbouncer.pid
+
+;; Run as this OS user (when started as root).
+;; user = pgbouncer
+
+;; Maximum number of file descriptors PgBouncer can open.
+;; Must be >= max_client_conn + default_pool_size × databases + headroom.
+;; Set via systemd LimitNOFILE or ulimit if PgBouncer won't start.
+;; max_client_conn + (pool × db pairs) + 100 is a good estimate.
+
+
+;; ---- Application Name ----
+
+;; Forward application_name from the client to PostgreSQL so it appears in
+;; pg_stat_activity.  Helpful for debugging which app is running a query.
+application_name_add_host = 1           ;; Append client IP to application_name
+
+;; Disable server-side prepared statements in transaction mode.
+;; PgBouncer cannot track prepared statements across transactions.
+;; PG 17+ / PgBouncer 1.21+ support protocol-level prepared statements
+;; with max_prepared_statements > 0.
+max_prepared_statements = 0             ;; 0 = disable; set > 0 for PG 17+

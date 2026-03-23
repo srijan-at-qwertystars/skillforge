@@ -1,0 +1,346 @@
+# =============================================================================
+# PostgreSQL Performance-Optimized Configuration
+# =============================================================================
+# Baseline hardware: 16 GB RAM, 4 CPU cores, SSD storage
+# Adjust values proportionally when hardware differs.
+#
+# Scaling rules of thumb (noted per-setting where applicable):
+#   RAM  → scale memory settings linearly with total RAM
+#   CPUs → scale parallelism settings with core count
+#   SSD  → random_page_cost can stay low; raise to 2–3 on spinning disks
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# CONNECTIONS
+# -----------------------------------------------------------------------------
+
+# Maximum number of concurrent connections.
+# Keep this modest and put a connection pooler (PgBouncer) in front of
+# Postgres.  Each connection consumes ~5–10 MB of RAM.
+# Formula: leave headroom for superuser connections and background workers.
+max_connections = 200                   # Adjust: 100–300; use PgBouncer for >200 app threads
+
+# Reserved for superuser/admin access even when max_connections is hit.
+superuser_reserved_connections = 5
+
+
+# -----------------------------------------------------------------------------
+# MEMORY
+# -----------------------------------------------------------------------------
+
+# Amount of memory the database server uses for shared memory buffers.
+# Rule of thumb: 25% of total RAM.  Larger values help cache more data in
+# memory, reducing disk reads.
+# Scaling: set to 25 % of RAM (e.g., 8 GB for 32 GB RAM).
+shared_buffers = 4GB
+
+# Memory used by each backend for sorts, hash joins, and similar operations
+# before spilling to disk.  Applies per-operation, not per-connection.
+# Be cautious: a complex query can use multiple work_mem allocations.
+# Scaling: (total_RAM * 0.25) / max_connections is a safe starting point.
+work_mem = 32MB                         # Adjust: 16 MB–256 MB based on query complexity
+
+# Memory used for maintenance operations (VACUUM, CREATE INDEX, ALTER TABLE).
+# Higher values speed up maintenance but are allocated per-operation.
+# Scaling: 5–10 % of RAM, up to 2 GB.
+maintenance_work_mem = 1GB
+
+# Memory used by autovacuum workers (each worker gets this amount).
+# Keep lower than maintenance_work_mem to limit aggregate memory use.
+autovacuum_work_mem = 256MB
+
+# Sets the planner's estimate of the effective size of the disk cache
+# (OS page cache + shared_buffers).
+# Rule of thumb: 50–75 % of total RAM.
+# Scaling: adjust proportionally with RAM.
+effective_cache_size = 12GB
+
+# Limit on how much memory all running queries can consume for hash-based
+# operations.  Prevents OOM situations.
+# Scaling: ~60–80 % of RAM.
+#hash_mem_multiplier = 2.0              # PG 15+; multiplier on work_mem for hash operations
+
+# Huge pages reduce TLB misses.  Set to 'try' so Postgres uses them when
+# available but still starts if the OS hasn't been configured for huge pages.
+# To enable on Linux: sysctl vm.nr_hugepages = shared_buffers / 2 MB + headroom
+huge_pages = try
+
+# Temporary buffers for each session's access to temporary tables.
+temp_buffers = 32MB
+
+
+# -----------------------------------------------------------------------------
+# WAL & CHECKPOINTS
+# -----------------------------------------------------------------------------
+
+# WAL level required for replication and point-in-time recovery.
+# 'replica' supports streaming replication and physical backups.
+# Use 'logical' only if you need logical replication / CDC.
+wal_level = replica
+
+# Size of each WAL segment.  Larger segments reduce the overhead of segment
+# switching on write-heavy systems.
+# Scaling: 64 MB–256 MB for heavy write workloads.
+#wal_segment_size = 16MB                # Can only be set at initdb time
+
+# Number of WAL segment files kept in pg_wal.  Higher values cushion
+# against spikes; lower values save disk space.
+min_wal_size = 1GB
+max_wal_size = 4GB                      # Adjust: up to 8–16 GB for heavy write loads
+
+# Write WAL data to OS but let OS decide when to flush to disk.
+# For maximum durability keep 'on'; set to 'off' only if you can tolerate
+# a small data-loss window (up to ~0.6 s) for a significant throughput gain.
+fsync = on
+
+# Method used to force WAL updates to disk.
+# fdatasync is the fastest safe option on Linux.
+wal_sync_method = fdatasync
+
+# Group commit delay: how long (µs) a leader process waits for other
+# transactions to piggyback on its WAL flush.
+# Improves throughput at the cost of tiny latency increase.
+commit_delay = 100                      # µs; 0 disables; useful under high concurrency
+commit_siblings = 5                     # Only delay if this many txns are active
+
+# How often checkpoints occur (maximum time between automatic checkpoints).
+checkpoint_timeout = 15min              # Adjust: 10–30 min; longer = fewer large I/O spikes
+
+# Fraction of checkpoint_timeout over which dirty buffers are spread.
+# 0.9 means checkpoint writes are spread over 90 % of the interval,
+# producing a steady I/O rate instead of a spike.
+checkpoint_completion_target = 0.9
+
+# WAL compression reduces I/O at the cost of some CPU.
+# Beneficial on I/O-bound systems with CPU headroom.
+wal_compression = on                    # PG 15+ supports lz4/zstd; use 'lz4' if available
+
+# Number of WAL buffers.  -1 auto-sizes to 1/32 of shared_buffers (capped
+# at the WAL segment size).  Usually the auto-tuned value is fine.
+wal_buffers = -1
+
+
+# -----------------------------------------------------------------------------
+# QUERY PLANNER
+# -----------------------------------------------------------------------------
+
+# Cost of a sequential page fetch (baseline).
+seq_page_cost = 1.0
+
+# Cost of a non-sequential (random) page fetch.
+# SSDs have nearly equal sequential and random access latency.
+# Spinning disks: raise to 2.0–3.0.
+random_page_cost = 1.1                  # Adjust: 1.1 (SSD) → 3.0 (HDD)
+
+# Planner cost for processing each row.
+cpu_tuple_cost = 0.01
+
+# Planner cost for processing each index entry.
+cpu_index_tuple_cost = 0.005
+
+# Planner cost for applying an operator or function per row.
+cpu_operator_cost = 0.0025
+
+# Minimum size of a relation below which the planner won't consider
+# parallel plans.
+min_parallel_table_scan_size = 8MB
+
+# Minimum index size for considering a parallel index scan.
+min_parallel_index_scan_size = 512kB
+
+# Planner assumes this fraction of the buffer pool is already cached.
+# Larger = planner favours index scans over seq scans.
+effective_io_concurrency = 200          # Adjust: 200 (SSD) → 2 (HDD)
+
+# JIT compilation can speed up long-running analytical queries.
+jit = on
+jit_above_cost = 100000
+jit_inline_above_cost = 500000
+jit_optimize_above_cost = 500000
+
+# Enable planner to consider partitionwise joins and aggregation (PG 11+).
+enable_partitionwise_join = on
+enable_partitionwise_aggregate = on
+
+
+# -----------------------------------------------------------------------------
+# PARALLELISM
+# -----------------------------------------------------------------------------
+
+# Maximum number of parallel workers that can be active at one time.
+# Scaling: 2–4 × CPU cores.
+max_parallel_workers = 4                # Adjust: match CPU cores
+
+# Maximum workers a single Gather node can use.
+# Scaling: CPU cores / 2 is a safe default.
+max_parallel_workers_per_gather = 2     # Adjust: cores/2
+
+# Workers available for parallel maintenance (CREATE INDEX, VACUUM).
+max_parallel_maintenance_workers = 2    # Adjust: cores/2
+
+# Total background worker slots (includes parallel workers, extensions,
+# logical replication workers, etc.).
+max_worker_processes = 8                # Adjust: max_parallel_workers + extension workers
+
+
+# -----------------------------------------------------------------------------
+# AUTOVACUUM
+# -----------------------------------------------------------------------------
+
+# Make sure autovacuum is enabled (default is on; never turn it off).
+autovacuum = on
+
+# Number of autovacuum workers that can run concurrently.
+# More workers = tables get vacuumed faster, but each uses
+# autovacuum_work_mem.
+# Scaling: 3–6 for databases with many tables; add more for large schemas.
+autovacuum_max_workers = 4              # Adjust: 3–6
+
+# Delay between vacuum rounds to throttle I/O impact.
+# Lower = more aggressive vacuuming, more I/O; higher = gentler.
+autovacuum_vacuum_cost_delay = 2ms      # Adjust: 2–20 ms (PG 12+ default is 2 ms)
+
+# Cost limit per round (higher = more work before sleeping).
+autovacuum_vacuum_cost_limit = 1000     # Adjust: 500–2000
+
+# Thresholds for triggering vacuum and analyze.
+# vacuum triggers when dead_tuples > threshold + scale_factor * reltuples.
+autovacuum_vacuum_threshold = 50
+autovacuum_vacuum_scale_factor = 0.05   # Adjust: 0.01–0.1; lower for large tables
+autovacuum_analyze_threshold = 50
+autovacuum_analyze_scale_factor = 0.02  # Adjust: 0.01–0.05
+
+# Freeze age: vacuum will do anti-wraparound work when txid age exceeds this.
+# Keep well below autovacuum_freeze_max_age to avoid forced vacuums.
+autovacuum_freeze_max_age = 200000000
+vacuum_freeze_min_age = 50000000
+vacuum_freeze_table_age = 150000000
+
+
+# -----------------------------------------------------------------------------
+# LOGGING — Performance Diagnosis
+# -----------------------------------------------------------------------------
+
+# Where to send log output.
+logging_collector = on
+log_directory = 'log'
+log_filename = 'postgresql-%Y-%m-%d.log'
+log_rotation_age = 1d
+log_rotation_size = 256MB
+log_truncate_on_rotation = on
+
+# What to log.
+log_min_duration_statement = 500        # ms; log queries slower than this (-1 = off)
+log_checkpoints = on                    # Log every checkpoint with timing details
+log_connections = off                   # Noisy; enable during troubleshooting
+log_disconnections = off
+log_lock_waits = on                     # Log when a session waits > deadlock_timeout
+log_temp_files = 10MB                   # Log temp files larger than this
+log_autovacuum_min_duration = 250       # ms; log autovacuum runs that take longer
+
+# Detailed timing in EXPLAIN output and pg_stat_statements.
+log_line_prefix = '%m [%p] %q%u@%d '
+log_statement = 'ddl'                   # Log DDL statements (CREATE, ALTER, DROP)
+
+# Log duration & plan of auto-explained queries (requires auto_explain).
+# Uncomment after loading auto_explain in shared_preload_libraries.
+#auto_explain.log_min_duration = '1s'
+#auto_explain.log_analyze = on
+#auto_explain.log_buffers = on
+#auto_explain.log_timing = on
+#auto_explain.log_nested_statements = on
+
+
+# -----------------------------------------------------------------------------
+# MONITORING & STATISTICS
+# -----------------------------------------------------------------------------
+
+# Track I/O timing so pg_stat_statements and EXPLAIN (ANALYZE, BUFFERS)
+# report block read/write times.  Small overhead from clock_gettime calls.
+track_io_timing = on
+
+# Track how often each function is called and total time spent.
+track_functions = 'all'                 # 'pl' for PL/pgSQL only; 'all' for everything
+
+# Track activity of each session for pg_stat_activity.
+track_activities = on
+track_activity_query_size = 4096        # Capture longer query strings (default 1024)
+
+# Compute statistics targets (controls histogram bucket count per column).
+# Higher values give the planner better estimates but slow down ANALYZE.
+default_statistics_target = 200         # Adjust: 100–500
+
+# Collect timing stats for the stats collector.
+track_counts = on
+
+
+# -----------------------------------------------------------------------------
+# SHARED PRELOAD LIBRARIES
+# -----------------------------------------------------------------------------
+
+# pg_stat_statements — essential for identifying slow / frequent queries.
+# auto_explain      — optional: auto-logs execution plans for slow queries.
+# pg_partman_bgw    — optional: if using pg_partman for partition management.
+shared_preload_libraries = 'pg_stat_statements'
+
+# --- pg_stat_statements settings ---
+
+# Maximum number of distinct statements tracked.
+pg_stat_statements.max = 10000
+
+# Track all statements (including those inside functions).
+pg_stat_statements.track = 'all'
+
+# Track utility statements (COPY, CREATE INDEX, etc.).
+pg_stat_statements.track_utility = on
+
+# Save stats across server restarts.
+pg_stat_statements.save = on
+
+
+# -----------------------------------------------------------------------------
+# REPLICATION (if applicable)
+# -----------------------------------------------------------------------------
+
+# Maximum number of WAL sender processes (streaming replication slots).
+# Set to 0 if replication is not used.
+max_wal_senders = 10
+
+# Number of replication slots.  Each slot prevents WAL recycling until
+# the replica has consumed it — monitor disk usage.
+max_replication_slots = 10
+
+# Keep enough WAL segments for replicas to catch up after a disconnect.
+# Deprecated in PG 13+ in favour of replication slots, but still useful
+# as a safety net.
+wal_keep_size = 2GB                     # PG 13+; replaces wal_keep_segments
+
+# Synchronous replication (disabled by default for performance).
+# Enable for zero-data-loss requirements; adds write latency.
+#synchronous_commit = on
+#synchronous_standby_names = ''
+
+
+# -----------------------------------------------------------------------------
+# MISCELLANEOUS
+# -----------------------------------------------------------------------------
+
+# Statement timeout to prevent runaway queries.
+# 0 = disabled (prefer per-role or per-session settings).
+statement_timeout = 0
+
+# Timeout for acquiring locks.
+lock_timeout = 0                        # 0 = wait forever; set per-session for DDL
+
+# Idle-in-transaction timeout (PG 10+).  Kill sessions that hold
+# transactions open without doing anything.
+idle_in_transaction_session_timeout = 30min
+
+# TCP keepalive to detect dead connections.
+tcp_keepalives_idle = 60
+tcp_keepalives_interval = 10
+tcp_keepalives_count = 6
+
+# Timezone (set to your application's primary timezone).
+timezone = 'UTC'
