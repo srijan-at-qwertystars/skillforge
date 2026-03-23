@@ -41,3 +41,6 @@
 | ai | [llm-prompt-engineering](ai/llm-prompt-engineering/) | Chain-of-thought, few-shot, system prompts, structured output, tool calling, prompt chaining, and provider tips |
 | networking | [websocket-patterns](networking/websocket-patterns/) | WebSocket protocol, server/client implementations, reconnection, heartbeat, scaling with Redis, and security |
 | devops | [logging-structured](devops/logging-structured/) | JSON logging, log levels, correlation IDs, context propagation, library examples (pino/structlog/slog), and redaction |
+| security | [container-security](security/container-security/) | Image scanning, supply chain security (SBOM/cosign), runtime hardening, seccomp/AppArmor, rootless, and Pod Security |
+| typescript | [zod-validation](typescript/zod-validation/) | Schema primitives, transforms, refinements, type inference, error handling, and integrations (RHF/tRPC/Next.js) |
+| databases | [mongodb-patterns](databases/mongodb-patterns/) | Schema design patterns, indexing strategies, aggregation pipeline, transactions, Mongoose, and sharding |
