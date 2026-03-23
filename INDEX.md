@@ -14,3 +14,6 @@
 | observability | [opentelemetry-instrumentation](observability/opentelemetry-instrumentation/) | OTel architecture, auto/manual instrumentation, Collector config, sampling, context propagation, and metrics API |
 | rust | [rust-error-handling](rust/rust-error-handling/) | Result/Option, thiserror/anyhow, custom error types, conversion chains, async errors, and library vs app design |
 | aws | [terraform-aws-patterns](aws/terraform-aws-patterns/) | Module design, S3 state management, VPC/ECS/Lambda/RDS patterns, lifecycle rules, IAM security, and CI/CD |
+| kubernetes | [helm-chart-patterns](kubernetes/helm-chart-patterns/) | Chart structure, template functions, helpers, values design, dependencies, hooks, testing, and security |
+| python | [python-async-concurrency](python/python-async-concurrency/) | asyncio fundamentals, TaskGroups, concurrency primitives, patterns, pytest-asyncio, and sync integration |
+| databases | [redis-patterns](databases/redis-patterns/) | Data structures, caching strategies, distributed locks, rate limiting, Streams, Lua scripting, and cluster patterns |
