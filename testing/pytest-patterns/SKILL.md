@@ -448,5 +448,31 @@ pytest --cache-clear   # reset pytest cache
 | Copy-paste test cases | Duplication, missed edge cases | Use `parametrize` or factory fixtures |
 | Sleeping in tests | Slow, flaky | Use `asyncio.Event`, polling with timeout, or mock time |
 
+## References
+
+| File | When to read |
+|------|-------------|
+| `references/advanced-patterns.md` | Hypothesis property testing, snapshot testing, mutation testing, factory_boy, async deep dive, DB/API testing, BDD, plugin development, xdist |
+| `references/troubleshooting.md` | Fixture errors, import/conftest issues, async pitfalls, slow test diagnosis, mocking mistakes, plugin conflicts, CI flakes |
+| `references/plugin-guide.md` | Curated guide to 16 essential plugins (pytest-mock, pytest-cov, pytest-xdist, hypothesis, pytest-django, etc.) |
+
+## Scripts
+
+| Script | Usage |
+|--------|-------|
+| `scripts/setup-pytest.sh [--with-django\|--with-fastapi\|--with-async]` | Scaffold a pytest project with best-practice config and directory structure |
+| `scripts/find-slow-tests.sh [-t threshold]` | Run tests and highlight slow ones above threshold (default 1s) |
+| `scripts/coverage-report.sh [-m min_pct] [--open]` | Run pytest with branch coverage, enforce minimum, generate HTML report |
+
+## Assets
+
+| File | Description |
+|------|-------------|
+| `assets/pyproject-pytest.toml` | Complete pytest + coverage config for pyproject.toml |
+| `assets/conftest-patterns.py` | 10 fixture patterns (DB, auth, clients, mocks, async) |
+| `assets/test-patterns-example.py` | Example tests showing parametrize, mocking, async, snapshots |
+| `assets/pytest-ci.yml` | GitHub Actions workflow with matrix, xdist, coverage upload |
+| `assets/fixtures-cheatsheet.md` | Quick reference for fixture scopes, yield, parametrize, pitfalls |
+
 <!-- tested: pass -->
 

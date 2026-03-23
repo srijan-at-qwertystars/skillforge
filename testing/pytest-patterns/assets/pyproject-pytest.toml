@@ -1,0 +1,135 @@
+# =============================================================================
+# pytest configuration in pyproject.toml
+# =============================================================================
+# This file demonstrates a comprehensive pytest setup using pyproject.toml.
+# Copy the relevant sections into your project's pyproject.toml.
+# =============================================================================
+
+[tool.pytest.ini_options]
+
+# ---------------------------------------------------------------------------
+# Test discovery
+# ---------------------------------------------------------------------------
+# Directories to search for tests. Keeps collection fast by limiting scope.
+testpaths = ["tests"]
+
+# Patterns for test file discovery (defaults shown for clarity).
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+# ---------------------------------------------------------------------------
+# Default CLI flags
+# ---------------------------------------------------------------------------
+# -ra  : show summary of all non-passing tests at the end
+# -q   : quieter output (one dot per test)
+# --strict-markers : error on unknown markers (catches typos)
+# --strict-config  : error on unknown config keys
+# --tb=short       : shorter tracebacks for readability
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+    "--strict-config",
+    "--tb=short",
+]
+
+# ---------------------------------------------------------------------------
+# Markers
+# ---------------------------------------------------------------------------
+# Register all custom markers here. With --strict-markers enabled, using an
+# unregistered marker will raise an error instead of silently passing.
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests that hit external services",
+    "e2e: end-to-end tests requiring full stack",
+    "smoke: critical-path tests to run first",
+    "unit: fast, isolated unit tests",
+]
+
+# ---------------------------------------------------------------------------
+# Warnings
+# ---------------------------------------------------------------------------
+# Treat specific warnings as errors to catch deprecations early.
+# Ignore noisy third-party warnings that you cannot fix.
+filterwarnings = [
+    "error",                                          # all warnings → errors by default
+    "ignore::DeprecationWarning:pkg_resources",       # setuptools noise
+    "ignore::PendingDeprecationWarning",              # surface these later
+    "ignore::UserWarning:sqlalchemy",                 # SQLAlchemy session warnings
+]
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+# Capture log output at the specified level during tests.
+log_cli = false
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(name)s: %(message)s"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+# ---------------------------------------------------------------------------
+# Minimum pytest version
+# ---------------------------------------------------------------------------
+# Fail fast if the installed pytest is too old.
+minversion = "8.0"
+
+# ---------------------------------------------------------------------------
+# Async mode (pytest-asyncio)
+# ---------------------------------------------------------------------------
+# "auto"   – every async test is treated as asyncio automatically
+# "strict" – requires explicit @pytest.mark.asyncio on each test (safer)
+asyncio_mode = "auto"
+
+# ---------------------------------------------------------------------------
+# Timeout (pytest-timeout)
+# ---------------------------------------------------------------------------
+# Global timeout in seconds. Prevents hanging tests in CI.
+# Individual tests can override with @pytest.mark.timeout(30).
+timeout = 10
+
+
+# =============================================================================
+# Coverage configuration (pytest-cov / coverage.py)
+# =============================================================================
+
+[tool.coverage.run]
+# Measure branch coverage in addition to statement coverage.
+branch = true
+
+# Source packages to measure. Adjust to your project layout.
+source = ["src"]
+
+# Exclude test files themselves from coverage metrics.
+omit = [
+    "tests/*",
+    "*/conftest.py",
+    "*/__main__.py",
+]
+
+# Enable the coverage plugin for subprocess tracking (useful with xdist).
+parallel = true
+
+[tool.coverage.report]
+# Fail the build if coverage drops below this percentage.
+fail_under = 80
+
+# Lines matching these regexes are excluded from coverage reporting.
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+    "raise NotImplementedError",
+    "pass",
+    "@(abc\\.)?abstractmethod",
+]
+
+# Show lines that are missing coverage in the terminal report.
+show_missing = true
+
+# Don't complain about files that have no executable code.
+skip_empty = true
+
+[tool.coverage.html]
+directory = "htmlcov"
