@@ -71,3 +71,6 @@
 | react | [nextjs-patterns](react/nextjs-patterns/) | App Router, Server/Client Components, Server Actions, caching, middleware, metadata, parallel routes, and deployment |
 | architecture | [caching-strategies](architecture/caching-strategies/) | Cache-aside, write-through, invalidation strategies, stampede prevention, multi-layer caching, and monitoring |
 | devops | [ansible-automation](devops/ansible-automation/) | Playbooks, roles, collections, Jinja2, vault, inventory, Molecule testing, AWX/AAP, and performance tuning |
+| databases | [drizzle-orm](databases/drizzle-orm/) | Schema definition, relational queries, drizzle-kit migrations, prepared statements, type safety, and Drizzle vs Prisma |
+| security | [ci-cd-security](security/ci-cd-security/) | Pipeline hardening, GitHub Actions security, SLSA provenance, Sigstore, SAST/DAST, dependency scanning, and OIDC |
+| web | [svelte-patterns](web/svelte-patterns/) | Svelte 5 runes, SvelteKit routing, load functions, form actions, SSR/SSG, transitions, and deployment adapters |
