@@ -83,3 +83,6 @@
 | devops | [nix-flakes](devops/nix-flakes/) | Flake.nix, devShells, direnv, package building, nixpkgs overlays, home-manager, NixOS, and Docker with Nix |
 | architecture | [data-validation-patterns](architecture/data-validation-patterns/) | Validation layers, schema-first design, parse-don't-validate, library comparison, error aggregation, and sanitization |
 | web | [htmx-patterns](web/htmx-patterns/) | Core attributes, swap strategies, OOB swaps, SSE/WebSocket, forms, pagination, and backend integration |
+| languages | [node-streams](languages/node-streams/) | Readable, Writable, Transform, pipeline, backpressure, Web Streams API, async generators, and ETL patterns |
+| devops | [pulumi-iac](devops/pulumi-iac/) | Programs, component resources, stack references, Pulumi ESC, Automation API, testing, and Terraform migration |
+| api | [openapi-specification](api/openapi-specification/) | OpenAPI 3.1, schemas, code generation, API-first design, Spectral linting, Redocly, and versioning strategies |
