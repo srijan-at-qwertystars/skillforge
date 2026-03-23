@@ -398,3 +398,5 @@ git rerere gc
 ```sh
 git config --global --get-regexp 'rebase\|rerere\|pull\.rebase'
 ```
+
+<!-- tested: pass -->

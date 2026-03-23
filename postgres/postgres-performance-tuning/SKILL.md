@@ -407,3 +407,5 @@ SET lock_timeout = '5s';           -- fail fast instead of waiting
 SET idle_in_transaction_session_timeout = '30s';
 SET statement_timeout = '60s';     -- hard upper bound per query
 ```
+
+<!-- tested: pass -->
