@@ -494,3 +494,5 @@ if flags.is_enabled("feature-a"):
 
 **Problem:** Tests only run with the flag `on`. The `off` path silently breaks.
 **Fix:** Parametrize tests across all flag states. Include flag state in test names for traceability.
+
+<!-- tested: pass -->

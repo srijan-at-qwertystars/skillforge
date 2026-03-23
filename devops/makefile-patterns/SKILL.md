@@ -488,3 +488,5 @@ deploy:  # Good: thin wrapper
 - **Ignoring errors blindly**: Avoid `-` prefix; use `|| true` for specific commands.
 - **Hardcoded paths**: Use variables (`PYTHON := python3`) so users can override.
 - **Not using `$(MAKE)`**: Always use `$(MAKE)` for recursive calls to preserve flags.
+
+<!-- tested: pass -->

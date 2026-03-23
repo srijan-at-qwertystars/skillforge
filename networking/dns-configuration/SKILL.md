@@ -499,3 +499,5 @@ Use for internal service discovery: `service.internal.example.com`.
 
 **Problem**: Any CA can issue certificates for your domain.
 **Fix**: Publish CAA records restricting issuance to your chosen CA(s).
+
+<!-- tested: pass -->
