@@ -460,3 +460,5 @@ Postman does not enforce CORS (no browser involved). Use it to verify API respon
 | Disabling CORS via browser extension in dev | Masks real bugs that hit production | Use a dev proxy instead |
 | CORS proxy in production | Bypasses origin checks; adds latency and a trust boundary | Configure server CORS properly |
 | Missing `Vary: Origin` with dynamic origins | Caches serve wrong origin's response to other origins | Always set `Vary: Origin` |
+
+<!-- tested: pass -->

@@ -498,3 +498,5 @@ In microservices, coordinate migration order. Consumers must handle both old and
 
 ### 8. Skipping staging validation
 Apply migrations to staging with production-like data before production.
+
+<!-- tested: needs-fix -->

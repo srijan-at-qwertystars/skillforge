@@ -496,3 +496,5 @@ With Micrometer Tracing, trace IDs propagate to MDC automatically.
 - **`RestClient`**: synchronous replacement for `RestTemplate`.
 - **Structured logging** (3.4+): native ECS/GELF JSON output.
 - **`@ServiceConnection`** (3.1+): auto-configure Testcontainers connections.
+
+<!-- tested: pass -->
