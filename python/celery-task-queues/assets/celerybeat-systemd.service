@@ -1,0 +1,46 @@
+# /etc/systemd/system/celery-beat.service
+#
+# Production systemd unit file for Celery Beat scheduler.
+#
+# CRITICAL: Only ONE beat instance should run at a time.
+# Multiple beat instances will cause duplicate task scheduling.
+#
+# Setup:
+#   1. Copy this file to /etc/systemd/system/celery-beat.service
+#   2. Create celery user: sudo useradd -r -s /bin/false celery
+#   3. Create directories:
+#        sudo mkdir -p /var/run/celery /var/log/celery /var/lib/celery
+#        sudo chown celery:celery /var/run/celery /var/log/celery /var/lib/celery
+#   4. Enable: sudo systemctl daemon-reload && sudo systemctl enable celery-beat
+#   5. Start:  sudo systemctl start celery-beat
+
+[Unit]
+Description=Celery Beat Periodic Task Scheduler
+After=network.target redis.service rabbitmq-server.service
+Wants=redis.service
+
+[Service]
+Type=simple
+User=celery
+Group=celery
+WorkingDirectory=/srv/myproject
+
+ExecStart=/srv/myproject/venv/bin/celery -A myproject beat \
+    --loglevel=INFO \
+    --schedule=/var/lib/celery/celerybeat-schedule \
+    --pidfile=/var/run/celery/beat.pid
+
+Restart=always
+RestartSec=10
+
+# File descriptor limits
+LimitNOFILE=65536
+
+# Security hardening
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

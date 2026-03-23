@@ -439,3 +439,30 @@ SELECT pg_prewarm('items_embedding_idx');
 | Index not used by planner | Check `EXPLAIN` — planner may prefer seq scan for small tables. Use `SET enable_seqscan = off` to test |
 | `halfvec` precision loss | Acceptable for most embeddings; validate recall on your data |
 | Embedding dimension > 2000 | Use `halfvec` (up to 4000) or reduce dims via PCA/Matryoshka |
+
+## Resources
+
+### References (Deep-Dive Guides)
+
+| File | Topics |
+|------|--------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | HNSW/IVFFlat tuning with benchmarks, hybrid search, RRF, multi-vector search, filtered search optimization, halfvec & binary quantization, sparse vectors, partitioned tables |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Index build OOM, poor recall diagnosis, slow queries, dimension mismatch, extension upgrades, VACUUM maintenance, connection pooling with pgvector |
+| [`references/embedding-integrations.md`](references/embedding-integrations.md) | OpenAI/Cohere/local model integration, batch embedding pipelines, caching patterns, Matryoshka & PCA dimension reduction, cost optimization |
+
+### Scripts (Ready-to-Run Tools)
+
+| File | Description |
+|------|-------------|
+| [`scripts/setup-pgvector.sh`](scripts/setup-pgvector.sh) | Install pgvector, create sample table with HNSW index. Works on PostgreSQL 15+ |
+| [`scripts/benchmark-index.py`](scripts/benchmark-index.py) | Benchmark recall@k and query latency for HNSW vs IVFFlat with various configs |
+| [`scripts/batch-embed-insert.py`](scripts/batch-embed-insert.py) | Batch embed text via OpenAI API and insert into pgvector with progress bar and retries |
+
+### Assets (Templates & Configs)
+
+| File | Description |
+|------|-------------|
+| [`assets/schema.sql`](assets/schema.sql) | Complete schema with vector/halfvec/sparsevec columns, HNSW/IVFFlat indexes, hybrid search function, binary re-rank function |
+| [`assets/docker-compose.yml`](assets/docker-compose.yml) | PostgreSQL + pgvector container, pre-configured for vector workloads |
+| [`assets/sqlalchemy-model.py`](assets/sqlalchemy-model.py) | SQLAlchemy 2.0 model with vector columns, similarity/filtered/hybrid search helpers |
+| [`assets/django-model.py`](assets/django-model.py) | Django model with VectorField, custom manager for similarity/hybrid/duplicate search |

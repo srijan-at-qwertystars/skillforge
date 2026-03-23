@@ -119,6 +119,6 @@
 | python | [pydantic-patterns](python/pydantic-patterns/) | Pydantic v2 BaseModel, validators, Settings, serialization, discriminated unions, TypeAdapter, and FastAPI integration | tested |
 | devops | [traefik-proxy](devops/traefik-proxy/) | Traefik v3 reverse proxy, Docker/Kubernetes providers, ACME TLS, middleware, TCP/UDP routing, and service discovery | tested |
 | testing | [vitest-patterns](testing/vitest-patterns/) | Vitest config, mocking (vi.fn/mock/spyOn), snapshots, coverage, browser mode, component testing, and benchmarking | tested |
-| python | [celery-task-queues](python/celery-task-queues/) | Celery 5.x task queues, workers, brokers, canvas patterns, celery-beat, retries, Flower monitoring, and deployment | created |
-| databases | [pgvector-embeddings](databases/pgvector-embeddings/) | pgvector extension for PostgreSQL vector search, HNSW/IVFFlat indexing, embedding integration, and hybrid search | created |
-| devops | [dagger-ci](devops/dagger-ci/) | Dagger programmable CI/CD, Functions, Modules, container ops, caching, secrets, and CI integration | created |
+| python | [celery-task-queues](python/celery-task-queues/) | Celery 5.x task queues, workers, brokers, canvas patterns, celery-beat, retries, Flower monitoring, and deployment | enriched |
+| databases | [pgvector-embeddings](databases/pgvector-embeddings/) | pgvector extension for PostgreSQL vector search, HNSW/IVFFlat indexing, embedding integration, and hybrid search | enriched |
+| devops | [dagger-ci](devops/dagger-ci/) | Dagger programmable CI/CD, Functions, Modules, container ops, caching, secrets, and CI integration | enriched |

@@ -1,0 +1,5 @@
+{
+  "name": "python-ci",
+  "sdk": "python",
+  "engineVersion": "v0.15.1"
+}

@@ -1,0 +1,45 @@
+# PostgreSQL + pgvector Docker Setup
+#
+# Usage:
+#   docker compose up -d        # Start PostgreSQL with pgvector
+#   docker compose down         # Stop and remove container (data persists in volume)
+#   docker compose down -v      # Stop and remove container + data
+#
+# Connect:
+#   psql postgresql://postgres:postgres@localhost:5433/vectordb
+#   # or
+#   docker compose exec db psql -U postgres vectordb
+#
+# pgvector is pre-installed and ready to use:
+#   CREATE EXTENSION IF NOT EXISTS vector;
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: pgvector-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: vectordb
+    ports:
+      - "5433:5432"  # mapped to 5433 to avoid conflicts with host PostgreSQL
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    shm_size: "256mb"  # increase for large index builds
+    command: >
+      postgres
+        -c shared_buffers=512MB
+        -c effective_cache_size=1GB
+        -c maintenance_work_mem=512MB
+        -c max_parallel_maintenance_workers=4
+        -c random_page_cost=1.1
+        -c work_mem=64MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vectordb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgvector_data:

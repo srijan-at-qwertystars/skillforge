@@ -1,0 +1,91 @@
+# Example GitHub Actions workflow that runs a Dagger CI pipeline.
+#
+# This workflow demonstrates:
+# - Running Dagger on push and pull request events
+# - Passing secrets to Dagger functions
+# - Conditional publishing (only on main branch push)
+# - Caching Dagger engine between runs
+#
+# Prerequisites:
+# - A Dagger module with `ci`, `test`, and `publish` functions
+# - GHCR_TOKEN secret (or use GITHUB_TOKEN with packages:write permission)
+
+name: Dagger CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Run tests and lint on every push/PR
+  check:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Tests
+        uses: dagger/dagger-for-github@v7
+        with:
+          verb: call
+          args: test --src=.
+          version: "0.15.1"
+
+      - name: Run Lint
+        uses: dagger/dagger-for-github@v7
+        with:
+          verb: call
+          args: lint --src=.
+          version: "0.15.1"
+
+  # Build and publish only on main branch push
+  publish:
+    name: Build & Publish
+    runs-on: ubuntu-latest
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build and Publish
+        uses: dagger/dagger-for-github@v7
+        with:
+          verb: call
+          args: >-
+            publish
+            --src=.
+            --registry=ghcr.io/${{ github.repository_owner }}
+            --tag=${{ github.sha }}
+            --username=${{ github.actor }}
+            --password=env:GHCR_TOKEN
+          version: "0.15.1"
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Full CI pipeline in a single step (alternative approach)
+  # ci-single-step:
+  #   name: Full CI
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dagger/dagger-for-github@v7
+  #       with:
+  #         verb: call
+  #         args: >-
+  #           ci
+  #           --src=.
+  #           --registry=ghcr.io/${{ github.repository_owner }}/app
+  #           --tag=${{ github.sha }}
+  #           --username=${{ github.actor }}
+  #           --password=env:GHCR_TOKEN
+  #         version: "0.15.1"
+  #       env:
+  #         GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

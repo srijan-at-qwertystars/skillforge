@@ -1,0 +1,66 @@
+# /etc/systemd/system/celery-worker.service
+#
+# Production systemd unit file for Celery workers.
+#
+# Setup:
+#   1. Copy this file to /etc/systemd/system/celery-worker.service
+#   2. Create environment file at /etc/conf.d/celery (see below)
+#   3. Create celery user: sudo useradd -r -s /bin/false celery
+#   4. Create directories:
+#        sudo mkdir -p /var/run/celery /var/log/celery
+#        sudo chown celery:celery /var/run/celery /var/log/celery
+#   5. Enable: sudo systemctl daemon-reload && sudo systemctl enable celery-worker
+#   6. Start:  sudo systemctl start celery-worker
+#
+# Environment file (/etc/conf.d/celery):
+#   CELERY_BIN="/srv/myproject/venv/bin/celery"
+#   CELERY_APP="myproject"
+#   CELERYD_NODES="worker1 worker2"
+#   CELERYD_OPTS="--time-limit=300 --concurrency=8 --max-tasks-per-child=200"
+#   CELERYD_PID_FILE="/var/run/celery/%n.pid"
+#   CELERYD_LOG_FILE="/var/log/celery/%n%I.log"
+#   CELERYD_LOG_LEVEL="INFO"
+
+[Unit]
+Description=Celery Worker Service
+After=network.target redis.service rabbitmq-server.service postgresql.service
+Wants=redis.service
+
+[Service]
+Type=forking
+User=celery
+Group=celery
+WorkingDirectory=/srv/myproject
+
+EnvironmentFile=/etc/conf.d/celery
+
+ExecStart=/bin/sh -c '${CELERY_BIN} -A ${CELERY_APP} multi start ${CELERYD_NODES} \
+    --pidfile=${CELERYD_PID_FILE} \
+    --logfile=${CELERYD_LOG_FILE} \
+    --loglevel=${CELERYD_LOG_LEVEL} \
+    ${CELERYD_OPTS}'
+
+ExecStop=/bin/sh -c '${CELERY_BIN} multi stopwait ${CELERYD_NODES} \
+    --pidfile=${CELERYD_PID_FILE}'
+
+ExecReload=/bin/sh -c '${CELERY_BIN} multi restart ${CELERYD_NODES} \
+    --pidfile=${CELERYD_PID_FILE} \
+    --logfile=${CELERYD_LOG_FILE} \
+    --loglevel=${CELERYD_LOG_LEVEL} \
+    ${CELERYD_OPTS}'
+
+Restart=always
+RestartSec=10
+TimeoutStopSec=300
+
+# File descriptor limits
+LimitNOFILE=65536
+
+# Security hardening
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

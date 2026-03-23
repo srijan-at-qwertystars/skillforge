@@ -408,7 +408,6 @@ dagger call ci --src=. --registry-password=env:GHCR_TOKEN
 | `ENTRYPOINT ["/app"]` | `.WithEntrypoint([]string{"/app"})` |
 
 Advantages: real language, conditional logic, loops, error handling, testable, composable modules, typed I/O, service deps, secret injection without build args.
-
 ## Migration from Shell-Based CI
 
 **Before (GitHub Actions YAML):**
@@ -434,6 +433,32 @@ func (m *MyModule) CI(ctx context.Context, src *dagger.Directory, token *dagger.
         Publish(ctx, "ghcr.io/org/myapp:latest")
 }
 ```
+
+## Skill Resources
+
+### References (Deep-Dive Guides)
+
+| File | Contents |
+|------|----------|
+| `references/advanced-patterns.md` | Multi-stage pipelines, matrix testing, multi-arch builds, service deps, module composition, registry/sharing, caching strategies, parallelism, secrets management |
+| `references/troubleshooting.md` | Engine startup failures, cache invalidation, build context issues, networking, debugging (`--debug`, `--interactive`, `.Terminal()`), SDK version mismatches, registry auth, performance |
+| `references/migration-guide.md` | Side-by-side migration from GitHub Actions, GitLab CI, Jenkins, Dockerfiles, and shell scripts to Dagger — with before/after examples and concept mapping tables |
+
+### Scripts (Automation Tools)
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/init-dagger-project.sh` | Initialize a Dagger project — choose Go/Python/TypeScript SDK, scaffolds directory structure, `dagger.json`, and starter functions |
+| `scripts/dagger-lint.sh` | Lint and validate Dagger module config — checks `dagger.json`, source files, `.daggerignore`, hardcoded secrets, cache usage, tooling |
+| `scripts/ci-integration-setup.sh` | Generate CI config snippets for GitHub Actions, GitLab CI, and CircleCI that invoke Dagger |
+
+### Assets (Ready-to-Use Examples)
+
+| Asset | Description |
+|-------|-------------|
+| `assets/go-ci-module/` | Complete Go Dagger module: build, test, lint, publish with parallel checks |
+| `assets/python-ci-module/` | Complete Python Dagger module: build, test, lint (ruff), publish |
+| `assets/github-actions-dagger.yml` | GitHub Actions workflow running Dagger with conditional publish on main |
 
 ## Input/Output Examples
 

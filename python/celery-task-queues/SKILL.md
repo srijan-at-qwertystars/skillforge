@@ -374,63 +374,7 @@ def test_view_enqueues_task():
 
 ## Production Deployment
 
-### Docker Compose
-
-```yaml
-services:
-  redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
-
-  worker:
-    build: .
-    command: celery -A myproject worker -l INFO --concurrency=8
-    depends_on: [redis]
-    environment:
-      CELERY_BROKER_URL: redis://redis:6379/0
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: "2.0"
-
-  beat:
-    build: .
-    command: celery -A myproject beat -l INFO
-    depends_on: [redis]
-    environment:
-      CELERY_BROKER_URL: redis://redis:6379/0
-
-  flower:
-    build: .
-    command: celery -A myproject flower --port=5555
-    ports: ["5555:5555"]
-    depends_on: [redis]
-```
-
-### systemd units
-
-```ini
-# /etc/systemd/system/celery-worker.service
-[Unit]
-Description=Celery Worker
-After=network.target redis.service
-[Service]
-Type=simple
-User=celery
-WorkingDirectory=/srv/myproject
-Environment="PATH=/srv/myproject/venv/bin"
-ExecStart=/srv/myproject/venv/bin/celery -A myproject worker -l INFO --concurrency=8
-Restart=always
-RestartSec=10
-[Install]
-WantedBy=multi-user.target
-
-# /etc/systemd/system/celery-beat.service — same structure, replace ExecStart:
-# ExecStart=/srv/myproject/venv/bin/celery -A myproject beat -l INFO
-```
-
-### Scaling workers
+See [production-guide.md](references/production-guide.md) for full deployment coverage (systemd, Docker, Kubernetes, monitoring, security). Quick reference:
 
 ```bash
 # Horizontal: run multiple worker processes/containers
@@ -444,6 +388,8 @@ celery -A myproject worker --autoscale=10,2
 pip install gevent
 celery -A myproject worker --pool=gevent --concurrency=500
 ```
+
+Ready-to-use templates in [assets/](assets/): `docker-compose.yml`, `celery-systemd.service`, `celerybeat-systemd.service`, `celeryconfig.py`.
 
 ## Common Pitfalls
 
@@ -490,3 +436,32 @@ result.info     # return value on SUCCESS, exception on FAILURE
 result.ready()  # True when finished
 result.get(timeout=30, propagate=False)  # get result without re-raising exceptions
 ```
+
+## Additional Resources
+
+This skill includes supplementary references, scripts, and assets for advanced usage and production deployment.
+
+### references/
+
+Deep-dive documents for advanced topics:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Canvas compositions (chain/group/chord/chunks with complex examples), task inheritance and base classes, custom serializers, signal handlers (`task_prerun`, `task_postrun`, `task_failure`, `worker_ready`), priority queues and routing strategies, rate limiting patterns, result backends comparison, and task state machine with custom states.
+- **[troubleshooting.md](references/troubleshooting.md)** — Solutions for common issues: worker not picking up tasks, memory leaks in long-running workers, timezone issues with celery-beat, serialization errors, connection pool exhaustion, tasks stuck in PENDING, broker reconnection, monitoring dead workers, and Django integration problems.
+- **[production-guide.md](references/production-guide.md)** — Complete production deployment guide: systemd unit files, Docker Compose full stack, Kubernetes with HPA, monitoring stack (Flower + Prometheus + Grafana), log aggregation, security hardening, and scaling strategies (prefork vs gevent/eventlet).
+
+### scripts/
+
+Ready-to-use operational scripts:
+
+- **[setup-celery-project.sh](scripts/setup-celery-project.sh)** — Scaffold a complete Celery project (app, tasks, config, Dockerfile, docker-compose). Supports `--broker redis|rabbitmq` and `--django` flags.
+- **[health-check.py](scripts/health-check.py)** — Check worker health, queue lengths, active/reserved/scheduled tasks. Supports `--json` output. Exit code 0=healthy, 1=issues, 2=no workers.
+- **[purge-and-inspect.sh](scripts/purge-and-inspect.sh)** — Wrapper for common `celery inspect` and `celery control` commands: status, active tasks, purge queues, revoke tasks, set rate limits, graceful shutdown.
+
+### assets/
+
+Production-ready configuration templates:
+
+- **[docker-compose.yml](assets/docker-compose.yml)** — Full Celery stack: Redis broker, default + priority workers, beat, Flower. Includes health checks, resource limits, replicas, and persistent volumes.
+- **[celery-systemd.service](assets/celery-systemd.service)** — Systemd unit file for Celery workers with security hardening, multi-node support, and environment file configuration.
+- **[celerybeat-systemd.service](assets/celerybeat-systemd.service)** — Systemd unit file for Celery beat scheduler.
+- **[celeryconfig.py](assets/celeryconfig.py)** — Production-ready configuration template with all important settings commented and explained.
