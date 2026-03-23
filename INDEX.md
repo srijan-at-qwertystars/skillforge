@@ -107,6 +107,6 @@
 | api | [protobuf-serialization](api/protobuf-serialization/) | Proto3 syntax, schema evolution, Buf CLI, well-known types, Protobuf editions, and code generation | tested |
 | react | [shadcn-ui-patterns](react/shadcn-ui-patterns/) | Component CLI, theming, Radix primitives, forms (react-hook-form+zod), data tables, and customization | tested |
 | architecture | [temporal-workflows](architecture/temporal-workflows/) | Durable execution, workflows, activities, signals/queries, saga pattern, and TypeScript/Go/Python SDKs | tested |
-| elixir | [phoenix-liveview](elixir/phoenix-liveview/) | Phoenix LiveView lifecycle, LiveComponents, forms, PubSub, Streams, JS hooks, testing, and performance patterns | enriched |
-| devops | [nomad-orchestration](devops/nomad-orchestration/) | HashiCorp Nomad job specs, task drivers, Consul/Vault integration, deployments, autoscaling, and multi-region federation | enriched |
-| databases | [clickhouse-analytics](databases/clickhouse-analytics/) | ClickHouse MergeTree engines, columnar schema design, materialized views, query optimization, ingestion, and distributed tables | enriched |
+| elixir | [phoenix-liveview](elixir/phoenix-liveview/) | Phoenix LiveView lifecycle, LiveComponents, forms, PubSub, Streams, JS hooks, testing, and performance patterns | tested |
+| devops | [nomad-orchestration](devops/nomad-orchestration/) | HashiCorp Nomad job specs, task drivers, Consul/Vault integration, deployments, autoscaling, and multi-region federation | tested |
+| databases | [clickhouse-analytics](databases/clickhouse-analytics/) | ClickHouse MergeTree engines, columnar schema design, materialized views, query optimization, ingestion, and distributed tables | tested |

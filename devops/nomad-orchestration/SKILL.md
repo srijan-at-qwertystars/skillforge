@@ -481,3 +481,4 @@ Use `template` blocks with `{{ service "dependency" }}` to block until upstream 
 - **[system-job.nomad.hcl](assets/system-job.nomad.hcl)** — System jobs for node-level agents (log collector with Vector, monitoring with Prometheus node-exporter) with host volume mounts and constraints.
 - **[nomad-server.hcl](assets/nomad-server.hcl)** — Production server config with TLS, ACLs, Consul/Vault integration, autopilot, gossip encryption, telemetry, and GC tuning.
 - **[nomad-client.hcl](assets/nomad-client.hcl)** — Production client config with host volumes, Docker driver options, reserved resources, CNI path, chroot_env, and GPU plugin setup.
+<!-- tested: pass -->

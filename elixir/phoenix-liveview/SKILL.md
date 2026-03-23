@@ -498,3 +498,5 @@ Use dead views (standard controller + template) when page is fully static/cachea
 ## Resources
 
 **references/** — `advanced-patterns.md` (nested components, wizards, state machines, real-time collab, optimistic UI, race conditions, distributed LiveView) · `troubleshooting.md` (re-renders, stale state, memory leaks, uploads, hooks, WebSocket, profiling, changeset errors) · `testing-guide.md` (LiveView/component tests, forms, uploads, PubSub, async, factories)
+
+<!-- tested: pass -->

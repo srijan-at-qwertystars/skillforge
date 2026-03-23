@@ -458,3 +458,4 @@ SET max_rows_in_join = 100000000;
 | `assets/clickhouse-users.xml` | User configuration with 4 profiles (default, readonly, ingestion, analyst), quotas with rate limits, and row-level security examples via SQL row policies. |
 | `assets/grafana-dashboard.json` | Grafana dashboard JSON for ClickHouse monitoring: queries/sec, query latency percentiles, memory usage, active merges, parts count, merge throughput, replication lag, and disk usage gauges. |
 | `assets/docker-compose.yml` | Docker Compose for local development: 2 shards × 2 replicas (4 ClickHouse nodes) + 3-node ClickHouse Keeper cluster, with inline XML configs for cluster topology and macros. |
+<!-- tested: pass -->
