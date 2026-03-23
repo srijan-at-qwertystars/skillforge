@@ -495,3 +495,5 @@ After `memory.grow()` or any call that might grow memory, existing `TypedArray` 
 ### Blocking the Main Thread
 
 Run heavy Wasm computation in Web Workers. Never call long-running Wasm functions on the main thread.
+
+<!-- tested: pass -->

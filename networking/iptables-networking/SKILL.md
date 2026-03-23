@@ -493,3 +493,5 @@ Rules are in-memory only. A reboot wipes everything unless saved. See Persistenc
 
 ### Overly broad ACCEPT rules
 Avoid `-j ACCEPT` without protocol/port constraints. Specify protocol, port, source, and interface.
+
+<!-- tested: pass -->
