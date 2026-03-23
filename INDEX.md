@@ -23,3 +23,6 @@
 | react | [react-server-components](react/react-server-components/) | Server vs client components, directives, server actions, streaming, caching, App Router patterns, and migration |
 | databases | [sql-query-optimization](databases/sql-query-optimization/) | Execution plans, join strategies, subquery refactoring, sargable predicates, pagination, ORM N+1, and anti-patterns |
 | devops | [nginx-configuration](devops/nginx-configuration/) | Reverse proxy, load balancing, SSL/TLS, location blocks, rate limiting, security hardening, and performance tuning |
+| messaging | [kafka-event-streaming](messaging/kafka-event-streaming/) | Topic design, producer/consumer patterns, exactly-once semantics, Kafka Streams, Connect, and serialization |
+| shell | [bash-scripting-patterns](shell/bash-scripting-patterns/) | Strict mode, parameter expansion, arrays, trap handlers, ShellCheck fixes, portability, and anti-patterns |
+| monitoring | [prometheus-alerting](monitoring/prometheus-alerting/) | Metric types, PromQL patterns, alerting/recording rules, Alertmanager routing, service discovery, and USE/RED |

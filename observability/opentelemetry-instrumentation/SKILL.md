@@ -492,3 +492,5 @@ Follow OTel semantic conventions for consistent querying across services:
 | `OTEL_PROPAGATORS` | Propagator list (`tracecontext,baggage`) |
 | `OTEL_RESOURCE_ATTRIBUTES` | Comma-separated `key=value` pairs |
 | `OTEL_LOG_LEVEL` | SDK log level (`debug`, `info`, `warn`, `error`) |
+
+<!-- tested: pass -->

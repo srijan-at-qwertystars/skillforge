@@ -498,3 +498,5 @@ resource "aws_lambda_function" "processor" {
 - Skipping `lifecycle.prevent_destroy` on stateful resources.
 - Not enabling state bucket versioning.
 - Applying directly from local machines in production.
+
+<!-- tested: pass -->

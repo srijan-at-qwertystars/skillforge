@@ -487,3 +487,5 @@ async fn fetch_with_timeout(url: &str) -> Result<Response, ApiError> {
         .map_err(ApiError::from)
 }
 ```
+
+<!-- tested: pass -->
