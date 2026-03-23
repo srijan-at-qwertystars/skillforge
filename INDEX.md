@@ -101,3 +101,6 @@
 | security | [tls-certificate-management](security/tls-certificate-management/) | Let's Encrypt, cert-manager, ACME, mTLS, OpenSSL, certificate rotation, internal PKI, and debugging TLS |
 | python | [python-cli-tools](python/python-cli-tools/) | Click, Typer, argparse, Rich, CLI testing, shell completion, distribution (pipx/PyInstaller), and async CLIs |
 | architecture | [design-patterns-practical](architecture/design-patterns-practical/) | Factory, Builder, Strategy, Observer, Decorator, Repository, Result/Option, and problem-to-pattern guide |
+| web | [wasm-patterns](web/wasm-patterns/) | Wasm modules, Rust/C++/Go compilation, WASI, Component Model, browser integration, server-side runtimes, and SIMD |
+| languages | [deno-patterns](languages/deno-patterns/) | Deno 2, permissions, npm/jsr modules, Deno.serve, Fresh framework, Deno KV, Deploy, and Node migration |
+| networking | [iptables-networking](networking/iptables-networking/) | iptables rules, nftables, NAT, port forwarding, network namespaces, traffic control, firewalld, and debugging |
