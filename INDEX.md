@@ -128,6 +128,6 @@
 | web | [astro-framework](web/astro-framework/) | Astro islands architecture, content collections, client directives, SSR adapters, view transitions, and deployment | tested |
 | languages | [gleam-language](languages/gleam-language/) | Gleam type-safe BEAM language, pattern matching, Result types, OTP actors, Wisp/Lustre web, and JS/Erlang FFI | tested |
 | typescript | [effect-ts](typescript/effect-ts/) | Effect-TS type-safe composition, tagged errors, Layer dependency injection, Schema, streams, and concurrency | tested |
-| web | [hono-framework](web/hono-framework/) | Hono 4.x ultrafast web framework, multi-runtime (Workers/Bun/Deno/Node), middleware, RPC client, and JSX | enriched |
-| testing | [testcontainers-patterns](testing/testcontainers-patterns/) | Testcontainers Docker-based integration testing, module containers, wait strategies, and multi-language patterns | enriched |
-| devops | [mise-polyglot](devops/mise-polyglot/) | mise polyglot tool version manager, task runner, .mise.toml config, backends, and environment management | enriched |
+| web | [hono-framework](web/hono-framework/) | Hono 4.x ultrafast web framework, multi-runtime (Workers/Bun/Deno/Node), middleware, RPC client, and JSX | tested |
+| testing | [testcontainers-patterns](testing/testcontainers-patterns/) | Testcontainers Docker-based integration testing, module containers, wait strategies, and multi-language patterns | tested |
+| devops | [mise-polyglot](devops/mise-polyglot/) | mise polyglot tool version manager, task runner, .mise.toml config, backends, and environment management | tested |

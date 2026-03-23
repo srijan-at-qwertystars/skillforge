@@ -455,3 +455,5 @@ For GitLab CI: use `docker:dind` service with `DOCKER_HOST=tcp://docker:2375` an
 | `junit5-base-test.java` | Java JUnit 5 base class with singleton Postgres + Redis, transaction rollback, helpers |
 | `vitest-setup.ts` | Node.js Vitest global setup — parallel Postgres + Redis start, env var export |
 | `docker-compose-test.yml` | Multi-service Compose file (Postgres, Redis, Kafka, MongoDB, Elasticsearch, LocalStack) |
+
+<!-- tested: pass -->

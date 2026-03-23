@@ -498,3 +498,5 @@ mise reshim                     # rebuild shims
 | `mise.toml` | Comprehensive `.mise.toml` template with tools, env, tasks, hooks, and settings sections |
 | `github-action.yml` | GitHub Actions CI workflow using `jdx/mise-action` with lint/test/build/deploy jobs |
 | `dockerfile` | Multi-stage Dockerfile installing tools via mise, producing a minimal runtime image |
+
+<!-- tested: pass -->

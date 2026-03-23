@@ -496,3 +496,4 @@ Bun server template: `package.json` with dev/build/test scripts + `src/index.ts`
 
 ### `assets/docker-compose.yml`
 Docker Compose for Hono Node.js app with Postgres 16 and Redis 7. Includes health checks, volume persistence, and a Dockerfile example in comments.
+<!-- tested: pass -->
