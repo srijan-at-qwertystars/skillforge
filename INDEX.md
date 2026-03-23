@@ -122,6 +122,6 @@
 | python | [celery-task-queues](python/celery-task-queues/) | Celery 5.x task queues, workers, brokers, canvas patterns, celery-beat, retries, Flower monitoring, and deployment | tested |
 | databases | [pgvector-embeddings](databases/pgvector-embeddings/) | pgvector extension for PostgreSQL vector search, HNSW/IVFFlat indexing, embedding integration, and hybrid search | tested |
 | devops | [dagger-ci](devops/dagger-ci/) | Dagger programmable CI/CD, Functions, Modules, container ops, caching, secrets, and CI integration | tested |
-| python | [polars-dataframes](python/polars-dataframes/) | Polars DataFrame library, lazy/eager evaluation, expression API, IO, window functions, and Pandas migration | created |
-| devops | [argocd-gitops](devops/argocd-gitops/) | Argo CD GitOps, Application/ApplicationSet CRDs, sync strategies, Helm/Kustomize, multi-cluster, and RBAC | created |
-| databases | [turso-libsql](databases/turso-libsql/) | Turso/libSQL edge SQLite database, embedded replicas, SDK clients, vector search, and multi-tenancy | created |
+| python | [polars-dataframes](python/polars-dataframes/) | Polars DataFrame library, lazy/eager evaluation, expression API, IO, window functions, and Pandas migration | enriched |
+| devops | [argocd-gitops](devops/argocd-gitops/) | Argo CD GitOps, Application/ApplicationSet CRDs, sync strategies, Helm/Kustomize, multi-cluster, and RBAC | enriched |
+| databases | [turso-libsql](databases/turso-libsql/) | Turso/libSQL edge SQLite database, embedded replicas, SDK clients, vector search, and multi-tenancy | enriched |

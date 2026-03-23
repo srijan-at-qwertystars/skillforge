@@ -1,0 +1,151 @@
+# =============================================================================
+# Argo CD Application Template
+#
+# Customize this template for your application. Uncomment options as needed.
+# Docs: https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/#applications
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app                          # Application name (unique within Argo CD)
+  namespace: argocd                     # Must be the Argo CD namespace
+  labels:
+    app.kubernetes.io/part-of: my-platform
+    team: backend
+  # Finalizer: cascade-delete cluster resources when Application is deleted.
+  # Remove this if you want resources to persist after Application deletion.
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    # Notifications (uncomment to enable)
+    # notifications.argoproj.io/subscribe.on-sync-succeeded.slack: my-channel
+    # notifications.argoproj.io/subscribe.on-health-degraded.slack: alerts
+    # notifications.argoproj.io/subscribe.on-sync-failed.slack: alerts
+
+    # Image Updater (uncomment if using argocd-image-updater)
+    # argocd-image-updater.argoproj.io/image-list: myapp=myregistry/myapp
+    # argocd-image-updater.argoproj.io/myapp.update-strategy: semver
+    # argocd-image-updater.argoproj.io/write-back-method: git
+spec:
+  # Project scopes RBAC, allowed repos, and allowed clusters.
+  # Use 'default' for simple setups or create a dedicated AppProject.
+  project: default
+
+  # ── Source: where to find the manifests ──────────────────────────────────
+  source:
+    repoURL: https://github.com/org/repo.git     # Git repo URL
+    targetRevision: main                           # Branch, tag, or commit SHA
+    path: k8s/overlays/production                  # Path within the repo
+
+    # ── Kustomize options (uncomment if using Kustomize) ───────────────────
+    # kustomize:
+    #   namePrefix: prod-
+    #   nameSuffix: ""
+    #   images:
+    #     - name: myapp
+    #       newTag: v2.0.0
+    #   commonLabels:
+    #     env: production
+    #   commonAnnotations:
+    #     team: backend
+
+    # ── Helm options (uncomment if using Helm) ─────────────────────────────
+    # # For Helm repos, use 'chart' instead of 'path':
+    # # repoURL: https://charts.example.com    # or oci://registry.example.com/charts
+    # # chart: my-chart
+    # # targetRevision: 1.2.3                  # Chart version
+    # helm:
+    #   releaseName: my-app
+    #   valueFiles:
+    #     - values.yaml
+    #     - values-production.yaml
+    #   # Inline values (override valueFiles):
+    #   values: |
+    #     replicaCount: 3
+    #     image:
+    #       tag: v2.0.0
+    #   # Individual parameter overrides:
+    #   parameters:
+    #     - name: service.type
+    #       value: ClusterIP
+    #   # Skip CRD installation:
+    #   # skipCrds: true
+    #   # Pass --set-file arguments:
+    #   # fileParameters:
+    #   #   - name: config
+    #   #     path: files/config.json
+
+    # ── Directory options (plain YAML) ─────────────────────────────────────
+    # directory:
+    #   recurse: true
+    #   exclude: '{test-*,*.test.yaml}'
+    #   include: '*.yaml'
+    #   jsonnet:
+    #     libs: [vendor]
+
+  # ── Multi-source (v2.6+, uncomment to replace single source) ────────────
+  # sources:
+  #   - repoURL: https://charts.example.com
+  #     chart: my-chart
+  #     targetRevision: 1.2.3
+  #     helm:
+  #       valueFiles:
+  #         - $values/values-production.yaml
+  #   - repoURL: https://github.com/org/config-repo.git
+  #     targetRevision: main
+  #     ref: values        # Reference name for valueFiles above
+
+  # ── Destination: where to deploy ─────────────────────────────────────────
+  destination:
+    server: https://kubernetes.default.svc    # In-cluster or registered cluster URL
+    namespace: my-app                          # Target namespace
+
+  # ── Sync Policy ──────────────────────────────────────────────────────────
+  syncPolicy:
+    # Automated sync — uncomment for GitOps automation
+    automated:
+      prune: true          # Delete resources removed from Git
+      selfHeal: true       # Revert manual cluster changes
+      # allowEmpty: false  # Prevent sync if source produces no manifests
+
+    syncOptions:
+      - CreateNamespace=true                # Create namespace if missing
+      - PrunePropagationPolicy=foreground   # Wait for dependents on prune
+      - PruneLast=true                      # Delete removed resources after new ones are healthy
+      # - ServerSideApply=true              # For large CRDs (avoids annotation size limit)
+      # - ApplyOutOfSyncOnly=true           # Only apply resources that drifted
+      # - RespectIgnoreDifferences=true     # Don't sync ignored fields
+      # - Replace=true                      # Use replace instead of apply (destructive)
+      # - FailOnSharedResource=true         # Fail if resource is managed by another app
+
+    # Retry on transient failures
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+    # Managed namespace metadata (v2.7+)
+    # managedNamespaceMetadata:
+    #   labels:
+    #     team: backend
+    #     env: production
+    #   annotations:
+    #     owner: backend-team@example.com
+
+  # ── Ignore Differences ──────────────────────────────────────────────────
+  # Prevent drift detection on fields managed by controllers/webhooks
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas          # Managed by HPA
+    # - group: ""
+    #   kind: Service
+    #   jqPathExpressions:
+    #     - .spec.clusterIP
+    #     - .spec.clusterIPs
+
+  # ── Revision History Limit ──────────────────────────────────────────────
+  revisionHistoryLimit: 10

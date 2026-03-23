@@ -354,6 +354,33 @@ kubectl get secrets -n argocd -l argocd.argoproj.io/secret-type -o yaml > secret
 ```
 Git repos are the source of truth. ApplicationSets can regenerate all Applications. Automate backups with CronJob.
 
+## Additional Resources
+
+### Reference Guides (`references/`)
+
+| Guide | Description |
+|-------|-------------|
+| [advanced-patterns.md](references/advanced-patterns.md) | ApplicationSet generators (git, list, cluster, matrix, merge, PR), sync waves, custom Lua health checks, CMP plugins, App of Apps, multi-tenancy, progressive delivery with Rollouts, GitOps repo structures |
+| [troubleshooting.md](references/troubleshooting.md) | Diagnosing OutOfSync/Syncing, hook failures, ComparisonError, repo access issues, namespace gotchas, resource tracking conflicts, performance tuning, disaster recovery |
+| [security-guide.md](references/security-guide.md) | RBAC policies, SSO/OIDC setup (Azure AD, Okta, Dex), secrets management (Sealed Secrets, ESO, SOPS, Vault), network policies, audit logging, supply chain security |
+
+### Scripts (`scripts/`)
+
+| Script | Description |
+|--------|-------------|
+| [install-argocd.sh](scripts/install-argocd.sh) | Install Argo CD (Helm or manifests, HA or non-HA, configurable namespace/version) |
+| [backup-restore.sh](scripts/backup-restore.sh) | Backup and restore Argo CD config (apps, projects, repos, clusters, configmaps, secrets) |
+| [app-health-check.sh](scripts/app-health-check.sh) | Check health/sync status of all apps, report degraded ones (table/json/summary output) |
+
+### Asset Templates (`assets/`)
+
+| Template | Description |
+|----------|-------------|
+| [application.yaml](assets/application.yaml) | Application manifest with all common options commented |
+| [applicationset.yaml](assets/applicationset.yaml) | ApplicationSet with git generator and other generator examples |
+| [project.yaml](assets/project.yaml) | AppProject with RBAC roles, sync windows, resource restrictions |
+| [argocd-values.yaml](assets/argocd-values.yaml) | Production Helm values (HA, SSO, RBAC, notifications, metrics) |
+
 ## Pitfalls and Best Practices
 
 1. **Never store plain secrets in Git.** Use Sealed Secrets, External Secrets, or SOPS.

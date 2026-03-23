@@ -394,3 +394,31 @@ Embedded replicas reduce row reads against Turso (local reads are free). Batch o
 - **Row read counting**: Each row scanned (not just returned) counts against quota. Add indexes to avoid full table scans.
 - **Embedded replica file location**: Ensure the path is writable and persists across deployments (not `/tmp` on serverless).
 - **Schema migrations**: No built-in migration tool. Use Drizzle ORM (`drizzle-kit push`) or run SQL files via `turso db shell`.
+
+## Additional Resources
+
+### Reference Guides (`references/`)
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Deep dive into embedded replicas (sync intervals, conflict resolution, offline-first), multi-tenancy patterns (database-per-tenant, schema-per-tenant, tenant routing), libSQL vector search (indexes, `vector_top_k`, distance functions, RAG pipelines), platform integration (Next.js, SvelteKit, Remix, Astro), edge functions (Cloudflare Workers, Vercel Edge, Deno Deploy), batch operations, schema migrations, and connection management.
+
+- **[troubleshooting.md](references/troubleshooting.md)** — Connection timeouts and retry strategies, embedded replica sync failures and stale data, auth token expiration and rotation, storage limits and optimization, SQLite migration gotchas, platform-specific deployment issues (Vercel, Workers, Docker, Fly.io), and performance debugging with `turso db inspect` and `EXPLAIN QUERY PLAN`.
+
+- **[sqlite-migration.md](references/sqlite-migration.md)** — Complete SQLite-to-Turso migration guide: compatibility matrix (what works, what doesn't, new libSQL features), connection string changes, ORM integration updates (Drizzle, Prisma, SQLAlchemy, Kysely), testing strategies (local SQLite vs Turso test DB, CI/CD), and data migration procedures (small DBs, large DBs, zero-downtime).
+
+### Scripts (`scripts/`)
+
+- **[setup-turso.sh](scripts/setup-turso.sh)** — Initialize a Turso project: authenticate, create group and database, generate auth token, print `.env` values. Usage: `./scripts/setup-turso.sh <db-name> [group] [location]`.
+
+- **[db-management.sh](scripts/db-management.sh)** — Common Turso CLI operations: list, info, inspect, shell, replicate, unreplicate, destroy, token generation, usage stats. Usage: `./scripts/db-management.sh <command> [args]`.
+
+- **[migrate-from-sqlite.sh](scripts/migrate-from-sqlite.sh)** — Migrate an existing SQLite database to Turso: validates source, creates Turso DB, imports data, verifies row counts. Usage: `./scripts/migrate-from-sqlite.sh <sqlite-file> <turso-db-name> [group]`.
+
+### Asset Templates (`assets/`)
+
+- **[typescript-client.ts](assets/typescript-client.ts)** — TypeScript client template with auto-detection of remote/replica/local mode, retry logic, sync helpers, and graceful shutdown.
+
+- **[python-client.py](assets/python-client.py)** — Python client template with `libsql-experimental`, singleton connection, retry logic, and transaction context manager.
+
+- **[drizzle-config.ts](assets/drizzle-config.ts)** — Drizzle ORM configuration for Turso with example schema and client setup.
+
+- **[docker-compose.yml](assets/docker-compose.yml)** — Local `sqld` development setup. Run `docker compose up -d` for a local libSQL server on port 8080 — no Turso account required.

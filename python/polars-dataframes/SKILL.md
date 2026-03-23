@@ -357,44 +357,6 @@ df.with_columns(
 )
 ```
 
-## Nested Types
-
-### List columns
-
-```python
-df = pl.DataFrame({
-    "user": ["A", "B"],
-    "scores": [[90, 85, 92], [78, 88]],
-})
-
-df.with_columns(
-    pl.col("scores").list.mean().alias("avg"),      # [89.0, 83.0]
-    pl.col("scores").list.max().alias("best"),       # [92, 88]
-    pl.col("scores").list.len().alias("num_scores"), # [3, 2]
-    pl.col("scores").list.sort().alias("sorted"),
-)
-```
-
-### Array columns (fixed-width)
-
-```python
-# Arrays have fixed width — use for embeddings, coordinates
-df = pl.DataFrame({
-    "embedding": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
-}).cast({"embedding": pl.Array(pl.Float64, 3)})
-```
-
-### Struct columns
-
-```python
-# Unnest struct into top-level columns
-df = pl.DataFrame({
-    "id": [1, 2],
-    "meta": [{"city": "NYC", "pop": 8_000_000}, {"city": "LA", "pop": 4_000_000}],
-})
-df.unnest("meta")  # Expands struct fields into top-level columns
-```
-
 ## IO Operations
 
 ```python
@@ -489,3 +451,29 @@ result = ctx.execute("""
     GROUP BY u.name
 """).collect()
 ```
+
+## Additional Resources
+
+### References (Deep Dives)
+
+| File | Description |
+|------|-------------|
+| `references/advanced-patterns.md` | Complex expressions, LazyFrame optimization, streaming, plugins, struct/list manipulation, dynamic column selection, pivot/unpivot, time series ops, multi-DataFrame operations |
+| `references/pandas-migration.md` | Side-by-side Pandas↔Polars comparison, common gotchas, `to_pandas()`/`from_pandas()` patterns, missing features, performance comparison, when to switch |
+| `references/io-guide.md` | CSV, Parquet (row groups, pushdown), Delta Lake, cloud storage (S3/GCS/Azure), databases (connectorx, ADBC), JSON/NDJSON, Arrow IPC, Excel |
+
+### Scripts (Runnable Tools)
+
+| File | Description |
+|------|-------------|
+| `scripts/benchmark-vs-pandas.py` | Benchmark Polars vs Pandas on groupby, join, filter, sort. Run: `python benchmark-vs-pandas.py --rows 5000000` |
+| `scripts/polars-profiler.py` | Profile LazyFrame query plans — shows optimized plan, detected optimizations, execution timing. Run: `python polars-profiler.py --demo` |
+| `scripts/csv-to-parquet.py` | CLI tool to convert CSV→Parquet with compression, partitioning, streaming. Run: `python csv-to-parquet.py input.csv output.parquet` |
+
+### Assets (Templates & References)
+
+| File | Description |
+|------|-------------|
+| `assets/cheatsheet.md` | Quick-reference cheatsheet — all common Polars operations in 1-2 lines each |
+| `assets/etl-template.py` | Production ETL pipeline template with schema validation, quality checks, lazy evaluation |
+| `assets/jupyter-starter.py` | Data exploration starter script with profiling, cleaning, analysis, and visualization sections |

@@ -1,0 +1,156 @@
+# =============================================================================
+# Argo CD AppProject Template
+#
+# Projects scope team access, allowed repos/clusters, and sync windows.
+# Docs: https://argo-cd.readthedocs.io/en/stable/operator-manual/declarative-setup/#projects
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: team-backend
+  namespace: argocd
+  # Finalizer prevents accidental deletion of a project with active apps
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: "Backend team — microservices and APIs"
+
+  # ── Source Repositories ──────────────────────────────────────────────────
+  # Which Git repos / Helm registries this project's apps can use.
+  # Use wildcards to match multiple repos.
+  sourceRepos:
+    - https://github.com/org/backend-*.git
+    - https://github.com/org/shared-charts.git
+    - https://charts.example.com
+    # - '*'   # Allow all repos (not recommended for production)
+
+  # ── Destination Clusters & Namespaces ────────────────────────────────────
+  # Where this project's apps can deploy to.
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: backend-*
+    - server: https://kubernetes.default.svc
+      namespace: shared-services
+    - server: https://staging.example.com
+      namespace: backend-*
+    # - server: '*'
+    #   namespace: '*'   # Allow all (not recommended)
+
+  # ── Cluster-Scoped Resources ─────────────────────────────────────────────
+  # Whitelist of cluster-scoped resources this project can manage.
+  # Empty list = deny all cluster-scoped resources.
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    # - group: rbac.authorization.k8s.io
+    #   kind: ClusterRole
+    # - group: rbac.authorization.k8s.io
+    #   kind: ClusterRoleBinding
+
+  # ── Namespace-Scoped Resource Deny List ──────────────────────────────────
+  # Block specific namespace-scoped resources from being managed.
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota
+    - group: ''
+      kind: LimitRange
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+
+  # Alternatively, use an allow-list (only allow specific resources):
+  # namespaceResourceWhitelist:
+  #   - group: ''
+  #     kind: ConfigMap
+  #   - group: ''
+  #     kind: Secret
+  #   - group: apps
+  #     kind: Deployment
+  #   - group: ''
+  #     kind: Service
+
+  # ── RBAC Roles ───────────────────────────────────────────────────────────
+  roles:
+    # Developer role: view and sync
+    - name: developer
+      description: "Backend developers — view apps and trigger syncs"
+      policies:
+        - p, proj:team-backend:developer, applications, get, team-backend/*, allow
+        - p, proj:team-backend:developer, applications, sync, team-backend/*, allow
+        - p, proj:team-backend:developer, logs, get, team-backend/*, allow
+      # Map SSO groups to this role
+      groups:
+        - org:backend-developers
+
+    # Lead role: full app management
+    - name: lead
+      description: "Backend leads — full application management"
+      policies:
+        - p, proj:team-backend:lead, applications, *, team-backend/*, allow
+        - p, proj:team-backend:lead, logs, get, team-backend/*, allow
+        - p, proj:team-backend:lead, exec, create, team-backend/*, allow
+      groups:
+        - org:backend-leads
+
+    # CI/CD bot: automated sync via JWT token
+    - name: ci-deployer
+      description: "CI/CD automation — sync only"
+      policies:
+        - p, proj:team-backend:ci-deployer, applications, get, team-backend/*, allow
+        - p, proj:team-backend:ci-deployer, applications, sync, team-backend/*, allow
+      # JWT tokens for programmatic access
+      # Generate: argocd proj role create-token team-backend ci-deployer
+      jwtTokens: []
+
+    # Read-only for stakeholders
+    - name: viewer
+      description: "Stakeholders — read-only access"
+      policies:
+        - p, proj:team-backend:viewer, applications, get, team-backend/*, allow
+      groups:
+        - org:backend-stakeholders
+
+  # ── Sync Windows ─────────────────────────────────────────────────────────
+  # Restrict when syncs can happen (cron schedule format).
+  syncWindows:
+    # Allow syncs during business hours (Mon-Fri 6am-6pm UTC)
+    - kind: allow
+      schedule: '0 6-18 * * 1-5'
+      duration: 12h
+      applications:
+        - '*'
+      namespaces:
+        - backend-prod-*
+      manualSync: true
+
+    # Deny syncs during change freeze (last week of December)
+    - kind: deny
+      schedule: '0 0 25-31 12 *'
+      duration: 24h
+      applications:
+        - '*'
+      clusters:
+        - '*'
+
+  # ── Orphaned Resource Monitoring ─────────────────────────────────────────
+  # Warn about resources in project namespaces not managed by any Application.
+  orphanedResources:
+    warn: true
+    ignore:
+      - group: ''
+        kind: ConfigMap
+        name: kube-root-ca.crt
+      - group: ''
+        kind: ServiceAccount
+        name: default
+
+  # ── Signature Keys ──────────────────────────────────────────────────────
+  # Require GPG-signed commits for this project's applications.
+  # signatureKeys:
+  #   - keyID: "ABCDEF1234567890"
+
+  # ── Destination Service Accounts (v2.9+) ────────────────────────────────
+  # Use specific ServiceAccounts in target namespaces instead of cluster-admin.
+  # destinationServiceAccounts:
+  #   - server: https://kubernetes.default.svc
+  #     namespace: backend-*
+  #     defaultServiceAccount: argocd-backend-deployer

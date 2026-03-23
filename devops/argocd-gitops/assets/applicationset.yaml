@@ -1,0 +1,157 @@
+# =============================================================================
+# Argo CD ApplicationSet Template — Git Directory Generator
+#
+# Creates an Application for each directory matching the glob pattern.
+# Docs: https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/
+# =============================================================================
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: my-apps
+  namespace: argocd
+spec:
+  # Use Go templates for more powerful templating (recommended)
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+
+  # ── Generators ───────────────────────────────────────────────────────────
+
+  generators:
+    # Git directory generator: create an app per directory matching the pattern
+    - git:
+        repoURL: https://github.com/org/gitops-repo.git
+        revision: main
+        directories:
+          - path: apps/*
+          # Exclude specific directories:
+          # - path: apps/deprecated-app
+          #   exclude: true
+
+    # ── Other generator examples (uncomment one) ──────────────────────────
+
+    # # Git file generator: parameterize from config files
+    # - git:
+    #     repoURL: https://github.com/org/gitops-repo.git
+    #     revision: main
+    #     files:
+    #       - path: "clusters/**/config.json"
+
+    # # List generator: explicit parameter sets
+    # - list:
+    #     elements:
+    #       - cluster: production
+    #         url: https://prod-k8s.example.com
+    #       - cluster: staging
+    #         url: https://staging-k8s.example.com
+
+    # # Cluster generator: auto-discover registered clusters
+    # - clusters:
+    #     selector:
+    #       matchLabels:
+    #         env: production
+
+    # # Matrix generator: Cartesian product of two generators
+    # - matrix:
+    #     generators:
+    #       - git:
+    #           repoURL: https://github.com/org/gitops-repo.git
+    #           revision: main
+    #           directories:
+    #             - path: apps/*
+    #       - clusters:
+    #           selector:
+    #             matchLabels:
+    #               env: production
+
+    # # Pull Request generator: ephemeral preview envs
+    # - pullRequest:
+    #     github:
+    #       owner: myorg
+    #       repo: myapp
+    #       tokenRef:
+    #         secretName: github-token
+    #         key: token
+    #       labels:
+    #         - preview
+    #     requeueAfterSeconds: 60
+
+  # ── Template ─────────────────────────────────────────────────────────────
+
+  template:
+    metadata:
+      # Template variables depend on generator. Git directory provides:
+      #   {{ .path.path }}      — full path (e.g., apps/my-app)
+      #   {{ .path.basename }}  — directory name (e.g., my-app)
+      #   {{ .path.basenameNormalized }} — DNS-safe name
+      name: '{{ .path.basename }}'
+      labels:
+        app.kubernetes.io/part-of: my-platform
+      # Uncomment for cascade deletion of cluster resources
+      # finalizers:
+      #   - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+
+      source:
+        repoURL: https://github.com/org/gitops-repo.git
+        targetRevision: main
+        path: '{{ .path.path }}'
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ .path.basename }}'
+
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 3
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+      # Ignore common controller-managed fields across all generated apps
+      ignoreDifferences:
+        - group: apps
+          kind: Deployment
+          jsonPointers:
+            - /spec/replicas
+
+  # ── Strategy ─────────────────────────────────────────────────────────────
+
+  # Control how ApplicationSet manages generated Applications
+  strategy:
+    type: AllAtOnce         # AllAtOnce (default) or RollingSync
+    # rollingSync:
+    #   steps:
+    #     - matchExpressions:
+    #         - key: envType
+    #           operator: In
+    #           values: [staging]
+    #     - matchExpressions:
+    #         - key: envType
+    #           operator: In
+    #           values: [production]
+    #       maxUpdate: "25%"
+
+  # ── Sync Policy ──────────────────────────────────────────────────────────
+
+  # What to do when an Application is no longer generated
+  syncPolicy:
+    preserveResourcesOnDeletion: false    # true = keep cluster resources when app is removed
+    applicationsSync: create-update       # create-only | create-update | create-delete
+
+  # ── Template Patch (v2.8+) ───────────────────────────────────────────────
+
+  # Override template fields based on generator parameters
+  # templatePatch: |
+  #   spec:
+  #     source:
+  #       {{- if eq .path.basename "critical-app" }}
+  #       targetRevision: release-1.0
+  #       {{- end }}

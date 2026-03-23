@@ -1,0 +1,350 @@
+# =============================================================================
+# Production Helm Values for Argo CD (argo/argo-cd chart)
+#
+# Usage:
+#   helm install argocd argo/argo-cd -n argocd --create-namespace -f argocd-values.yaml
+#
+# Covers: HA, SSO/OIDC, RBAC, notifications, resource limits, metrics.
+# Customize all placeholder values (marked with CHANGEME) before deploying.
+# =============================================================================
+
+## ── Global ────────────────────────────────────────────────────────────────
+
+global:
+  # Domain for Argo CD UI
+  domain: argocd.example.com                      # CHANGEME
+
+  logging:
+    format: json        # json | text
+    level: info         # debug | info | warn | error
+
+## ── API Server ────────────────────────────────────────────────────────────
+
+server:
+  replicas: 2
+
+  # Ingress
+  ingress:
+    enabled: true
+    ingressClassName: nginx                        # CHANGEME
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt  # CHANGEME
+      nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    tls: true
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Pod disruption budget
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true       # Requires Prometheus Operator
+
+## ── Application Controller ───────────────────────────────────────────────
+
+controller:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+  # Controller sharding for large installations (100+ apps)
+  # env:
+  #   - name: ARGOCD_CONTROLLER_REPLICAS
+  #     value: "2"
+
+## ── Repo Server ──────────────────────────────────────────────────────────
+
+repoServer:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+  pdb:
+    enabled: true
+    minAvailable: 1
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+  # Extra sidecar containers (e.g., CMP plugins)
+  # extraContainers: []
+
+  # Mount custom tooling
+  # volumes:
+  #   - name: custom-tools
+  #     emptyDir: {}
+  # volumeMounts:
+  #   - name: custom-tools
+  #     mountPath: /usr/local/bin/custom
+
+## ── ApplicationSet Controller ────────────────────────────────────────────
+
+applicationSet:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+## ── Redis HA ─────────────────────────────────────────────────────────────
+
+redis-ha:
+  enabled: true
+  haproxy:
+    enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+  replicas: 3
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Disable standalone Redis when using redis-ha
+redis:
+  enabled: false
+
+## ── Dex (SSO Identity Broker) ────────────────────────────────────────────
+
+dex:
+  enabled: false        # Set to true if using Dex instead of direct OIDC
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+## ── Notifications Controller ─────────────────────────────────────────────
+
+notifications:
+  enabled: true
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+  # Define notification services, triggers, and templates in argocd-notifications-cm
+  # or via notificationsController.cm below
+
+## ── Config (argocd-cm) ───────────────────────────────────────────────────
+
+configs:
+  cm:
+    # Server URL
+    url: https://argocd.example.com                # CHANGEME
+
+    # Disable admin account in production
+    admin.enabled: "false"
+
+    # Resource tracking method
+    application.resourceTrackingMethod: annotation+label
+
+    # Status badge (enable for README badges)
+    statusbadge.enabled: "true"
+
+    # OIDC Configuration (direct, without Dex)
+    oidc.config: |
+      name: SSO                                    # CHANGEME
+      issuer: https://login.example.com            # CHANGEME
+      clientID: argocd-client-id                   # CHANGEME
+      clientSecret: $oidc.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+      requestedIDTokenClaims:
+        groups:
+          essential: true
+
+    # Dex Configuration (alternative to direct OIDC — uncomment and set dex.enabled: true)
+    # dex.config: |
+    #   connectors:
+    #     - type: github
+    #       id: github
+    #       name: GitHub
+    #       config:
+    #         clientID: $dex.github.clientID
+    #         clientSecret: $dex.github.clientSecret
+    #         orgs:
+    #           - name: my-org                      # CHANGEME
+
+    # Custom health checks for common CRDs
+    resource.customizations.health.cert-manager.io_Certificate: |
+      hs = {}
+      if obj.status ~= nil and obj.status.conditions ~= nil then
+        for i, condition in ipairs(obj.status.conditions) do
+          if condition.type == "Ready" then
+            if condition.status == "True" then
+              hs.status = "Healthy"
+            else
+              hs.status = "Degraded"
+            end
+            hs.message = condition.message
+            return hs
+          end
+        end
+      end
+      hs.status = "Progressing"
+      hs.message = "Waiting for certificate"
+      return hs
+
+  # RBAC Configuration (argocd-rbac-cm)
+  rbac:
+    policy.default: role:readonly
+
+    policy.csv: |
+      # Admin role — platform team
+      p, role:admin, applications, *, */*, allow
+      p, role:admin, clusters, *, *, allow
+      p, role:admin, repositories, *, *, allow
+      p, role:admin, certificates, *, *, allow
+      p, role:admin, accounts, *, *, allow
+      p, role:admin, gpgkeys, *, *, allow
+      p, role:admin, logs, get, */*, allow
+      p, role:admin, exec, create, */*, allow
+
+      # Developer role — view and sync
+      p, role:developer, applications, get, */*, allow
+      p, role:developer, applications, sync, */*, allow
+      p, role:developer, logs, get, */*, allow
+
+      # Map SSO groups to roles
+      g, my-org:platform-team, role:admin            # CHANGEME
+      g, my-org:developers, role:developer            # CHANGEME
+
+    scopes: '[groups]'
+
+  # Controller parameters (argocd-cmd-params-cm)
+  params:
+    # Reconciliation settings
+    controller.status.processors: "20"
+    controller.operation.processors: "10"
+    controller.self.heal.timeout.seconds: "5"
+    controller.repo.server.timeout.seconds: "180"
+
+    # Enable server-side diff (recommended)
+    controller.diff.server.side: "true"
+
+    # Repo-server settings
+    reposerver.parallelism.limit: "2"
+
+  # Secrets (argocd-secret)
+  secret:
+    createSecret: true
+    extra:
+      # OIDC client secret
+      oidc.clientSecret: "changeme"                # CHANGEME
+
+      # Dex secrets (if using Dex)
+      # dex.github.clientID: "changeme"
+      # dex.github.clientSecret: "changeme"
+
+    # Webhook secrets
+    # githubSecret: "changeme"
+    # gitlabSecret: "changeme"
+
+  # Repository credentials (can also be managed declaratively)
+  # repositories: {}
+  # credentialTemplates: {}
+
+  # Notification config (argocd-notifications-cm)
+  notificationsConfig:
+    service.slack: |
+      token: $slack-token                           # CHANGEME (store in notificationsSecret)
+
+    trigger.on-sync-succeeded: |
+      - when: app.status.operationState.phase in ['Succeeded']
+        send: [app-sync-succeeded]
+
+    trigger.on-sync-failed: |
+      - when: app.status.operationState.phase in ['Error', 'Failed']
+        send: [app-sync-failed]
+
+    trigger.on-health-degraded: |
+      - when: app.status.health.status == 'Degraded'
+        send: [app-health-degraded]
+
+    template.app-sync-succeeded: |
+      message: |
+        ✅ *{{.app.metadata.name}}* synced successfully
+        Revision: {{.app.status.sync.revision | truncate 8}}
+        <{{.context.argocdUrl}}/applications/{{.app.metadata.name}}|View in Argo CD>
+
+    template.app-sync-failed: |
+      message: |
+        ❌ *{{.app.metadata.name}}* sync failed
+        {{.app.status.operationState.message}}
+        <{{.context.argocdUrl}}/applications/{{.app.metadata.name}}|View in Argo CD>
+
+    template.app-health-degraded: |
+      message: |
+        ⚠️ *{{.app.metadata.name}}* health is degraded
+        <{{.context.argocdUrl}}/applications/{{.app.metadata.name}}|View in Argo CD>
+
+  notificationsSecret:
+    create: true
+    items:
+      slack-token: "xoxb-changeme"                  # CHANGEME

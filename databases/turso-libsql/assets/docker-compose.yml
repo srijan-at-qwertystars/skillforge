@@ -1,0 +1,42 @@
+# Local sqld (libSQL server) Development Setup
+#
+# Runs sqld locally for development without a Turso account.
+# sqld exposes the same HTTP/WebSocket API that Turso uses.
+#
+# Usage:
+#   docker compose up -d          # Start sqld
+#   docker compose down           # Stop sqld
+#   docker compose down -v        # Stop and remove data
+#
+# Connect from your app:
+#   URL:        http://localhost:8080
+#   Auth token: not required (local dev)
+#
+# Example client configuration:
+#   const client = createClient({ url: "http://localhost:8080" });
+#
+# The database persists in a Docker volume between restarts.
+
+services:
+  sqld:
+    image: ghcr.io/tursodatabase/libsql-server:latest
+    container_name: turso-local-sqld
+    ports:
+      - "8080:8080"     # HTTP API
+      - "5001:5001"     # gRPC (used by embedded replicas)
+    volumes:
+      - sqld-data:/var/lib/sqld
+    environment:
+      - SQLD_NODE=primary
+      # Uncomment to require auth token locally:
+      # - SQLD_AUTH_JWT_KEY=your-secret-key
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  sqld-data:
+    driver: local
