@@ -131,3 +131,6 @@
 | web | [hono-framework](web/hono-framework/) | Hono 4.x ultrafast web framework, multi-runtime (Workers/Bun/Deno/Node), middleware, RPC client, and JSX | tested |
 | testing | [testcontainers-patterns](testing/testcontainers-patterns/) | Testcontainers Docker-based integration testing, module containers, wait strategies, and multi-language patterns | tested |
 | devops | [mise-polyglot](devops/mise-polyglot/) | mise polyglot tool version manager, task runner, .mise.toml config, backends, and environment management | tested |
+| devops | [kamal-deploy](devops/kamal-deploy/) | Kamal 2.x zero-downtime Docker deployments with kamal-proxy, accessories, secrets, hooks, and multi-server roles | created |
+| security | [passkey-webauthn](security/passkey-webauthn/) | WebAuthn/FIDO2 passkeys — registration/authentication ceremonies, server verification, conditional UI, credential storage, and migration from passwords | created |
+| web | [remix-framework](web/remix-framework/) | Remix/React Router v7 framework mode — loaders, actions, nested routes, streaming, sessions, deployment adapters, and progressive enhancement | created |
