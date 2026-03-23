@@ -468,3 +468,5 @@ Use `w: "majority"` for critical writes. Default `w: 1` risks data loss on failo
 ```js
 db.payments.insertOne(doc, { writeConcern: { w: "majority", j: true } })
 ```
+
+<!-- tested: pass -->

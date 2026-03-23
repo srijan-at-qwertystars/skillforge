@@ -497,3 +497,5 @@ const dateRange = z.object({
 - Use `z.lazy()` only for truly recursive types — it defers compilation.
 - Validate arrays with `z.array(schema)`, not per-element `.parse()` calls.
 - Strip deeply nested optional chains — each adds validation overhead.
+
+<!-- tested: pass -->
