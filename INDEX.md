@@ -80,3 +80,6 @@
 | aws | [aws-iam-policies](aws/aws-iam-policies/) | Policy language, evaluation logic, SCPs, permission boundaries, OIDC federation, IAM Identity Center, and ABAC |
 | testing | [testing-strategies](testing/testing-strategies/) | Test pyramid/trophy, test doubles, contract testing, property-based testing, mutation testing, TDD, and CI optimization |
 | python | [python-dependency-management](python/python-dependency-management/) | uv, pip/pip-tools, Poetry, Hatch, pyproject.toml, lockfiles, virtual environments, and tool comparison |
+| devops | [nix-flakes](devops/nix-flakes/) | Flake.nix, devShells, direnv, package building, nixpkgs overlays, home-manager, NixOS, and Docker with Nix |
+| architecture | [data-validation-patterns](architecture/data-validation-patterns/) | Validation layers, schema-first design, parse-don't-validate, library comparison, error aggregation, and sanitization |
+| web | [htmx-patterns](web/htmx-patterns/) | Core attributes, swap strategies, OOB swaps, SSE/WebSocket, forms, pagination, and backend integration |
