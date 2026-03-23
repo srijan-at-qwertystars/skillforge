@@ -493,3 +493,5 @@ http://example.com, http://www.example.com, https://www.example.com {
 | `assets/Caddyfile-php` | Three PHP templates — generic PHP-FPM, Laravel (with Livewire paths), WordPress (with xmlrpc/wp-config blocking, upload limits, admin no-cache) |
 | `assets/docker-compose.yml` | Multi-service Docker Compose with Caddy as reverse proxy, separate web/backend networks, PostgreSQL, Redis, resource limits, secrets, health checks |
 | `assets/caddy.service` | Hardened systemd unit with 20+ security directives (ProtectSystem, MemoryDenyWriteExecute, SystemCallFilter, etc.), capability-based port binding, environment file support |
+
+<!-- tested: pass -->

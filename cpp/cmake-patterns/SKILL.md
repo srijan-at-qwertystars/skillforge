@@ -498,3 +498,4 @@ endif()
 - **`CMakePresets.json`** — Presets: dev/release/asan/tsan/coverage, CI, and workflow presets.
 - **`toolchain-arm.cmake`** — ARM cross-compilation toolchain (Linux + bare-metal variants).
 - **`.cmake-format.yaml`** — cmake-format config with formatting and naming rules.
+<!-- tested: pass -->

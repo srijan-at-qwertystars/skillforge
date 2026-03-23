@@ -497,3 +497,4 @@ COPY (SELECT * FROM old.main.events) TO 'events.parquet' (FORMAT parquet);
 **scripts/** — [duckdb-explore.sh](scripts/duckdb-explore.sh) (schema, stats, samples for any file) · [duckdb-benchmark.sh](scripts/duckdb-benchmark.sh) (query timing: min/avg/max/median) · [parquet-inspect.sh](scripts/parquet-inspect.sh) (row groups, compression, column statistics)
 
 **assets/** — [etl-pipeline.py](assets/etl-pipeline.py) (multi-source ETL pipeline template) · [analytics-queries.sql](assets/analytics-queries.sql) (cohort, funnel, retention, sessionization, moving averages) · [duckdb-config.sql](assets/duckdb-config.sql) (settings for laptop/server/CI/Jupyter) · [jupyter-setup.py](assets/jupyter-setup.py) (notebook bootstrap with helpers and viz)
+<!-- tested: pass -->
