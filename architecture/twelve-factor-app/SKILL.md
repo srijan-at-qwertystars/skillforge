@@ -497,3 +497,5 @@ spec:
 | XIII. API-First | Contract defined first? | Ad-hoc endpoints, no schema |
 | XIV. Telemetry | Metrics, traces, logs? | `print("error happened")` |
 | XV. Security | Zero-trust, least-privilege? | Root containers, no net policies |
+
+<!-- tested: pass -->

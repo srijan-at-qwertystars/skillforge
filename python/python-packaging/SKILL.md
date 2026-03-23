@@ -473,3 +473,5 @@ Run with `uv run script.py` — uv auto-creates an ephemeral environment with th
 **Declaring dev dependencies as extras:** Use PEP 735 dependency groups for development dependencies. Extras are for end-user-installable optional features.
 
 **Missing `build-system` table:** Without it, pip falls back to legacy `setup.py` behavior. Always declare the build backend explicitly.
+
+<!-- tested: pass -->

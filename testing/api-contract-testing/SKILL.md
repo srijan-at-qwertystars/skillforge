@@ -497,3 +497,5 @@ Use `can-i-deploy` at each step. Never remove fields until all deployed consumer
 | Does the full checkout flow work? | E2E test |
 | Does the provider response match the OpenAPI spec? | Schema validation |
 | Can I deploy this version safely? | `can-i-deploy` |
+
+<!-- tested: pass -->
