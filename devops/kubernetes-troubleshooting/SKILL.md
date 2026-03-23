@@ -498,3 +498,5 @@ kubectl debug -it <pod> --image=nicolaka/netshoot --target=<container> --share-p
 4. Network latency? → Test with `curl -w` from debug pod
 5. Dependent service slow? → Check upstream health
 6. Disk I/O? → Check node disk pressure, PV performance
+
+<!-- tested: pass -->

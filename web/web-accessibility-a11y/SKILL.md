@@ -492,3 +492,5 @@ function useRestoreFocus() {
 | inaccessible custom select | Use native `<select>` or implement full ARIA listbox pattern |
 | SPA route change not announced | Add route announcer with live region + focus management |
 | Disabled focus styles | Restore `outline` on `:focus-visible`. Never use `outline: none` globally |
+
+<!-- tested: pass -->

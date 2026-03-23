@@ -496,3 +496,5 @@ message CreateOrderRequest {
 ```
 
 Server deduplicates by `request_id` and returns the cached response for retries.
+
+<!-- tested: pass -->
