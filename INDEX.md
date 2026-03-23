@@ -59,3 +59,6 @@
 | languages | [regex-patterns](languages/regex-patterns/) | Regex syntax, groups, lookaround, common patterns, catastrophic backtracking, ReDoS prevention, and language-specific syntax |
 | python | [fastapi-patterns](python/fastapi-patterns/) | App structure, Pydantic v2, dependency injection, auth, WebSockets, async SQLAlchemy, testing, and deployment |
 | devops | [ssh-configuration](devops/ssh-configuration/) | Key management, ssh_config, ProxyJump, tunneling, port forwarding, sshd hardening, certificate auth, and multiplexing |
+| devops | [makefile-patterns](devops/makefile-patterns/) | GNU Make syntax, variables, pattern rules, functions, parallel execution, just/justfile, and project templates |
+| architecture | [feature-flags](architecture/feature-flags/) | Flag types, lifecycle, OpenFeature, targeting rules, trunk-based development, operational flags, and cleanup |
+| networking | [dns-configuration](networking/dns-configuration/) | Record types, email DNS (SPF/DKIM/DMARC), TTL strategy, DNSSEC, cloud DNS, debugging with dig, and migration |
