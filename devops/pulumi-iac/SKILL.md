@@ -459,3 +459,5 @@ Run Terraform and Pulumi side-by-side during migration. Use Terraform remote sta
 - **Ignoring `protect` for stateful resources** — Databases, storage, and DNS should always set `protect: true`.
 - **Copy-paste infrastructure** — Extract repeated patterns into component resources. Duplication leads to config drift.
 - **Skipping `pulumi preview`** — Always preview before `up` in CI/CD. Treat preview output as a change plan.
+
+<!-- tested: pass -->

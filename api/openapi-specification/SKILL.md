@@ -470,3 +470,5 @@ webhooks:
 - **Ignoring readOnly/writeOnly** — Mark `id`, `createdAt` as `readOnly`; `password` as `writeOnly`.
 - **Trailing slashes on server URLs** — Causes double-slash issues.
 - **No tags** — Endpoints render as flat, unorganized lists in documentation.
+
+<!-- tested: pass -->

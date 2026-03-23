@@ -449,3 +449,5 @@ for (const item of data) {
 **Listener buildup** — use `pipeline()` or `once()` in request handlers instead of persistent `.on('error')` listeners.
 
 **Loading entire file then streaming** — defeats the purpose. Use `createReadStream()` directly.
+
+<!-- tested: pass -->
