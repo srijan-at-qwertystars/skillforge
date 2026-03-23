@@ -498,3 +498,5 @@ Never store secrets in `env:` at the workflow level where all jobs inherit them.
 - Skipping lockfile verification — allows dependency confusion attacks.
 - Running security scans only on the default branch — misses vulnerabilities in PRs.
 - Using `npm install` instead of `npm ci` — ignores lockfile.
+
+<!-- tested: pass -->

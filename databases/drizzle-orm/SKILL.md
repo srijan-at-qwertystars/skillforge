@@ -495,3 +495,5 @@ Choose Drizzle when bundle size, cold starts, or SQL control matter. Choose Pris
 6. **Ignoring `$onUpdate`** — Use `$onUpdate(() => new Date())` on `updatedAt` columns instead of manual timestamp management.
 7. **Not passing schema to `drizzle()`** — Relational queries require the schema object. Always pass `{ schema }` when initializing.
 8. **Using `push` in production** — `push` skips migration history. Use `generate` + `migrate` for traceable, reversible deployments.
+
+<!-- tested: pass -->
