@@ -65,3 +65,6 @@
 | web | [vite-build-tools](web/vite-build-tools/) | Vite config, HMR, code splitting, plugins, library mode, SSR, environment variables, and Webpack migration |
 | databases | [connection-pooling](databases/connection-pooling/) | Pool sizing, HikariCP, SQLAlchemy, node-pg, PgBouncer, PgCat, ProxySQL, serverless pooling, and monitoring |
 | devops | [linux-debugging](devops/linux-debugging/) | strace, perf, eBPF/bpftrace, flamegraphs, valgrind, core dumps, network debugging, and USE method triage |
+| databases | [prisma-orm](databases/prisma-orm/) | Schema design, relations, migrations, Prisma Client queries, transactions, extensions, type safety, and deployment |
+| architecture | [rate-limiting-patterns](architecture/rate-limiting-patterns/) | Token bucket, sliding window, Redis distributed limiting, IETF headers, backoff/jitter, and gateway configs |
+| git | [git-advanced-techniques](git/git-advanced-techniques/) | Bisect, worktrees, rerere, filter-repo, sparse checkout, subtrees, reflog, internals, and patch workflows |
