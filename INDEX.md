@@ -77,3 +77,6 @@
 | architecture | [error-handling-patterns](architecture/error-handling-patterns/) | Result/Either types, exception hierarchy, RFC 9457 API errors, error boundaries, async errors, and retry patterns |
 | web | [vue-composition-api](web/vue-composition-api/) | Composition API, ref/reactive, composables, Pinia, Vue Router, TypeScript, Nuxt 3, and component patterns |
 | observability | [observability-dashboards](observability/observability-dashboards/) | Grafana panels, PromQL, LogQL, dashboard-as-code, variables, USE/RED/Golden Signals, and SLO dashboards |
+| aws | [aws-iam-policies](aws/aws-iam-policies/) | Policy language, evaluation logic, SCPs, permission boundaries, OIDC federation, IAM Identity Center, and ABAC |
+| testing | [testing-strategies](testing/testing-strategies/) | Test pyramid/trophy, test doubles, contract testing, property-based testing, mutation testing, TDD, and CI optimization |
+| python | [python-dependency-management](python/python-dependency-management/) | uv, pip/pip-tools, Poetry, Hatch, pyproject.toml, lockfiles, virtual environments, and tool comparison |
