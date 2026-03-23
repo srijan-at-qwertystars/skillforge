@@ -456,3 +456,5 @@ Return 412 Precondition Failed if the ETag no longer matches. This prevents lost
 | No versioning | Breaking changes break clients | Version from day one |
 | API keys in query strings | Keys leak in logs and referrers | Use Authorization header |
 | Inconsistent error format | Every endpoint returns different shapes | Adopt RFC 9457 globally |
+
+<!-- tested: pass -->

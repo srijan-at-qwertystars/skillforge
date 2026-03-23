@@ -496,3 +496,5 @@ Use `devices` presets for accurate device emulation (viewport, user agent, devic
 - Hardcode absolute URLs — use `baseURL` in config.
 - Skip browser cleanup — let Playwright manage contexts automatically.
 - Use `{ force: true }` to click elements — fix the underlying accessibility issue.
+
+<!-- tested: pass -->
