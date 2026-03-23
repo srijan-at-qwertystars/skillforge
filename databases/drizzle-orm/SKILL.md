@@ -1,499 +1,499 @@
 ---
 name: drizzle-orm
-description:
-  positive: "Use when user works with Drizzle ORM, asks about drizzle schema, drizzle-kit migrations, relational queries, prepared statements, Drizzle with PostgreSQL/MySQL/SQLite, or Drizzle vs Prisma comparison."
-  negative: "Do NOT use for Prisma (use prisma-orm skill), TypeORM, Sequelize, or Knex.js."
+description: >
+  Build type-safe SQL with Drizzle ORM in TypeScript. TRIGGER when: code imports
+  'drizzle-orm', 'drizzle-orm/pg-core', 'drizzle-orm/mysql-core',
+  'drizzle-orm/sqlite-core', 'drizzle-kit', or user mentions Drizzle ORM,
+  pgTable, sqliteTable, mysqlTable, drizzle schema, drizzle migrations,
+  drizzle-kit generate/push/migrate/studio/introspect, or drizzle.config.ts.
+  Also trigger for drizzle relations, drizzle query builder, drizzle prepared
+  statements, drizzle transactions. DO NOT TRIGGER for: Prisma, TypeORM, Kysely,
+  Sequelize, Knex, MikroORM, or generic SQL/database questions without Drizzle
+  context. DO NOT TRIGGER for MongoDB, Mongoose, or NoSQL databases.
 ---
 
-# Drizzle ORM Patterns and Best Practices
+# Drizzle ORM
+
+## Philosophy
+
+Drizzle is a TypeScript ORM that looks and feels like SQL. Zero runtime overhead, no code generation step, no binary engine. Schema lives in TypeScript — import it, query it, infer types from it. Bundle is <8KB gzipped with zero dependencies. First-class serverless and edge support (Neon, PlanetScale, Turso, Cloudflare D1, Vercel Postgres, AWS Data API).
+
+Two query APIs: SQL-like query builder (select/insert/update/delete with joins, subqueries, CTEs) and relational query API (Prisma-style `findMany`/`findFirst` with `with` for nested loading). Use both in the same project.
+
+## Setup
+
+Install core packages per dialect:
+
+```bash
+# PostgreSQL
+npm i drizzle-orm postgres        # or pg, @neondatabase/serverless, @vercel/postgres
+npm i -D drizzle-kit
+
+# MySQL
+npm i drizzle-orm mysql2
+npm i -D drizzle-kit
+
+# SQLite
+npm i drizzle-orm better-sqlite3  # or @libsql/client for Turso, bun:sqlite
+npm i -D drizzle-kit
+```
+
+Initialize the client — always pass `{ schema }` to enable the relational query API:
+
+```typescript
+// PostgreSQL with postgres-js
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import * as schema from './schema';
+export const db = drizzle(postgres(process.env.DATABASE_URL!), { schema });
+
+// SQLite with better-sqlite3
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+export const db = drizzle(new Database('local.db'), { schema });
+
+// MySQL with mysql2
+import { drizzle } from 'drizzle-orm/mysql2';
+import mysql from 'mysql2/promise';
+export const db = drizzle(await mysql.createPool(process.env.DATABASE_URL!), { schema });
+```
 
 ## Schema Definition
 
-Define schemas in TypeScript. Use identity columns over `serial` for auto-incrementing IDs.
+Define tables with dialect-specific helpers. Each column call takes the DB column name as argument.
 
 ```typescript
-import { pgTable, text, integer, boolean, timestamp, pgEnum, index, uniqueIndex } from "drizzle-orm/pg-core";
+// src/db/schema.ts
+import { pgTable, serial, text, integer, timestamp, boolean, varchar, index, uniqueIndex, pgEnum } from 'drizzle-orm/pg-core';
 
-export const roleEnum = pgEnum("role", ["admin", "user", "moderator"]);
+// Enums (Postgres only)
+export const roleEnum = pgEnum('role', ['user', 'admin', 'moderator']);
 
-export const users = pgTable("users", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  email: text("email").notNull().unique(),
-  name: text("name").notNull(),
-  role: roleEnum("role").default("user").notNull(),
-  isActive: boolean("is_active").default(true).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().$onUpdate(() => new Date()),
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  email: varchar('email', { length: 255 }).unique().notNull(),
+  role: roleEnum('role').default('user'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  isActive: boolean('is_active').default(true),
 }, (table) => [
-  index("email_idx").on(table.email),
-  index("role_active_idx").on(table.role, table.isActive),
+  uniqueIndex('email_idx').on(table.email),
 ]);
-```
 
-Centralize reusable column patterns:
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  content: text('content'),
+  published: boolean('published').default(false),
+  authorId: integer('author_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  index('author_idx').on(table.authorId),
+]);
 
-```typescript
-const timestamps = {
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).defaultNow().$onUpdate(() => new Date()),
-};
-
-export const posts = pgTable("posts", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  title: text("title").notNull(),
-  content: text("content"),
-  authorId: integer("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  ...timestamps,
+export const comments = pgTable('comments', {
+  id: serial('id').primaryKey(),
+  text: text('text').notNull(),
+  postId: integer('post_id').references(() => posts.id, { onDelete: 'cascade' }).notNull(),
+  authorId: integer('author_id').references(() => users.id).notNull(),
 });
 ```
 
-### MySQL and SQLite Variants
+For SQLite use `sqliteTable`, `integer`, `text`, `blob`, `real`. For MySQL use `mysqlTable`, `int`, `varchar`, `mysqlEnum`, `datetime`.
+
+### Composite Keys and Constraints
 
 ```typescript
-// MySQL
-import { mysqlTable, int, varchar, mysqlEnum } from "drizzle-orm/mysql-core";
-export const users = mysqlTable("users", {
-  id: int("id").primaryKey().autoincrement(),
-  name: varchar("name", { length: 255 }).notNull(),
-  role: mysqlEnum("role", ["admin", "user"]).default("user"),
-});
-
-// SQLite
-import { sqliteTable, integer, text } from "drizzle-orm/sqlite-core";
-export const users = sqliteTable("users", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  name: text("name").notNull(),
-});
+export const postTags = pgTable('post_tags', {
+  postId: integer('post_id').references(() => posts.id).notNull(),
+  tagId: integer('tag_id').references(() => tags.id).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.postId, table.tagId] }),
+]);
 ```
 
 ## Relations
 
-Define relations separately from table schemas. Relations power the relational query API but do not create foreign keys—use `.references()` for that.
+Relations are declared separately from tables. They enable the relational query API but do NOT create foreign keys — use `.references()` on columns for FK constraints.
 
 ```typescript
-import { relations } from "drizzle-orm";
+import { relations } from 'drizzle-orm';
 
-// One-to-many
-export const userRelations = relations(users, ({ many }) => ({
+// One-to-many: user has many posts
+export const usersRelations = relations(users, ({ many }) => ({
   posts: many(posts),
 }));
 
-export const postRelations = relations(posts, ({ one, many }) => ({
+// Many-to-one: post belongs to user; one-to-many: post has many comments
+export const postsRelations = relations(posts, ({ one, many }) => ({
   author: one(users, { fields: [posts.authorId], references: [users.id] }),
   comments: many(comments),
 }));
 
-// Many-to-many via junction table
-export const postTags = pgTable("post_tags", {
-  postId: integer("post_id").notNull().references(() => posts.id),
-  tagId: integer("tag_id").notNull().references(() => tags.id),
-}, (table) => [
-  { pk: primaryKey({ columns: [table.postId, table.tagId] }) },
-]);
-
-export const postTagRelations = relations(postTags, ({ one }) => ({
-  post: one(posts, { fields: [postTags.postId], references: [posts.id] }),
-  tag: one(tags, { fields: [postTags.tagId], references: [tags.id] }),
-}));
-
-// Self-referencing
-export const categories = pgTable("categories", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  name: text("name").notNull(),
-  parentId: integer("parent_id"),
-});
-
-export const categoryRelations = relations(categories, ({ one, many }) => ({
-  parent: one(categories, { fields: [categories.parentId], references: [categories.id], relationName: "parentChild" }),
-  children: many(categories, { relationName: "parentChild" }),
+// Many-to-one: comment belongs to post and user
+export const commentsRelations = relations(comments, ({ one }) => ({
+  post: one(posts, { fields: [comments.postId], references: [posts.id] }),
+  author: one(users, { fields: [comments.authorId], references: [users.id] }),
 }));
 ```
 
-## SQL-Like Query Builder
+For many-to-many, define a junction table and two one-to-many relations through it:
+
+```typescript
+export const postTagsRelations = relations(postTags, ({ one }) => ({
+  post: one(posts, { fields: [postTags.postId], references: [posts.id] }),
+  tag: one(tags, { fields: [postTags.tagId], references: [tags.id] }),
+}));
+export const tagsRelations = relations(tags, ({ many }) => ({
+  postTags: many(postTags),
+}));
+```
+
+## Query Builder
 
 ### Select
 
 ```typescript
-import { eq, and, or, like, gt, inArray, sql, desc, asc, count } from "drizzle-orm";
+import { eq, ne, gt, gte, lt, lte, like, ilike, and, or, not, inArray, isNull, sql, desc, asc, count, sum, avg } from 'drizzle-orm';
 
 // Basic select
 const allUsers = await db.select().from(users);
 
-// Partial select — always prefer over select * in production
-const userNames = await db.select({ id: users.id, name: users.name }).from(users);
-
-// Filtering
-const admins = await db.select().from(users).where(eq(users.role, "admin"));
-
-const filtered = await db.select().from(users).where(
-  and(eq(users.isActive, true), or(eq(users.role, "admin"), like(users.name, "%john%")))
-);
-
-// Joins
-const postsWithAuthors = await db
-  .select({ postTitle: posts.title, authorName: users.name })
-  .from(posts)
-  .innerJoin(users, eq(posts.authorId, users.id))
-  .where(gt(posts.createdAt, new Date("2024-01-01")));
-
-// Aggregation
-const postCounts = await db
-  .select({ authorId: posts.authorId, count: count() })
-  .from(posts)
-  .groupBy(posts.authorId);
-
-// Subqueries
-const sq = db.select({ authorId: posts.authorId, postCount: count().as("post_count") })
-  .from(posts).groupBy(posts.authorId).as("sq");
-
-const activeAuthors = await db
-  .select({ name: users.name, postCount: sq.postCount })
+// Where clause
+const activeAdmins = await db.select()
   .from(users)
-  .innerJoin(sq, eq(users.id, sq.authorId))
-  .where(gt(sq.postCount, 5));
+  .where(and(eq(users.role, 'admin'), eq(users.isActive, true)));
 
-// Order and limit
-const recentPosts = await db.select().from(posts).orderBy(desc(posts.createdAt)).limit(10).offset(0);
+// Partial select (only requested columns returned — reduces payload)
+const names = await db.select({ id: users.id, name: users.name }).from(users);
+// => { id: number; name: string }[]
+
+// With ordering and limit
+const recent = await db.select().from(posts)
+  .where(eq(posts.published, true))
+  .orderBy(desc(posts.createdAt))
+  .limit(10)
+  .offset(20);
+
+// Aggregations
+const postCounts = await db.select({
+  authorId: posts.authorId,
+  count: count(),
+}).from(posts).groupBy(posts.authorId);
+
+// Subquery
+const sq = db.select({ authorId: posts.authorId, postCount: count().as('post_count') })
+  .from(posts).groupBy(posts.authorId).as('sq');
+
+const usersWithCounts = await db.select({
+  name: users.name,
+  postCount: sq.postCount,
+}).from(users).leftJoin(sq, eq(users.id, sq.authorId));
+```
+
+### Joins
+
+```typescript
+const postsWithAuthors = await db.select({
+  postTitle: posts.title,
+  authorName: users.name,
+}).from(posts)
+  .innerJoin(users, eq(posts.authorId, users.id))
+  .where(eq(posts.published, true));
 ```
 
 ### Insert
 
 ```typescript
 // Single insert
-const [newUser] = await db.insert(users).values({ email: "a@b.com", name: "Alice" }).returning();
+const [newUser] = await db.insert(users)
+  .values({ name: 'Alice', email: 'alice@example.com' })
+  .returning();  // .returning() is Postgres/SQLite only
 
 // Bulk insert
-await db.insert(users).values([
-  { email: "a@b.com", name: "Alice" },
-  { email: "b@c.com", name: "Bob" },
+await db.insert(posts).values([
+  { title: 'Post 1', authorId: newUser.id },
+  { title: 'Post 2', authorId: newUser.id },
 ]);
 
 // Upsert (on conflict)
-await db.insert(users).values({ email: "a@b.com", name: "Alice Updated" })
-  .onConflictDoUpdate({ target: users.email, set: { name: "Alice Updated" } });
+await db.insert(users)
+  .values({ name: 'Alice', email: 'alice@example.com' })
+  .onConflictDoUpdate({
+    target: users.email,
+    set: { name: 'Alice Updated' },
+  });
+
+await db.insert(users)
+  .values({ name: 'Maybe', email: 'maybe@example.com' })
+  .onConflictDoNothing();
 ```
 
-### Update and Delete
+### Update
 
 ```typescript
-await db.update(users).set({ isActive: false }).where(eq(users.id, 1));
+const [updated] = await db.update(users)
+  .set({ isActive: false })
+  .where(eq(users.id, 1))
+  .returning();
+```
 
+### Delete
+
+```typescript
 await db.delete(posts).where(eq(posts.authorId, 1));
 ```
 
-## Relational Queries
+## Relational Query API
 
-Use `db.query` for nested data fetching. Pass all schema + relations to `drizzle()`.
+Requires `{ schema }` passed to `drizzle()`. Uses `db.query.<tableName>`.
 
 ```typescript
-import { drizzle } from "drizzle-orm/node-postgres";
-import * as schema from "./schema";
-
-const db = drizzle(pool, { schema });
-
-// Find one with nested relations
-const user = await db.query.users.findFirst({
-  where: eq(users.id, 1),
-  columns: { id: true, name: true, email: true },
+// Find many with nested relations
+const usersWithPosts = await db.query.users.findMany({
   with: {
     posts: {
-      columns: { id: true, title: true },
       with: { comments: true },
-      orderBy: [desc(posts.createdAt)],
+      where: (posts, { eq }) => eq(posts.published, true),
+      orderBy: (posts, { desc }) => [desc(posts.createdAt)],
       limit: 5,
     },
   },
+  where: (users, { eq }) => eq(users.isActive, true),
 });
+// => { id, name, email, posts: { id, title, comments: [...] }[] }[]
 
-// Find many with filters on relations
-const activeUsersWithPosts = await db.query.users.findMany({
-  where: eq(users.isActive, true),
-  with: { posts: { where: gt(posts.createdAt, new Date("2024-01-01")) } },
+// Find first
+const user = await db.query.users.findFirst({
+  where: (users, { eq }) => eq(users.id, 1),
+  columns: { id: true, name: true, email: true },  // partial select
+  with: { posts: true },
 });
 ```
-
-Relational queries generate a single optimized SQL statement. Use `EXPLAIN` on complex nested queries to verify performance.
 
 ## Drizzle Kit
 
-Configure in `drizzle.config.ts`:
+### Configuration
 
 ```typescript
-import { defineConfig } from "drizzle-kit";
+// drizzle.config.ts
+import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
-  schema: "./src/db/schema.ts",
-  out: "./drizzle",
-  dialect: "postgresql",
-  dbCredentials: { url: process.env.DATABASE_URL! },
+  schema: './src/db/schema.ts',
+  out: './drizzle',
+  dialect: 'postgresql',  // 'mysql' | 'sqlite' | 'turso'
+  dbCredentials: {
+    url: process.env.DATABASE_URL!,
+  },
 });
 ```
 
-Commands:
-- `npx drizzle-kit generate` — generate SQL migration files from schema changes
-- `npx drizzle-kit migrate` — apply pending migrations
-- `npx drizzle-kit push` — push schema directly to DB (dev only, skips migration files)
-- `npx drizzle-kit introspect` — generate schema from existing DB
-- `npx drizzle-kit studio` — launch visual DB browser at https://local.drizzle.studio
+### Commands
 
-Store migration files in version control. Never manually edit generated SQL. Use `push` for rapid prototyping; use `generate` + `migrate` for production.
+```bash
+npx drizzle-kit generate   # Generate SQL migration from schema diff
+npx drizzle-kit migrate    # Apply pending migrations to database
+npx drizzle-kit push       # Push schema directly (dev/prototyping only)
+npx drizzle-kit pull       # Introspect DB → generate TypeScript schema
+npx drizzle-kit studio     # Launch visual data browser (port 4983)
+npx drizzle-kit check      # Verify migration consistency
+npx drizzle-kit up         # Upgrade migration snapshots to latest format
+```
+
+### Migrations Workflow
+
+**Production**: `generate` → review SQL → `migrate`. Always commit migration files.
+
+```typescript
+// Run migrations programmatically at app startup
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+await migrate(db, { migrationsFolder: './drizzle' });
+```
+
+**Development**: Use `push` for rapid iteration — applies schema directly without migration files. Switch to `generate`/`migrate` before shipping.
+
+### Custom Migrations
+
+Edit generated SQL files in `./drizzle/` to add data migrations alongside DDL.
+
+## Prepared Statements
+
+Use `sql.placeholder()` for parameterized queries that are parsed once and executed many times:
+
+```typescript
+const getUserById = db.select().from(users)
+  .where(eq(users.id, sql.placeholder('id')))
+  .prepare('get_user_by_id');
+
+// Execute repeatedly with different params
+const user1 = await getUserById.execute({ id: 1 });
+const user2 = await getUserById.execute({ id: 2 });
+```
 
 ## Transactions
 
 ```typescript
-const result = await db.transaction(async (tx) => {
-  const [user] = await tx.insert(users).values({ email: "a@b.com", name: "Alice" }).returning();
-  await tx.insert(posts).values({ title: "First Post", authorId: user.id });
-  return user;
+await db.transaction(async (tx) => {
+  const [user] = await tx.insert(users)
+    .values({ name: 'Bob', email: 'bob@example.com' })
+    .returning();
+
+  await tx.insert(posts).values({
+    title: 'First Post',
+    authorId: user.id,
+  });
+
+  // Explicit rollback
+  if (someConditionFails) {
+    tx.rollback();  // throws, aborts transaction
+    return;
+  }
 });
 
 // Nested transactions use savepoints
 await db.transaction(async (tx) => {
-  await tx.insert(users).values({ email: "outer@test.com", name: "Outer" });
-  try {
-    await tx.transaction(async (tx2) => {
-      await tx2.insert(users).values({ email: "inner@test.com", name: "Inner" });
-      throw new Error("rollback inner only");
-    });
-  } catch {
-    // inner savepoint rolled back, outer continues
-  }
+  await tx.insert(users).values({ name: 'Outer', email: 'outer@e.com' });
+  await tx.transaction(async (tx2) => { /* savepoint */ });
 });
 ```
 
-Extract transaction type for reusable functions:
+## Type Inference
 
 ```typescript
-type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+// Approach 1: Table property (preferred)
+type User = typeof users.$inferSelect;       // Row returned by SELECT
+type NewUser = typeof users.$inferInsert;     // Payload for INSERT
 
-async function createUserWithProfile(tx: Transaction, data: NewUser) {
-  const [user] = await tx.insert(users).values(data).returning();
-  await tx.insert(profiles).values({ userId: user.id });
-  return user;
-}
+// Approach 2: Helper functions
+import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+type User = InferSelectModel<typeof users>;
+type NewUser = InferInsertModel<typeof users>;
 ```
 
-## Prepared Statements
-
-Compile once, execute many times. Eliminates repeated parse/plan overhead.
-
-```typescript
-import { placeholder } from "drizzle-orm";
-
-const getUserById = db.select().from(users).where(eq(users.id, placeholder("id"))).prepare("get_user_by_id");
-
-// Reuse across requests
-const user1 = await getUserById.execute({ id: 1 });
-const user2 = await getUserById.execute({ id: 2 });
-
-// Prepared with multiple params
-const getUsersByRole = db.select().from(users)
-  .where(and(eq(users.role, placeholder("role")), eq(users.isActive, placeholder("active"))))
-  .prepare("get_users_by_role");
-
-await getUsersByRole.execute({ role: "admin", active: true });
-```
-
-Use prepared statements for hot-path queries in APIs. Benefits are most significant with complex queries and high request volumes.
-
-## Database Drivers
-
-```typescript
-// PostgreSQL — node-postgres
-import { Pool } from "pg";
-import { drizzle } from "drizzle-orm/node-postgres";
-const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL }), { schema });
-
-// PostgreSQL — Neon serverless
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
-const db = drizzle(neon(process.env.DATABASE_URL!), { schema });
-
-// MySQL — mysql2
-import mysql from "mysql2/promise";
-import { drizzle } from "drizzle-orm/mysql2";
-const db = drizzle(await mysql.createConnection(process.env.DATABASE_URL!), { schema });
-
-// SQLite — better-sqlite3
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-const db = drizzle(new Database("sqlite.db"), { schema });
-
-// Turso (libSQL)
-import { createClient } from "@libsql/client";
-import { drizzle } from "drizzle-orm/libsql";
-const db = drizzle(createClient({ url: process.env.TURSO_URL!, authToken: process.env.TURSO_TOKEN }), { schema });
-```
-
-## Type Safety
-
-```typescript
-// Infer select and insert types from schema
-type User = typeof users.$inferSelect;       // { id: number; email: string; name: string; ... }
-type NewUser = typeof users.$inferInsert;     // { email: string; name: string; role?: "admin" | "user"; ... }
-
-// Use in application code
-async function createUser(data: NewUser): Promise<User> {
-  const [user] = await db.insert(users).values(data).returning();
-  return user;
-}
-
-// Custom types for special columns
-import { customType } from "drizzle-orm/pg-core";
-
-const citext = customType<{ data: string }>({
-  dataType() { return "citext"; },
-});
-
-export const emails = pgTable("emails", {
-  address: citext("address").notNull(),
-});
-```
-
-## Performance Patterns
-
-### Partial Selects
-Always select only needed columns. Avoid `select()` (SELECT *) in production:
-```typescript
-// Bad — fetches all columns
-const users = await db.select().from(users);
-// Good — fetches only what you need
-const users = await db.select({ id: users.id, name: users.name }).from(users);
-```
-
-### Batch Queries
-Use `Promise.all` for independent queries or `db.batch()` where supported:
-```typescript
-const [usersList, postsList] = await Promise.all([
-  db.select().from(users).limit(10),
-  db.select().from(posts).limit(10),
-]);
-```
-
-### Connection Pooling
-Always use connection pools in production. Configure pool size based on expected concurrency:
-```typescript
-import { Pool } from "pg";
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 20 });
-const db = drizzle(pool, { schema });
-```
-
-### Indexing
-Add indexes for columns used in WHERE, JOIN, and ORDER BY. Use composite indexes for multi-column filters. Prefer partial indexes for filtered subsets:
-```typescript
-export const orders = pgTable("orders", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  status: text("status").notNull(),
-  customerId: integer("customer_id").notNull(),
-  total: integer("total").notNull(),
-}, (table) => [
-  index("status_idx").on(table.status),
-  index("customer_status_idx").on(table.customerId, table.status),
-]);
-```
+`$inferInsert` makes columns with defaults/nullables optional. `$inferSelect` includes all columns as non-optional (matching the DB row shape). Use these types in function signatures for end-to-end safety.
 
 ## Framework Integration
 
-### Next.js
+### Next.js (App Router)
+
 ```typescript
-// src/db/index.ts
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
-import * as schema from "./schema";
+// src/db/index.ts — singleton pattern for dev hot reload
+import { drizzle } from 'drizzle-orm/postgres-js';
+import postgres from 'postgres';
+import * as schema from './schema';
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-export const db = drizzle(pool, { schema });
+const globalForDb = globalThis as unknown as { db: ReturnType<typeof drizzle> };
+export const db = globalForDb.db ?? drizzle(postgres(process.env.DATABASE_URL!), { schema });
+if (process.env.NODE_ENV !== 'production') globalForDb.db = db;
 
-// In Server Components or Route Handlers
-import { db } from "@/db";
-const users = await db.query.users.findMany();
+// app/users/page.tsx — Server Component
+import { db } from '@/db';
+import { users } from '@/db/schema';
+export default async function UsersPage() {
+  const allUsers = await db.select().from(users);
+  return <ul>{allUsers.map(u => <li key={u.id}>{u.name}</li>)}</ul>;
+}
 ```
 
-### Hono
-```typescript
-import { Hono } from "hono";
-import { db } from "./db";
-import { users } from "./schema";
+### Hono / Cloudflare Workers
 
-const app = new Hono();
-app.get("/users", async (c) => {
+```typescript
+import { drizzle } from 'drizzle-orm/d1';
+import { Hono } from 'hono';
+
+const app = new Hono<{ Bindings: { DB: D1Database } }>();
+app.get('/users', async (c) => {
+  const db = drizzle(c.env.DB);
   const result = await db.select().from(users);
   return c.json(result);
 });
 ```
 
-### Express
-```typescript
-import express from "express";
-import { db } from "./db";
-import { users } from "./schema";
+### Neon Serverless
 
-const app = express();
-app.get("/users", async (req, res) => {
-  const result = await db.select().from(users);
-  res.json(result);
-});
+```typescript
+import { neon } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-http';
+const db = drizzle(neon(process.env.DATABASE_URL!));
 ```
+
+## Connection Pooling
+
+- **Traditional server**: Use `pg.Pool` or `postgres()` with connection limits.
+- **Serverless/Edge**: Use HTTP-based drivers (Neon HTTP, PlanetScale, Vercel Postgres). Instantiate per-request.
+- **Lambda**: Use poolers like PgBouncer or Neon pooled strings. Set `max` low (1-5).
+
+```typescript
+import { Pool } from '@neondatabase/serverless';
+import { drizzle } from 'drizzle-orm/neon-serverless';
+const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL, max: 3 }));
+```
+
+## Performance Patterns
+
+- **Partial selects**: Select only needed columns to reduce I/O.
+- **Batch inserts**: Use `.values([...])` for bulk inserts — single round-trip.
+- **Indexes**: Define in table's third argument. Always index FKs and filtered columns.
+- **Prepared statements**: Use for hot-path queries executed repeatedly.
+- **Avoid N+1**: Use relational queries with `with` or explicit joins.
+- **Selective returning**: `.returning({ id: users.id })` to avoid fetching all columns.
 
 ## Testing Patterns
 
-Use a separate test database. Run migrations before test suites. Wrap tests in transactions and roll back:
+### In-Memory SQLite for Unit Tests
 
 ```typescript
-import { drizzle } from "drizzle-orm/node-postgres";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { Pool } from "pg";
-import * as schema from "./schema";
+// test/setup.ts
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import * as schema from '../src/db/schema';
 
-let db: ReturnType<typeof drizzle>;
-let pool: Pool;
+export function createTestDb() {
+  const sqlite = new Database(':memory:');
+  const db = drizzle(sqlite, { schema });
+  migrate(db, { migrationsFolder: './drizzle' });
+  return db;
+}
 
-beforeAll(async () => {
-  pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
-  db = drizzle(pool, { schema });
-  await migrate(db, { migrationsFolder: "./drizzle" });
-});
-
-afterAll(async () => { await pool.end(); });
-
-// Option A: truncate tables between tests
-afterEach(async () => {
-  await db.delete(posts);
-  await db.delete(users);
-});
-
-// Option B: use transactions for isolation
-import { sql } from "drizzle-orm";
-beforeEach(async () => { await db.execute(sql`BEGIN`); });
-afterEach(async () => { await db.execute(sql`ROLLBACK`); });
+// test/users.test.ts
+import { createTestDb } from './setup';
+const db = createTestDb();
+// Each test file gets a fresh in-memory database
 ```
 
-## Drizzle vs Prisma
+### Transaction Rollback Isolation
 
-| Aspect | Drizzle | Prisma |
-|---|---|---|
-| Philosophy | SQL-first, thin abstraction | Abstraction-first, schema DSL |
-| Schema | TypeScript code | `.prisma` file (custom DSL) |
-| Type safety | Inferred from TS schema | Generated client from schema |
-| Bundle size | ~few KB, no binary | ~1.5–8MB Rust query engine |
-| Cold start | Near-zero | Heavy (improved with Accelerate) |
-| Query style | SQL-like builder | Object-based fluent API |
-| Raw SQL | First-class support | Supported but less ergonomic |
-| Migrations | `drizzle-kit generate/migrate` | `prisma migrate` (more mature) |
-| GUI | `drizzle-kit studio` | Prisma Studio (more polished) |
-| Best for | SQL-savvy devs, edge/serverless | Teams wanting high-level abstraction |
+Wrap each test in a rolled-back transaction for isolation, or truncate tables between tests.
 
-Choose Drizzle when bundle size, cold starts, or SQL control matter. Choose Prisma when onboarding speed, mature tooling, and team standardization are priorities.
+### Docker/Testcontainers for Integration Tests
 
-## Anti-Patterns
+Use a real database per test suite via Testcontainers. Apply migrations with `push` or `migrate`.
 
-1. **SELECT * in production** — Use partial selects. Fetching unnecessary columns wastes bandwidth and memory.
-2. **N+1 queries** — Use the relational query API (`db.query.table.findMany({ with: {...} })`) instead of manual loops with individual queries.
-3. **Missing indexes** — Always index foreign keys, columns in WHERE/JOIN/ORDER BY clauses. Run `EXPLAIN ANALYZE` to verify query plans.
-4. **Skipping connection pooling** — Always use `Pool` (not `Client`) in production. Set `max` based on concurrency.
-5. **Manual migration edits** — Change schema files, then regenerate. Editing SQL migrations directly causes drift.
-6. **Ignoring `$onUpdate`** — Use `$onUpdate(() => new Date())` on `updatedAt` columns instead of manual timestamp management.
-7. **Not passing schema to `drizzle()`** — Relational queries require the schema object. Always pass `{ schema }` when initializing.
-8. **Using `push` in production** — `push` skips migration history. Use `generate` + `migrate` for traceable, reversible deployments.
+## Drizzle vs Alternatives
 
-<!-- tested: pass -->
+| Aspect | Drizzle | Prisma | Kysely | TypeORM |
+|--------|---------|--------|--------|---------|
+| Schema | TypeScript code | `.prisma` DSL | Manual types | Class decorators |
+| Bundle | <8KB, zero deps | ~2MB + Rust engine | ~50KB | ~500KB |
+| Query style | SQL-like TS | Abstracted client | SQL-like TS | QueryBuilder/ActiveRecord |
+| Serverless | Native, no cold start | Cold start penalty | Good | Poor |
+| Migrations | drizzle-kit (TS→SQL) | prisma migrate | External tools | Built-in (buggy) |
+| Type safety | Inferred from schema | Generated client | Inferred | Decorators (weak) |
+| Relations | Explicit declaration | Schema-defined | Manual joins | Decorators |
+
+Choose Drizzle when: you want SQL control with type safety, minimal bundle, serverless-first, no codegen step. Choose Prisma when: you want maximum DX abstraction and don't mind the engine. Choose Kysely when: you want a pure query builder without ORM features.
+
+## Common Pitfalls
+
+1. **Missing `{ schema }` in `drizzle()` call**: Relational queries (`db.query.*`) silently fail or error. Always pass schema.
+2. **Confusing relations with foreign keys**: `relations()` only enables the query API. Use `.references()` on columns for actual DB constraints.
+3. **Using `push` in production**: `push` can drop columns/tables. Use `generate` + `migrate` for production.
+4. **Forgetting `.notNull()`**: Columns are nullable by default. Explicitly mark required columns.
+5. **Wrong column name string**: The string argument to column helpers (`text('name')`) must match the DB column name, not the JS property.
+6. **Not indexing foreign keys**: Postgres does not auto-index FK columns. Add indexes explicitly.
+7. **Singleton in dev with HMR**: Next.js/Vite hot reload creates multiple connections. Use the globalThis singleton pattern.
+8. **Pool exhaustion in serverless**: Set low `max` connection limits. Use HTTP drivers or poolers for serverless.
+9. **`.returning()` on MySQL**: MySQL does not support `RETURNING`. Use `insertId` from the result instead.
+10. **Circular imports in schema files**: Split large schemas into multiple files but ensure no circular dependencies between table definitions.

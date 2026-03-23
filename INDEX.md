@@ -137,3 +137,6 @@
 | javascript | [bun-runtime](javascript/bun-runtime/) | Bun all-in-one JS/TS runtime — package manager, bundler, test runner, HTTP server, SQLite, shell scripting, FFI, and cross-compilation | tested |
 | distributed | [temporal-workflows](distributed/temporal-workflows/) | Temporal durable workflow engine — deterministic workflows, activities, signals, queries, retries, versioning, and multi-language SDKs | tested |
 | observability | [opentelemetry](observability/opentelemetry/) | OpenTelemetry traces, metrics, logs — instrumentation, Collector pipelines, OTLP, sampling, context propagation, and backend integration | tested |
+| devops | [nix-packages](devops/nix-packages/) | Nix package manager — flakes, devShells, mkDerivation, nixpkgs overlays, NixOS, Home Manager, caching, and reproducible builds | created |
+| databases | [drizzle-orm](databases/drizzle-orm/) | Drizzle ORM — SQL-like TypeScript query builder, schema definition, drizzle-kit migrations, relations, type inference, and serverless patterns | created |
+| languages | [zig-language](languages/zig-language/) | Zig programming language — comptime generics, allocator patterns, error unions, C interop, build.zig, cross-compilation, and zero-overhead systems programming | created |
