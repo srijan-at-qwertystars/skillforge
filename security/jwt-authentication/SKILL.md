@@ -497,3 +497,5 @@ def test_logout_revokes_token(client, auth_headers):
 - [ ] Revoked token (via blocklist) is rejected.
 - [ ] Token with tampered payload is rejected.
 - [ ] HS256 token is rejected when RS256 is expected (key confusion).
+
+<!-- tested: needs-fix -->

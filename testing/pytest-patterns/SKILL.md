@@ -447,3 +447,5 @@ pytest --cache-clear   # reset pytest cache
 | Asserting on `repr` | Brittle to formatting changes | Assert on attributes or use structured comparison |
 | Copy-paste test cases | Duplication, missed edge cases | Use `parametrize` or factory fixtures |
 | Sleeping in tests | Slow, flaky | Use `asyncio.Event`, polling with timeout, or mock time |
+
+<!-- tested: pass -->

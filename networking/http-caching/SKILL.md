@@ -381,3 +381,5 @@ Fix: Normalize to a handful of variants (mobile/desktop) at the CDN edge, or rem
 When a popular object expires, hundreds of concurrent requests hit the origin simultaneously.
 
 Fix: Use `stale-while-revalidate` so one background request refreshes while stale content is served. Configure request coalescing at the CDN or origin shield.
+
+<!-- tested: pass -->
