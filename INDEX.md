@@ -47,3 +47,6 @@
 | testing | [playwright-e2e-testing](testing/playwright-e2e-testing/) | Locators, page object model, fixtures, network mocking, visual regression, auth, and CI/CD with sharding |
 | api | [rest-api-design](api/rest-api-design/) | Resource naming, HTTP methods/status codes, RFC 9457 errors, pagination, versioning, rate limiting, and OpenAPI |
 | devops | [systemd-service-management](devops/systemd-service-management/) | Unit files, service types, timers, socket activation, security hardening, journald, and resource limits |
+| react | [react-state-management](react/react-state-management/) | Zustand, Jotai, TanStack Query, Redux Toolkit, XState, Context optimization, form state, and URL state |
+| go | [go-api-patterns](go/go-api-patterns/) | net/http (Go 1.22+), chi/echo/gin, middleware, graceful shutdown, error handling, DI, and httptest |
+| security | [secret-management](security/secret-management/) | Vault, AWS Secrets Manager, SOPS, secret scanning, Kubernetes secrets, rotation, and incident response |
