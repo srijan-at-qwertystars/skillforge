@@ -498,3 +498,5 @@ affinity: {{- toYaml . | nindent 2 }}
 | Hardcoded namespace | Chart not portable | Use `{{ .Release.Namespace }}`, never hardcode |
 | No chart version bump | Broken rollbacks, cache issues | Bump `version` on every change |
 | Using `template` not `include` | Output not pipeable | Use `include` for all named template calls |
+
+<!-- tested: pass -->

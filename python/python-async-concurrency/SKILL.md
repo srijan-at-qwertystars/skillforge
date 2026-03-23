@@ -495,3 +495,5 @@ asyncio.run(main())
 future = asyncio.run_coroutine_threadsafe(async_work(), loop)
 result = future.result(timeout=10)
 ```
+
+<!-- tested: pass -->

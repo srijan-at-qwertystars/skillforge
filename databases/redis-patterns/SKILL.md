@@ -442,3 +442,5 @@ redis-cli --memkeys
 - **Ignoring cluster slot alignment**: Multi-key Lua scripts fail across slots. Use hash tags.
 - **Storing sessions without TTL**: Sessions pile up. Always `EXPIRE`.
 - **Using Redis as primary database without persistence**: Enable AOF (`appendonly yes`) or RDB snapshots if data must survive restarts.
+
+<!-- tested: pass -->
