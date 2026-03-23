@@ -104,3 +104,6 @@
 | web | [wasm-patterns](web/wasm-patterns/) | Wasm modules, Rust/C++/Go compilation, WASI, Component Model, browser integration, server-side runtimes, and SIMD |
 | languages | [deno-patterns](languages/deno-patterns/) | Deno 2, permissions, npm/jsr modules, Deno.serve, Fresh framework, Deno KV, Deploy, and Node migration |
 | networking | [iptables-networking](networking/iptables-networking/) | iptables rules, nftables, NAT, port forwarding, network namespaces, traffic control, firewalld, and debugging |
+| api | [protobuf-serialization](api/protobuf-serialization/) | Proto3 syntax, schema evolution, Buf CLI, well-known types, Protobuf editions, and code generation |
+| react | [shadcn-ui-patterns](react/shadcn-ui-patterns/) | Component CLI, theming, Radix primitives, forms (react-hook-form+zod), data tables, and customization |
+| architecture | [temporal-workflows](architecture/temporal-workflows/) | Durable execution, workflows, activities, signals/queries, saga pattern, and TypeScript/Go/Python SDKs |
