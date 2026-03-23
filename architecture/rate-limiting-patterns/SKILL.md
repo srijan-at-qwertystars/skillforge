@@ -422,3 +422,5 @@ fakeClock.now = () => 2000; // advance time
 **Static limits without monitoring** — set alerts on rejection rate. If legitimate users are frequently throttled, the limits are too aggressive or the architecture needs scaling.
 
 **Rate limiting internal service-to-service without quotas** — use per-service quotas so one runaway service cannot consume another's capacity.
+
+<!-- tested: pass -->

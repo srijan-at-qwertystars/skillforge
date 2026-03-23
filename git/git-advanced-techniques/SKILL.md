@@ -496,3 +496,5 @@ git add .gitattributes
 ### Ignoring Reflog Before Destructive Operations
 
 Always check `git reflog` before `git reset --hard` or `git branch -D`. The reflog is your safety net — it expires, so recover lost work promptly (default 30 days for unreachable entries).
+
+<!-- tested: pass -->

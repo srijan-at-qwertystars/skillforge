@@ -334,3 +334,5 @@ Set `connection_limit=1` for serverless. Use `prisma.config.ts` (Prisma 6+) to c
 **Do:** Use singleton PrismaClient · `select`/`include` to limit data · `createMany` with `skipDuplicates` · interactive `$transaction` for multi-step mutations · `@@index` on FKs · cursor pagination for large sets · `findUniqueOrThrow` to avoid null checks · `prisma migrate deploy` in CI/CD.
 
 **Do not:** Instantiate `new PrismaClient()` per request · use `findFirst` without `orderBy` for deterministic results · mix `select` and `include` at same level · use `$queryRawUnsafe` with user input · edit past migration files · use `prisma db push` in production · fetch full relation trees when only IDs are needed · skip FK indexes.
+
+<!-- tested: pass -->
