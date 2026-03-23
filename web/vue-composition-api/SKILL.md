@@ -498,3 +498,5 @@ onMounted(() => {
   onUnmounted(() => clearInterval(id))
 })
 ```
+
+<!-- tested: pass -->

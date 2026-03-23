@@ -459,3 +459,5 @@ Avoid these mistakes:
 - **Ignoring cardinality**: High-cardinality labels (user_id, request_id) in dashboard queries crash Prometheus.
 - **Copy-paste dashboards**: Use Grafonnet or provisioning to generate consistent dashboards from templates.
 - **Wall of graphs**: If every panel is a time series, rethink. Mix stat, gauge, table, and state timeline.
+
+<!-- tested: pass -->

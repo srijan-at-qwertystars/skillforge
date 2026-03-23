@@ -497,3 +497,5 @@ Do not use exceptions for expected branching. Check conditions first or use Resu
 - Never return stack traces, SQL queries, or file paths in API responses.
 - Map internal errors to safe messages at the API boundary.
 - Log full details server-side with a trace ID. Return only the trace ID to the client.
+
+<!-- tested: pass -->
