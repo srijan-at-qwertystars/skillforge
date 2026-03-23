@@ -68,3 +68,6 @@
 | databases | [prisma-orm](databases/prisma-orm/) | Schema design, relations, migrations, Prisma Client queries, transactions, extensions, type safety, and deployment |
 | architecture | [rate-limiting-patterns](architecture/rate-limiting-patterns/) | Token bucket, sliding window, Redis distributed limiting, IETF headers, backoff/jitter, and gateway configs |
 | git | [git-advanced-techniques](git/git-advanced-techniques/) | Bisect, worktrees, rerere, filter-repo, sparse checkout, subtrees, reflog, internals, and patch workflows |
+| react | [nextjs-patterns](react/nextjs-patterns/) | App Router, Server/Client Components, Server Actions, caching, middleware, metadata, parallel routes, and deployment |
+| architecture | [caching-strategies](architecture/caching-strategies/) | Cache-aside, write-through, invalidation strategies, stampede prevention, multi-layer caching, and monitoring |
+| devops | [ansible-automation](devops/ansible-automation/) | Playbooks, roles, collections, Jinja2, vault, inventory, Molecule testing, AWX/AAP, and performance tuning |
