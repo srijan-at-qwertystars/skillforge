@@ -95,3 +95,6 @@
 | devops | [github-cli-patterns](devops/github-cli-patterns/) | gh pr/issue/workflow, gh api (REST/GraphQL), releases, extensions, codespaces, search, and automation scripts |
 | python | [sqlalchemy-patterns](python/sqlalchemy-patterns/) | SQLAlchemy 2.0, declarative models, relationships, async, Alembic migrations, loading strategies, and performance |
 | kubernetes | [kubernetes-operators](kubernetes/kubernetes-operators/) | CRDs, kubebuilder, operator-sdk, controller-runtime, reconciliation, finalizers, webhooks, and envtest |
+| rust | [rust-web-actix](rust/rust-web-actix/) | Actix Web vs Axum, routing, extractors, Tower middleware, state, SQLx/SeaORM, JWT auth, and deployment |
+| devops | [eslint-prettier-config](devops/eslint-prettier-config/) | ESLint flat config, typescript-eslint, Prettier, Biome, framework plugins, monorepo setup, and CI integration |
+| messaging | [message-queue-patterns](messaging/message-queue-patterns/) | RabbitMQ, SQS/SNS, NATS JetStream, BullMQ, DLQ, exactly-once semantics, outbox pattern, and monitoring |
