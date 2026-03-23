@@ -498,3 +498,5 @@ const [user, posts] = await Promise.all([getUser(), getPosts(userId)]); // GOOD
 **Using API routes for server-only data:** Prefer direct DB/API calls in Server Components over `/api` routes for read-only data.
 
 **Large middleware:** No DB queries or heavy computation. Redirects, rewrites, headers, and lightweight auth only.
+
+<!-- tested: pass -->

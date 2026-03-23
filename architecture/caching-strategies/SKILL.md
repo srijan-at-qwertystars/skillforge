@@ -498,3 +498,5 @@ Plan for empty caches after deployments or failures. Implement warming strategie
 
 ### Inconsistent Invalidation
 If you update the DB in multiple code paths, ensure **all** paths invalidate the cache. Centralize writes behind a service layer.
+
+<!-- tested: pass -->

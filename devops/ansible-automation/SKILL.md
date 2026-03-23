@@ -482,3 +482,5 @@ Use `check_mode: true` on individual tasks for permanent dry-run.
 8. **Skipping lint** — run `ansible-lint` in CI.
 9. **No error handling** — use `block/rescue/always`. Set `failed_when`/`changed_when`.
 10. **Running as root everywhere** — use `become: true` only on tasks that need it.
+
+<!-- tested: pass -->
