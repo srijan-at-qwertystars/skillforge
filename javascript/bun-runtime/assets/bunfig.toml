@@ -1,0 +1,97 @@
+# ──────────────────────────────────────────────────────────────────
+# bunfig.toml — Complete Bun configuration template
+# Place at project root. Bun reads this automatically.
+# Docs: https://bun.sh/docs/runtime/bunfig
+# ──────────────────────────────────────────────────────────────────
+
+# ── Package Manager ──────────────────────────────────────────────
+
+[install]
+# Default npm registry
+registry = "https://registry.npmjs.org/"
+
+# Save exact versions (no ^ or ~ prefix)
+# exact = true
+
+# Don't run lifecycle scripts (postinstall, etc.)
+# ignore-scripts = true
+
+# Frozen lockfile — fail if lockfile would change (use in CI)
+# frozen-lockfile = true
+
+# Generate a text lockfile alongside bun.lockb
+# yarn = true
+
+# Cache directory for downloaded packages
+# cache = "~/.bun/install/cache"
+
+# Whether to install optional dependencies
+# optional = true
+
+# Whether to install peer dependencies
+# peer = true
+
+# Install mode: "hardlink" (default), "symlink", or "copyfile"
+# link = "hardlink"
+
+# ── Scoped Registries ───────────────────────────────────────────
+
+[install.scopes]
+# GitHub Packages
+# "@myorg" = { url = "https://npm.pkg.github.com/", token = "$GITHUB_TOKEN" }
+
+# Custom private registry
+# "@company" = { url = "https://registry.company.com/", token = "$NPM_TOKEN" }
+
+# ── Test Runner ──────────────────────────────────────────────────
+
+[test]
+# Enable code coverage
+coverage = true
+
+# Coverage output formats: "text", "lcov", "json"
+coverageReporter = ["text", "lcov"]
+
+# Coverage thresholds (fail if below)
+# coverageThreshold = { line = 80, function = 80, statement = 80 }
+
+# Timeout per test in milliseconds
+# timeout = 10000
+
+# Stop after N failures
+# bail = 1
+
+# Files to run before every test file
+# preload = ["./tests/setup.ts"]
+
+# Glob patterns for test files
+# include = ["**/*.test.ts", "**/*.spec.ts"]
+
+# Directories/patterns to skip
+# exclude = ["node_modules", "dist", "e2e"]
+
+# ── Script Runner ────────────────────────────────────────────────
+
+[run]
+# Shell used to execute package.json scripts
+# "bun" (default) — Bun's built-in shell
+# "system" — system shell (/bin/sh)
+shell = "bun"
+
+# ── Bundler ──────────────────────────────────────────────────────
+
+# [bundle]
+# entrypoints = ["./src/index.ts"]
+# outdir = "./dist"
+# target = "bun"           # "bun" | "node" | "browser"
+# format = "esm"           # "esm" | "cjs" | "iife"
+# minify = true
+# sourcemap = "external"   # "none" | "inline" | "external"
+# splitting = true
+# external = ["fsevents"]
+
+# ── Development ──────────────────────────────────────────────────
+
+# [dev]
+# Enable hot module reloading
+# hmr = true

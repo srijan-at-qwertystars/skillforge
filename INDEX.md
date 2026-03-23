@@ -134,6 +134,6 @@
 | devops | [kamal-deploy](devops/kamal-deploy/) | Kamal 2.x zero-downtime Docker deployments with kamal-proxy, accessories, secrets, hooks, and multi-server roles | tested |
 | security | [passkey-webauthn](security/passkey-webauthn/) | WebAuthn/FIDO2 passkeys — registration/authentication ceremonies, server verification, conditional UI, credential storage, and migration from passwords | tested |
 | web | [remix-framework](web/remix-framework/) | Remix/React Router v7 framework mode — loaders, actions, nested routes, streaming, sessions, deployment adapters, and progressive enhancement | tested |
-| javascript | [bun-runtime](javascript/bun-runtime/) | Bun all-in-one JS/TS runtime — package manager, bundler, test runner, HTTP server, SQLite, shell scripting, FFI, and cross-compilation | created |
-| distributed | [temporal-workflows](distributed/temporal-workflows/) | Temporal durable workflow engine — deterministic workflows, activities, signals, queries, retries, versioning, and multi-language SDKs | created |
-| observability | [opentelemetry](observability/opentelemetry/) | OpenTelemetry traces, metrics, logs — instrumentation, Collector pipelines, OTLP, sampling, context propagation, and backend integration | created |
+| javascript | [bun-runtime](javascript/bun-runtime/) | Bun all-in-one JS/TS runtime — package manager, bundler, test runner, HTTP server, SQLite, shell scripting, FFI, and cross-compilation | enriched |
+| distributed | [temporal-workflows](distributed/temporal-workflows/) | Temporal durable workflow engine — deterministic workflows, activities, signals, queries, retries, versioning, and multi-language SDKs | enriched |
+| observability | [opentelemetry](observability/opentelemetry/) | OpenTelemetry traces, metrics, logs — instrumentation, Collector pipelines, OTLP, sampling, context propagation, and backend integration | enriched |

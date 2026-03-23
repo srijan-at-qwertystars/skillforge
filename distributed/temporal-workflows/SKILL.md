@@ -15,12 +15,12 @@ description: >
 
 ## Architecture
 
-Temporal consists of: **Temporal Server** (orchestrator, persists workflow state via event history), **Workers** (user-hosted processes polling task queues executing workflow/activity code), **Clients** (start workflows, send signals, run queries), and **Namespaces** (logical isolation for multi-tenancy).
+Temporal consists of: **Temporal Server** (orchestrator, persists workflow state via event history), **Workers** (user-hosted processes polling task queues), **Clients** (start workflows, send signals, run queries), and **Namespaces** (logical isolation).
 
-- Server components: Frontend, History, Matching, Internal Worker services.
-- Workers connect to a **Task Queue** (string identifier). Multiple workers poll the same queue for horizontal scaling.
-- Workflow state lives as append-only **Event History** in the server, never in workers.
-- **Web UI** at `localhost:8233` (dev server) for inspecting workflows.
+- Server components: Frontend, History, Matching, Internal Worker services
+- Workers poll a **Task Queue** (string ID). Multiple workers poll the same queue for horizontal scaling
+- Workflow state lives as append-only **Event History** in the server, never in workers
+- **Web UI** at `localhost:8233` (dev server) for inspecting workflows
 
 ## Workflow Definition
 
@@ -30,19 +30,18 @@ Workflows are deterministic functions. Temporal replays event history through wo
 - Call `Date.now()`, `Math.random()`, or `uuid()` — use SDK equivalents
 - Perform I/O (network, filesystem, database) — delegate to activities
 - Use non-deterministic language constructs (Go: goroutines without `workflow.Go`; TS: native `setTimeout`)
-- Mutate global/shared state
-- Use non-deterministic iteration order (unordered maps in Go)
+- Mutate global/shared state; use non-deterministic iteration order (unordered maps in Go)
 
 ### Replay Safety
-On worker restart, Temporal replays the full event history. Completed activities/timers return recorded results from history. New commands generate only past the replay point.
+On worker restart, Temporal replays event history. Completed activities/timers return recorded results. New commands generate only past the replay point.
 
 ## Activities
 
-Activities perform non-deterministic work: HTTP calls, database queries, file I/O, sending emails. They run on workers but outside the deterministic sandbox.
+Activities perform non-deterministic work: HTTP calls, database queries, file I/O, sending emails.
 
-**Timeouts** (set at least one): `StartToCloseTimeout` (max single attempt), `ScheduleToCloseTimeout` (max including retries), `ScheduleToStartTimeout` (max queue wait), `HeartbeatTimeout` (must heartbeat within interval or fail).
+**Timeouts** (set at least one): `StartToCloseTimeout` (max single attempt), `ScheduleToCloseTimeout` (max including retries), `ScheduleToStartTimeout` (max queue wait), `HeartbeatTimeout` (must heartbeat within interval).
 
-**Heartbeats** — Long-running activities call heartbeat to report progress. On retry, last heartbeat details are available for resumption:
+**Heartbeats** — Long-running activities call heartbeat to report progress. On retry, last heartbeat details are available:
 ```typescript
 export async function processLargeFile(path: string): Promise<number> {
   const lines = await readLines(path);
@@ -115,7 +114,6 @@ const result = await handle.result();
 ## Go SDK
 
 Package: `go.temporal.io/sdk`. Workflows and activities are plain Go functions.
-
 ```go
 // Workflow
 func OrderWorkflow(ctx workflow.Context, orderID string) (string, error) {
@@ -155,7 +153,6 @@ we.Get(ctx, &result) // result: "processed-order-123"
 ## Python SDK
 
 Package: `temporalio`. Workflows are classes with decorators.
-
 ### Activity
 ```python
 from temporalio import activity
@@ -206,7 +203,6 @@ result = await client.execute_workflow(
 
 ### Signals — async messages that mutate workflow state
 ```typescript
-// TypeScript
 export const approveSignal = wf.defineSignal<[string]>('approve');
 export async function approvalWorkflow(): Promise<string> {
   let approver = '';
@@ -214,7 +210,7 @@ export async function approvalWorkflow(): Promise<string> {
   await wf.condition(() => approver !== '');
   return `Approved by ${approver}`;
 }
-// Client sends: handle.signal(approveSignal, 'manager@co.com')
+// Client: handle.signal(approveSignal, 'manager@co.com')
 ```
 
 ### Queries — synchronous read-only state inspection
@@ -226,23 +222,21 @@ export async function trackedWorkflow(): Promise<void> {
   await doWork();
   status = 'completed';
 }
-// Client reads: const s = await handle.query(statusQuery) // "started" or "completed"
+// Client: const s = await handle.query(statusQuery)
 ```
 
-### Updates — validated signal + response (TypeScript SDK)
+### Updates — validated signal + response
 ```typescript
 export const updatePrice = wf.defineUpdate<number, [number]>('updatePrice');
 wf.setHandler(updatePrice, (newPrice: number) => {
   if (newPrice < 0) throw new Error('Price must be positive');
-  price = newPrice;
-  return price;
+  price = newPrice; return price;
 });
 ```
 
 ## Child Workflows
 
 Decompose complex orchestrations. Child workflows have independent event histories, reducing parent history size.
-
 ```typescript
 import { startChild, executeChild } from '@temporalio/workflow';
 export async function parentWorkflow(items: string[]): Promise<string[]> {
@@ -265,7 +259,6 @@ ctx = workflow.WithChildOptions(ctx, cwo)
 ## Timers and Sleep
 
 `workflow.sleep` creates a durable timer — survives worker restarts. TS: `await sleep('7 days')`. Go: `workflow.Sleep(ctx, 7*24*time.Hour)`. Python: `await workflow.sleep(timedelta(days=7))`.
-
 ```typescript
 import { sleep } from '@temporalio/workflow';
 export async function reminderWorkflow(userId: string): Promise<void> {
@@ -283,7 +276,7 @@ if (!signaled) await handleTimeout();
 
 ## Error Handling and Compensation (Saga Pattern)
 
-Implement compensating transactions when a multi-step workflow fails partway:
+Implement compensating transactions when a multi-step workflow fails:
 ```typescript
 export async function bookTripSaga(trip: TripInput): Promise<string> {
   const compensations: Array<() => Promise<void>> = [];
@@ -309,15 +302,10 @@ export async function bookTripSaga(trip: TripInput): Promise<string> {
 ## Retry Policies
 
 Configure on activities or child workflows. All fields optional with sensible defaults.
-
 ```typescript
-// TypeScript
-retry: {
-  initialInterval: '1s',       // First retry delay
-  backoffCoefficient: 2,       // Multiplier per retry
-  maximumInterval: '30s',      // Cap on retry delay
-  maximumAttempts: 5,          // 0 = unlimited
-  nonRetryableErrorTypes: ['InvalidInputError'],
+retry: { // TypeScript
+  initialInterval: '1s', backoffCoefficient: 2, maximumInterval: '30s',
+  maximumAttempts: 5, nonRetryableErrorTypes: ['InvalidInputError'],
 }
 ```
 ```go
@@ -338,7 +326,6 @@ RetryPolicy(initial_interval=timedelta(seconds=1), backoff_coefficient=2.0,
 ## Versioning and Patching
 
 Safely evolve workflow code while long-running workflows are in flight.
-
 ```typescript
 // TypeScript — patched / deprecatePatch
 export async function myWorkflow(): Promise<void> {
@@ -396,7 +383,6 @@ temporal schedule delete --schedule-id daily-report
 ## Testing Workflows
 
 All SDKs provide time-skipping test environments — `workflow.sleep('7 days')` resolves instantly.
-
 ```typescript
 // TypeScript — TestWorkflowEnvironment
 import { TestWorkflowEnvironment } from '@temporalio/testing';
@@ -436,8 +422,7 @@ async with await WorkflowEnvironment.start_time_skipping() as env:
 
 ## Schedules (Cron Replacement)
 
-Schedules are the modern replacement for cron workflows. Support intervals, calendar specs, pausing, backfilling, and overlap policies.
-
+Modern replacement for cron workflows. Supports intervals, calendar specs, pausing, backfilling, overlap policies.
 ```typescript
 const handle = await client.schedule.create({
   scheduleId: 'daily-cleanup',
@@ -452,7 +437,7 @@ await handle.trigger();
 
 ## Visibility and Search Attributes
 
-Search attributes enable filtering workflow executions via UI and CLI. Register custom attributes first:
+Search attributes enable filtering workflow executions via UI and CLI.
 ```bash
 temporal operator search-attribute create --name CustomerId --type Keyword
 temporal operator search-attribute create --name Priority --type Int
@@ -473,10 +458,8 @@ temporal workflow list --query 'CustomerId="cust-123" AND Status="processing"'
 ## Self-Hosted vs Temporal Cloud
 
 Self-hosted: you operate the server, configure mTLS, connect at `localhost:7233`. Temporal Cloud: fully managed, built-in mTLS, connect at `<ns>.<acct>.tmprl.cloud:7233`, per-action pricing.
-
 ```typescript
-// Cloud client setup
-const client = new Client({
+const client = new Client({ // Cloud client
   namespace: 'my-ns.my-acct',
   connection: await Connection.connect({
     address: 'my-ns.my-acct.tmprl.cloud:7233',
@@ -487,14 +470,30 @@ const client = new Client({
 
 ## Common Pitfalls
 
-1. **Non-determinism in workflows** — `Date.now()`, `Math.random()`, `uuid()`, native timers, or I/O in workflow code causes replay failures. Use SDK equivalents or delegate to activities.
-2. **Activity code in workflow file** — In TypeScript, workflow files run in a deterministic sandbox. Import activities only via `proxyActivities` with `type` imports.
+1. **Non-determinism in workflows** — `Date.now()`, `Math.random()`, `uuid()`, native timers, I/O in workflow code causes replay failures. Use SDK equivalents or delegate to activities.
+2. **Activity code in workflow file** — TS workflow files run in a deterministic sandbox. Import activities only via `proxyActivities` with `type` imports.
 3. **Missing timeouts** — Every activity must have at least `startToCloseTimeout` or `scheduleToCloseTimeout`.
-4. **Unbounded history** — Use `continueAsNew` to reset history for long-running workflows:
-   - TS: `await continueAsNew<typeof myWorkflow>(newArgs)`
-   - Go: `return workflow.NewContinueAsNewError(ctx, MyWorkflow, newArgs)`
-   - Python: `raise workflow.ContinueAsNewError(arg=new_args)`
-5. **Confusing workflow ID and run ID** — Workflow ID is user-defined, unique per namespace. Run ID is system-generated per execution.
-6. **Not handling cancellation** — Wrap cleanup in disconnected context: `newCtx, _ := workflow.NewDisconnectedContext(ctx)` (Go).
+4. **Unbounded history** — Use `continueAsNew` to reset history for long-running workflows. TS: `await continueAsNew<typeof myWorkflow>(newArgs)`. Go: `return workflow.NewContinueAsNewError(ctx, MyWorkflow, newArgs)`. Python: `raise workflow.ContinueAsNewError(arg=new_args)`.
+5. **Confusing workflow ID and run ID** — Workflow ID is user-defined, unique per namespace. Run ID is system-generated.
+6. **Not handling cancellation** — Use disconnected context for cleanup: `newCtx, _ := workflow.NewDisconnectedContext(ctx)` (Go).
 7. **Deploying breaking changes** — Use versioning/patching APIs. Never change workflow logic for in-flight workflows without version guards.
 8. **Starving task queues** — Ensure enough workers poll each queue. Monitor with `temporal task-queue describe`.
+
+## References
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Saga, continue-as-new, child workflows, async completion, side effects, local activities, interceptors, search attributes, visibility API, multi-cluster replication, Nexus
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Non-determinism errors, timeouts, stuck workflows, history limits, worker tuning, memory, gRPC errors, namespace issues
+- **[references/production-guide.md](references/production-guide.md)** — Docker Compose & K8s/Helm deployment, Temporal Cloud, Prometheus/Grafana, mTLS, encryption, archival, multi-tenancy, capacity planning
+
+## Scripts (`./scripts/<name>.sh`)
+
+- **[setup-dev.sh](scripts/setup-dev.sh)** — Start/stop local Temporal dev server with persistence
+- **[scaffold-workflow.sh](scripts/scaffold-workflow.sh)** — Generate TypeScript or Go project scaffold
+- **[diagnose.sh](scripts/diagnose.sh)** — Diagnose server health, task queues, failed/stuck workflows
+
+## Assets
+
+- **[docker-compose.yml](assets/docker-compose.yml)** — Temporal + PostgreSQL + Elasticsearch + Web UI
+- **[workflow-template.ts](assets/workflow-template.ts)** — Workflow with signals, queries, saga, continueAsNew
+- **[worker-template.ts](assets/worker-template.ts)** — Worker with mTLS, graceful shutdown, health check
+- **[github-actions-ci.yml](assets/github-actions-ci.yml)** — CI: lint, type-check, unit/integration/replay tests

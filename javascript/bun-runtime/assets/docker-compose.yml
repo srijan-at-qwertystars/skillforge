@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────────
+# docker-compose.yml — Bun development environment with database
+#
+# Usage:
+#   docker compose up        # start all services
+#   docker compose up -d     # start in background
+#   docker compose down -v   # stop and remove volumes
+#
+# Services:
+#   app      — Bun application with hot reload
+#   postgres — PostgreSQL database
+#   redis    — Redis cache
+# ──────────────────────────────────────────────────────────────────
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build  # Use build stage for dev (includes devDependencies)
+    ports:
+      - "${PORT:-3000}:3000"
+    volumes:
+      - .:/app          # Mount source for hot reload
+      - /app/node_modules  # Preserve container node_modules
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=postgres://app:secret@postgres:5432/appdb
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["bun", "--watch", "src/index.ts"]
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: appdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d appdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: ["redis-server", "--appendonly", "yes"]
+
+volumes:
+  pgdata:
+  redisdata:

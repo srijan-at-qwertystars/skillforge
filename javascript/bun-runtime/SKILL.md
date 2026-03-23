@@ -457,42 +457,44 @@ Supported types: `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `f32`, `f
 ## Node.js Compatibility
 
 ### Fully supported core modules
-`assert`, `buffer`, `child_process` (most), `console`, `crypto` (most), `dgram`, `dns`, `events`, `fs`, `http`, `https`, `net`, `os`, `path`, `querystring`, `readline`, `stream`, `string_decoder`, `timers`, `tls`, `url`, `util`, `zlib`.
+`assert`, `buffer`, `child_process`, `console`, `crypto`, `dgram`, `dns`, `events`, `fs`, `http`, `https`, `net`, `os`, `path`, `querystring`, `readline`, `stream`, `string_decoder`, `timers`, `tls`, `url`, `util`, `zlib`.
 
 ### Partially supported
-- `http2` — most APIs work; `pushStream`, `ALTSVC` missing.
-- `async_hooks` — `AsyncLocalStorage` and `AsyncResource` only.
-- `cluster` — limited; `SO_REUSEPORT` only on Linux.
-- `worker_threads` — works, but IPC cannot send socket handles.
-- `vm` — basic `runInNewContext` works; full sandboxing differs.
+`http2` (no `pushStream`), `async_hooks` (`AsyncLocalStorage` only), `cluster` (limited), `worker_threads` (no socket handle IPC), `vm` (basic only). See [troubleshooting.md](references/troubleshooting.md) for full matrix.
 
 ### Not supported
-- `node:inspector` — not implemented.
-- Native C++ addons (non-N-API) — use N-API or Bun alternatives.
+`node:inspector`, native C++ addons (non-N-API). Use `bun:ffi` or pure-JS alternatives.
 
 ### Web APIs available as globals
-`fetch`, `Request`, `Response`, `Headers`, `URL`, `URLSearchParams`, `WebSocket`, `ReadableStream`, `WritableStream`, `TextEncoder`, `TextDecoder`, `crypto.subtle`, `structuredClone`, `Blob`, `FormData`, `AbortController`.
-
-## Bun vs Node.js vs Deno
-
-| Feature | Bun | Node.js | Deno |
-|---|---|---|---|
-| Engine | JavaScriptCore | V8 | V8 |
-| TypeScript | Native | Requires tsc | Native |
-| Pkg manager | Built-in (npm compat) | npm/yarn/pnpm | npm compat (v2+) |
-| Test runner | Built-in (Jest API) | --test (basic) | Built-in |
-| Bundler/SQLite/FFI | All built-in | External packages | Partial |
-| Start time | ~5ms | ~30ms | ~20ms |
+`fetch`, `Request`, `Response`, `Headers`, `URL`, `WebSocket`, `ReadableStream`, `WritableStream`, `TextEncoder`, `TextDecoder`, `crypto.subtle`, `structuredClone`, `Blob`, `FormData`, `AbortController`.
 
 ## Common Pitfalls & Migration Gotchas
 
-1. **Native addons**: C++ addons compiled for Node.js won't work. Use N-API modules or Bun alternatives (`bun:sqlite` instead of `better-sqlite3`, `bcryptjs` instead of `bcrypt`).
-2. **Lockfile**: `bun.lockb` is binary. Commit it. For human-readable, generate `yarn.lock` with `bun install --yarn`.
-3. **Scripts field**: `bun run <script>` runs package.json scripts. Pre/post scripts execute automatically like npm.
-4. **Global installs**: `bun add -g <pkg>` installs to `~/.bun/bin`. Ensure it's in `$PATH`.
-5. **process.exit behavior**: Bun flushes I/O before exit — behavior may differ subtly from Node.js.
-6. **__dirname / __filename**: Available in both ESM and CJS in Bun (unlike Node.js ESM). Use `import.meta.dir` and `import.meta.file` for Bun-idiomatic code.
-7. **Module resolution**: Bun follows Node.js resolution but also checks `tsconfig.json` paths. Check `paths` config if modules resolve differently.
-8. **Hot reload caveats**: `--hot` re-executes module side effects. Guard init: `globalThis.db ??= new Database("app.db");`
-9. **Binary size**: Compiled executables include full Bun runtime (~90MB). Not for size-constrained envs.
-10. **Ecosystem gaps**: Packages with deep V8 dependencies (inspector, profiler hooks, `vm` sandboxing) may not work. Test before production.
+1. **Native addons**: C++ addons won't work. Use `bun:sqlite` instead of `better-sqlite3`, `bcryptjs` instead of `bcrypt`.
+2. **Lockfile**: `bun.lockb` is binary. Commit it. For text: `bun install --yarn`.
+3. **Global installs**: `bun add -g <pkg>` installs to `~/.bun/bin`. Ensure it's in `$PATH`.
+4. **__dirname / __filename**: Available in ESM (unlike Node.js). Bun-idiomatic: `import.meta.dir`, `import.meta.file`.
+5. **Module resolution**: Checks `tsconfig.json` paths. Verify `paths`/`baseUrl` if modules resolve differently.
+6. **Hot reload caveats**: `--hot` re-executes side effects. Guard init: `globalThis.db ??= new Database("app.db");`
+7. **Binary size**: Compiled executables include full runtime (~90MB). Not for size-constrained envs.
+8. **Ecosystem gaps**: V8-specific packages (inspector, profiler, `vm` sandboxing) may not work. See [troubleshooting.md](references/troubleshooting.md).
+
+## References
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Bun.serve static routes/WebSocket, bun:sqlite WAL/transactions, Bun.build plugins/virtual modules, Bun.$ advanced, bun:ffi pointers/callbacks, standalone executables, macros, monorepo patterns.
+- **[troubleshooting.md](references/troubleshooting.md)** — Node.js compatibility matrix, npm package issues, native addons, memory leaks, `--inspect` debugging, common errors, Docker gotchas, CI/CD.
+- **[migration-from-node.md](references/migration-from-node.md)** — Step-by-step migration: package management, replacing nodemon/ts-node/jest, Express→Bun.serve, fs→Bun.file, child_process→Bun.$, TS config, shims.
+
+## Scripts
+
+Run with `bash scripts/<name>.sh`:
+
+- **[setup-project.sh](scripts/setup-project.sh)** — Bootstrap a Bun project (`api`, `lib`, or `fullstack` monorepo) with TS, testing, and config.
+- **[migrate-from-node.sh](scripts/migrate-from-node.sh)** — Analyze a Node.js project for Bun compatibility (native addons, packages, scripts, configs).
+- **[benchmark.sh](scripts/benchmark.sh)** — Benchmark Bun vs Node.js on startup, JSON, file I/O, crypto, and HTTP throughput.
+
+## Assets
+
+- **[bunfig.toml](assets/bunfig.toml)** — Complete bunfig.toml with all common options annotated.
+- **[server-template.ts](assets/server-template.ts)** — Production Bun.serve with routing, CORS, WebSocket, logging, and error handling.
+- **[Dockerfile](assets/Dockerfile)** — Multi-stage Dockerfile (oven/bun base) with health checks and non-root user.
+- **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose for dev: Bun app + PostgreSQL + Redis with hot reload.

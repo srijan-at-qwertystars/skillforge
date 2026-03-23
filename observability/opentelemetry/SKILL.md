@@ -436,40 +436,9 @@ sdk.start();
 
 Output: Express HTTP spans auto-created for every request with `http.method`, `http.route`, `http.status_code` attributes. Child spans for outgoing HTTP calls, DB queries auto-linked.
 
-### Input: "Configure Collector to send traces to Tempo and metrics to Prometheus"
-
-```yaml
-receivers:
-  otlp:
-    protocols:
-      grpc:
-        endpoint: 0.0.0.0:4317
-processors:
-  batch: {}
-  memory_limiter:
-    limit_mib: 1024
-exporters:
-  otlp/tempo:
-    endpoint: tempo:4317
-    tls:
-      insecure: true
-  prometheus:
-    endpoint: 0.0.0.0:8889
-service:
-  pipelines:
-    traces:
-      receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [otlp/tempo]
-    metrics:
-      receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [prometheus]
-```
-
-Output: Traces flow to Grafana Tempo via OTLP gRPC. Metrics exposed on `:8889` for Prometheus to scrape.
-
 ### Input: "Set up tail sampling to keep error traces and sample 10% of success"
+
+See [collector-recipes.md](references/collector-recipes.md#tail-sampling-processor) for complete gateway config. Minimal policy:
 
 ```yaml
 processors:
@@ -487,4 +456,33 @@ processors:
         probabilistic: { sampling_percentage: 10 }
 ```
 
-Output: All error and slow (>5s) traces retained. 10% of remaining traces sampled. Requires gateway deployment for complete trace assembly.
+## References
+
+In-depth guides in `references/`:
+
+| File | Topics |
+|---|---|
+| [advanced-patterns.md](references/advanced-patterns.md) | Custom span processors, batch vs simple exporters, tail-based sampling architecture, span links & events, metric views & aggregation, exemplars, log correlation, custom propagators, resource detection, multi-signal correlation, instrumentation libraries deep dive |
+| [troubleshooting.md](references/troubleshooting.md) | Missing spans (propagation, sampling, unended spans), high cardinality metrics, Collector pipeline debugging (zpages, debug exporter, internal metrics), memory issues, gRPC vs HTTP transport, SDK init order, auto-instrumentation failures, context loss in async code |
+| [collector-recipes.md](references/collector-recipes.md) | Production Collector configs: span filtering by attribute, tail sampling processor (complete gateway config), routing to multiple backends, transforming metrics, filelog receiver for K8s logs, K8s metadata enrichment (k8sattributes), health check extension, load balancing exporter, Collector scaling patterns (agent + gateway, sidecar, HPA) |
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+| Script | Purpose | Usage |
+|---|---|---|
+| [setup-local-stack.sh](scripts/setup-local-stack.sh) | Stand up a full local OTel stack (Collector + Jaeger + Prometheus + Grafana) via Docker Compose | `./scripts/setup-local-stack.sh up` |
+| [instrument-node-app.sh](scripts/instrument-node-app.sh) | Add OTel auto-instrumentation to an existing Node.js project — installs packages, creates bootstrap file | `./scripts/instrument-node-app.sh --project-dir ./my-app --typescript` |
+| [validate-collector-config.sh](scripts/validate-collector-config.sh) | Multi-level Collector config validation: YAML syntax, required sections, pipeline reference consistency, best practices, native `otelcol validate` | `./scripts/validate-collector-config.sh config.yaml` |
+
+## Assets
+
+Ready-to-use templates and configs in `assets/`:
+
+| File | Description |
+|---|---|
+| [collector-config.yaml](assets/collector-config.yaml) | Production-ready Collector config with OTLP receivers, memory limiter, batch processor, multiple exporters (OTLP, Prometheus), health check, zpages, span filtering, attribute redaction |
+| [docker-compose.yml](assets/docker-compose.yml) | Full observability stack: Collector (contrib), Jaeger (with persistent storage), Prometheus, Grafana (with pre-provisioned datasources) |
+| [node-tracing.ts](assets/node-tracing.ts) | Node.js/TypeScript tracing setup module with auto-instrumentation, all three signals, resource detectors, graceful shutdown, health check filtering |
+| [otel-env.sh](assets/otel-env.sh) | Environment variables template for OTel SDK — `source` before running your app, with development/production presets |

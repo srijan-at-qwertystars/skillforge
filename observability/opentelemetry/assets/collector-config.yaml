@@ -1,0 +1,158 @@
+# Production-Ready OpenTelemetry Collector Configuration
+#
+# Features:
+#   - OTLP receiver (gRPC + HTTP)
+#   - Memory limiter + batch processor
+#   - Multiple exporters (OTLP backend, Prometheus, debug)
+#   - Health check + zpages extensions
+#   - Resource attribute enrichment
+#   - Span filtering (health checks)
+#
+# Usage:
+#   otelcol-contrib --config=collector-config.yaml
+#
+# Customize:
+#   - Replace exporter endpoints with your backend addresses
+#   - Tune memory_limiter.limit_mib to 80% of container memory
+#   - Adjust batch sizes based on throughput
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 4
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins: ["*"]
+          allowed_headers: ["*"]
+
+  # Collect host metrics (optional, remove if not needed)
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu: {}
+      memory: {}
+      disk: {}
+      network: {}
+      load: {}
+
+processors:
+  # MUST be first processor in every pipeline
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1800          # Set to 80% of container memory limit
+    spike_limit_mib: 400
+
+  batch:
+    send_batch_size: 8192
+    send_batch_max_size: 16384
+    timeout: 5s
+
+  # Add environment attribute to all telemetry
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: ${env:DEPLOYMENT_ENV:-production}
+        action: upsert
+      - key: collector.version
+        value: "1.0"
+        action: upsert
+
+  # Drop health check and probe spans
+  filter/drop-noise:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.route"] == "/healthz"'
+        - 'attributes["http.route"] == "/readyz"'
+        - 'attributes["http.route"] == "/livez"'
+        - 'attributes["http.target"] == "/metrics"'
+        - 'name == "GET /favicon.ico"'
+
+  # Remove sensitive attributes
+  attributes/redact:
+    actions:
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+      - key: db.statement
+        action: hash
+
+exporters:
+  # Primary trace backend (e.g., Grafana Tempo, Jaeger, Honeycomb)
+  otlp/traces:
+    endpoint: ${env:TRACES_BACKEND_ENDPOINT:-tempo:4317}
+    tls:
+      insecure: ${env:TRACES_TLS_INSECURE:-true}
+    headers:
+      ${env:TRACES_AUTH_HEADER:-x-scope-orgid}: ${env:TRACES_AUTH_VALUE:-anonymous}
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 5000
+
+  # Primary log backend (e.g., Grafana Loki)
+  otlp/logs:
+    endpoint: ${env:LOGS_BACKEND_ENDPOINT:-loki:3100}
+    tls:
+      insecure: ${env:LOGS_TLS_INSECURE:-true}
+
+  # Prometheus metrics endpoint (for scraping)
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+    metric_expiration: 5m
+
+  # Debug exporter (disable in production by removing from pipelines)
+  debug:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: /health
+    check_collector_pipeline:
+      enabled: true
+      exporter_failure_threshold: 5
+
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+service:
+  extensions: [health_check, zpages, pprof]
+
+  telemetry:
+    logs:
+      level: info
+      encoding: json
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888    # Collector self-metrics
+
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/drop-noise, attributes/redact, resource, batch]
+      exporters: [otlp/traces]
+    metrics:
+      receivers: [otlp, hostmetrics]
+      processors: [memory_limiter, resource, batch]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters: [otlp/logs]
