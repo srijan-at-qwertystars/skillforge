@@ -29,3 +29,6 @@
 | architecture | [twelve-factor-app](architecture/twelve-factor-app/) | All 12 factors with modern cloud-native guidance, plus API-first, telemetry, and security additions |
 | testing | [api-contract-testing](testing/api-contract-testing/) | Pact consumer-driven contracts, provider verification, Pact Broker, OpenAPI validation, and async contracts |
 | python | [python-packaging](python/python-packaging/) | pyproject.toml, build backends, package managers, src layout, versioning, PyPI publishing, and OIDC trusted publishing |
+| web | [web-accessibility-a11y](web/web-accessibility-a11y/) | WCAG 2.2, semantic HTML, ARIA patterns, keyboard navigation, color contrast, forms, and testing tools |
+| networking | [grpc-protobuf](networking/grpc-protobuf/) | Protobuf schema design, gRPC streaming, error handling, interceptors, Buf CLI, load balancing, and testing |
+| devops | [kubernetes-troubleshooting](devops/kubernetes-troubleshooting/) | Pod failures, networking/DNS diagnosis, resource pressure, RBAC debugging, kubectl power commands, and decision trees |
