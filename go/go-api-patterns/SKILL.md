@@ -497,3 +497,5 @@ mux := http.NewServeMux()
 mux.Handle("/v1/", http.StripPrefix("/v1", v1))
 mux.Handle("/v2/", http.StripPrefix("/v2", v2))
 ```
+
+<!-- tested: pass -->

@@ -498,3 +498,5 @@ useEffect(() => {                       //   () => items.reduce((s, i) => s + i.
   setTotal(items.reduce(/*...*/));      //   [items]
 }, [items]);                            // );
 ```
+
+<!-- tested: pass -->

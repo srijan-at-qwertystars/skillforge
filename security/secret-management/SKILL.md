@@ -495,3 +495,5 @@ Execute these steps **immediately** when a secret is found in git, logs, or any 
 7. **Post-mortem** — document root cause, add scanning to prevent recurrence.
 
 **Key rule**: assume any leaked secret has been compromised. Always rotate, never just delete.
+
+<!-- tested: pass -->
