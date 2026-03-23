@@ -496,3 +496,5 @@ Add to CI to prevent regression:
 10. **Enable bonus flags** — `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`
 11. **Remove escape hatches** — search for `@ts-ignore`, `@ts-expect-error`, `as any` and eliminate
 12. **Document** — update contributor guide with strict-mode expectations
+
+<!-- tested: pass -->
