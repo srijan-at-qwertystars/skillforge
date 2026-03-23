@@ -422,68 +422,7 @@ def revoke_all_user_tokens(user_id):
 
 ## Testing JWT Flows
 
-### Unit Tests
-
-```python
-import pytest
-import jwt
-from datetime import datetime, timedelta, timezone
-from freezegun import freeze_time
-
-def test_valid_token_accepted():
-    token = create_token(sub="user_1", exp_minutes=15)
-    payload = validate_token(token)
-    assert payload["sub"] == "user_1"
-
-def test_expired_token_rejected():
-    with freeze_time("2025-01-01 12:00:00"):
-        token = create_token(sub="user_1", exp_minutes=15)
-    with freeze_time("2025-01-01 12:30:00"):
-        with pytest.raises(jwt.ExpiredSignatureError):
-            validate_token(token)
-
-def test_wrong_audience_rejected():
-    token = create_token(sub="user_1", aud="wrong.api.com")
-    with pytest.raises(jwt.InvalidAudienceError):
-        validate_token(token)
-
-def test_wrong_algorithm_rejected():
-    token = jwt.encode({"sub": "user_1"}, "secret", algorithm="HS256")
-    with pytest.raises(jwt.InvalidAlgorithmError):
-        validate_token(token)  # expects RS256
-
-def test_revoked_token_rejected():
-    token = create_token(sub="user_1", jti="abc123")
-    revoke_token("abc123", exp=9999999999)
-    with pytest.raises(AuthError):
-        validate_token(token)
-```
-
-### Integration Tests
-
-```python
-def test_refresh_rotation(client):
-    login = client.post("/auth/login", json={"email": "u@x.com", "password": "pass"})
-    refresh_1 = login.json()["refresh_token"]
-
-    # First refresh succeeds
-    r1 = client.post("/auth/refresh", json={"refresh_token": refresh_1})
-    assert r1.status_code == 200
-    refresh_2 = r1.json()["refresh_token"]
-
-    # Reusing old refresh token triggers family revocation
-    r2 = client.post("/auth/refresh", json={"refresh_token": refresh_1})
-    assert r2.status_code == 401
-
-    # New refresh token is also revoked (family invalidation)
-    r3 = client.post("/auth/refresh", json={"refresh_token": refresh_2})
-    assert r3.status_code == 401
-
-def test_logout_revokes_token(client, auth_headers):
-    client.post("/auth/logout", headers=auth_headers)
-    r = client.get("/api/protected", headers=auth_headers)
-    assert r.status_code == 401
-```
+See `assets/auth-flow-test.ts` for a complete test suite template covering login, token validation, refresh rotation, reuse detection, and logout revocation.
 
 ### Security Test Checklist
 
@@ -498,4 +437,32 @@ def test_logout_revokes_token(client, auth_headers):
 - [ ] Token with tampered payload is rejected.
 - [ ] HS256 token is rejected when RS256 is expected (key confusion).
 
-<!-- tested: needs-fix -->
+## References
+
+| File | When to read |
+|------|-------------|
+| `references/advanced-patterns.md` | JWE, DPoP (RFC 9449), token exchange (RFC 8693), multi-tenant patterns, PASETO vs JWT, BFF refresh, token size optimization |
+| `references/troubleshooting.md` | Debugging invalid signatures, clock skew, cookie issues, CORS with Authorization header, library pitfalls, mobile storage |
+| `references/security-hardening.md` | Defense-in-depth architecture, rate limiting auth endpoints, log sanitization, OWASP recommendations, mass revocation, GDPR/SOC 2 compliance |
+
+## Scripts
+
+| Script | Usage |
+|--------|-------|
+| `scripts/decode-jwt.sh <token>` | Decode and inspect JWT header/payload, show expiration status |
+| `scripts/generate-keys.sh --algorithm RS256` | Generate signing key pairs with JWKS JSON output |
+| `scripts/validate-jwt-config.sh` | Audit JWT config for security issues (weak secrets, small keys, JWKS problems) |
+| `scripts/create-test-jwt.py --claims '{"sub":"user_1"}'` | Create test JWTs including expired/malformed variants |
+
+## Assets
+
+| File | Description |
+|------|-------------|
+| `assets/jwt-middleware-node.ts` | Express.js JWT middleware with JWKS caching and blocklist support |
+| `assets/jwt-middleware-python.py` | FastAPI JWT verifier with dependency injection pattern |
+| `assets/jwt-middleware-go.go` | Go HTTP middleware with context-based user propagation |
+| `assets/jwks-server.ts` | Minimal JWKS endpoint server for key rotation |
+| `assets/auth-flow-test.ts` | Vitest test suite covering full auth flow (login, refresh, revocation) |
+| `assets/security-headers.conf` | Nginx config with rate limiting, CORS, and security headers for auth |
+
+<!-- tested: pass -->
