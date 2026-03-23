@@ -74,3 +74,6 @@
 | databases | [drizzle-orm](databases/drizzle-orm/) | Schema definition, relational queries, drizzle-kit migrations, prepared statements, type safety, and Drizzle vs Prisma |
 | security | [ci-cd-security](security/ci-cd-security/) | Pipeline hardening, GitHub Actions security, SLSA provenance, Sigstore, SAST/DAST, dependency scanning, and OIDC |
 | web | [svelte-patterns](web/svelte-patterns/) | Svelte 5 runes, SvelteKit routing, load functions, form actions, SSR/SSG, transitions, and deployment adapters |
+| architecture | [error-handling-patterns](architecture/error-handling-patterns/) | Result/Either types, exception hierarchy, RFC 9457 API errors, error boundaries, async errors, and retry patterns |
+| web | [vue-composition-api](web/vue-composition-api/) | Composition API, ref/reactive, composables, Pinia, Vue Router, TypeScript, Nuxt 3, and component patterns |
+| observability | [observability-dashboards](observability/observability-dashboards/) | Grafana panels, PromQL, LogQL, dashboard-as-code, variables, USE/RED/Golden Signals, and SLO dashboards |
