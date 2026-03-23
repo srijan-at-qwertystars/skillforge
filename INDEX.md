@@ -50,3 +50,6 @@
 | react | [react-state-management](react/react-state-management/) | Zustand, Jotai, TanStack Query, Redux Toolkit, XState, Context optimization, form state, and URL state |
 | go | [go-api-patterns](go/go-api-patterns/) | net/http (Go 1.22+), chi/echo/gin, middleware, graceful shutdown, error handling, DI, and httptest |
 | security | [secret-management](security/secret-management/) | Vault, AWS Secrets Manager, SOPS, secret scanning, Kubernetes secrets, rotation, and incident response |
+| python | [python-type-hints](python/python-type-hints/) | Type annotations, TypeVar, Protocol, ParamSpec, TypeGuard, mypy/pyright config, and gradual typing strategy |
+| aws | [aws-lambda-patterns](aws/aws-lambda-patterns/) | Handler patterns, Powertools, cold starts, event sources, SAM/CDK deployment, layers, and performance tuning |
+| architecture | [microservices-patterns](architecture/microservices-patterns/) | Decomposition, API gateway, circuit breaker, service mesh, sagas, CQRS, observability, and deployment |
