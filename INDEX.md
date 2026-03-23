@@ -98,3 +98,6 @@
 | rust | [rust-web-actix](rust/rust-web-actix/) | Actix Web vs Axum, routing, extractors, Tower middleware, state, SQLx/SeaORM, JWT auth, and deployment |
 | devops | [eslint-prettier-config](devops/eslint-prettier-config/) | ESLint flat config, typescript-eslint, Prettier, Biome, framework plugins, monorepo setup, and CI integration |
 | messaging | [message-queue-patterns](messaging/message-queue-patterns/) | RabbitMQ, SQS/SNS, NATS JetStream, BullMQ, DLQ, exactly-once semantics, outbox pattern, and monitoring |
+| security | [tls-certificate-management](security/tls-certificate-management/) | Let's Encrypt, cert-manager, ACME, mTLS, OpenSSL, certificate rotation, internal PKI, and debugging TLS |
+| python | [python-cli-tools](python/python-cli-tools/) | Click, Typer, argparse, Rich, CLI testing, shell completion, distribution (pipx/PyInstaller), and async CLIs |
+| architecture | [design-patterns-practical](architecture/design-patterns-practical/) | Factory, Builder, Strategy, Observer, Decorator, Repository, Result/Option, and problem-to-pattern guide |
