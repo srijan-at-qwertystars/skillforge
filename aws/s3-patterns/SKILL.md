@@ -442,3 +442,5 @@ const client = new S3Client({
 | Hardcoded bucket names | Breaks across environments | Use SSM Parameter Store or env vars |
 | Syncing entire buckets client-side | Bandwidth waste | Use `aws s3 sync --delete` or rsync patterns |
 | Ignoring 503 SlowDown errors | Request failures cascade | Implement exponential backoff, spread prefixes |
+
+<!-- tested: pass -->

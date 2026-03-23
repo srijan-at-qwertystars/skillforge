@@ -382,3 +382,5 @@ function f<T extends unknown>(x: T) {} // T extends unknown is always true
 // ✅ Remove meaningless constraints
 function f<T>(x: T) {}
 ```
+
+<!-- tested: pass -->

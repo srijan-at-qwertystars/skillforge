@@ -498,3 +498,5 @@ Use `docker compose config` to validate interpolation and file merging before st
 | Skipping `start_period` in healthchecks | Set `start_period` for slow-starting services |
 | Using legacy `version` field | Omit it — deprecated in Compose v2 |
 | Using `docker-compose` (hyphen) | Use `docker compose` (space) — v2 CLI |
+
+<!-- tested: pass -->
