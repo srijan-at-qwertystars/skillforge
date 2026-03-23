@@ -56,3 +56,6 @@
 | testing | [load-testing-k6](testing/load-testing-k6/) | k6 script structure, scenarios, thresholds, checks, browser module, CI integration, and performance testing patterns |
 | web | [tailwind-css-patterns](web/tailwind-css-patterns/) | Tailwind v4 CSS-first config, utility patterns, dark mode, responsive design, CVA components, and plugin development |
 | databases | [elasticsearch-patterns](databases/elasticsearch-patterns/) | Mappings, Query DSL, analyzers, aggregations, ILM hot-warm-cold, performance tuning, and data modeling |
+| languages | [regex-patterns](languages/regex-patterns/) | Regex syntax, groups, lookaround, common patterns, catastrophic backtracking, ReDoS prevention, and language-specific syntax |
+| python | [fastapi-patterns](python/fastapi-patterns/) | App structure, Pydantic v2, dependency injection, auth, WebSockets, async SQLAlchemy, testing, and deployment |
+| devops | [ssh-configuration](devops/ssh-configuration/) | Key management, ssh_config, ProxyJump, tunneling, port forwarding, sshd hardening, certificate auth, and multiplexing |
