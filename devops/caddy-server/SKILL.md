@@ -465,3 +465,31 @@ http://example.com, http://www.example.com, https://www.example.com {
 - **Do not** use ephemeral Docker volumes for `/data` — certificates will be lost.
 - **Do not** confuse `handle` (mutually exclusive, first match) with `route` (preserves directive order).
 - **Do not** forget `flush_interval -1` when proxying SSE or streaming responses.
+
+## Resources
+
+### references/ — Deep-Dive Documentation
+
+| File | Description |
+|---|---|
+| `references/advanced-patterns.md` | On-demand TLS, dynamic backends, CEL matchers, handle_errors, rate limiting, IP geolocation, request body limits, Prometheus metrics, events system, storage backends (Consul/Redis/S3), multi-domain configs, snippets |
+| `references/troubleshooting.md` | Certificate provisioning failures, ACME behind proxies/firewalls, rate limit mitigation, WebSocket proxy fixes, upload timeouts, redirect loops, Caddyfile parse errors, JSON API conflicts, systemd permissions, Docker networking, diagnostic commands |
+| `references/migration-from-nginx.md` | Complete Nginx→Caddy directive mapping, 15+ configuration translations side-by-side, feature parity table, key behavioral differences, migration checklist |
+
+### scripts/ — Executable Helpers
+
+| Script | Description |
+|---|---|
+| `scripts/caddy-validate.sh` | Validates Caddyfile syntax, checks for common misconfigurations (exposed admin API, missing ask endpoint, insecure TLS), deprecation warnings, brace balance, JSON adaptation test |
+| `scripts/caddy-install.sh` | Cross-platform installer — auto-detects OS and uses apt/dnf/brew or direct binary download, sets up systemd service and caddy user |
+| `scripts/xcaddy-build.sh` | Builds custom Caddy with plugins via xcaddy — supports `--preset` shortcuts for popular modules (dns-cloudflare, ratelimit, storage-redis, etc.), version pinning, and verification |
+
+### assets/ — Templates and Boilerplate
+
+| File | Description |
+|---|---|
+| `assets/Caddyfile-reverse-proxy` | Production reverse proxy with HTTPS, security headers, load balancing, health checks, WebSocket/SSE support, structured JSON logging, custom error responses |
+| `assets/Caddyfile-static-site` | Static file serving with gzip/zstd compression, immutable asset caching, SPA fallback (try_files), precompressed file support, security headers |
+| `assets/Caddyfile-php` | Three PHP templates — generic PHP-FPM, Laravel (with Livewire paths), WordPress (with xmlrpc/wp-config blocking, upload limits, admin no-cache) |
+| `assets/docker-compose.yml` | Multi-service Docker Compose with Caddy as reverse proxy, separate web/backend networks, PostgreSQL, Redis, resource limits, secrets, health checks |
+| `assets/caddy.service` | Hardened systemd unit with 20+ security directives (ProtectSystem, MemoryDenyWriteExecute, SystemCallFilter, etc.), capability-based port binding, environment file support |

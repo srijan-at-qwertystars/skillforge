@@ -1,0 +1,167 @@
+# Docker Compose — Caddy as Reverse Proxy for Multiple Services
+#
+# This template runs Caddy as the front-door reverse proxy with automatic HTTPS,
+# proxying to multiple backend services on a shared Docker network.
+#
+# Usage:
+#   1. Replace example.com domains in Caddyfile with your domains
+#   2. Adjust service definitions below for your applications
+#   3. Run: docker compose up -d
+#
+# Prerequisites:
+#   - DNS A records pointing to this server's public IP
+#   - Ports 80, 443, and 443/udp open in firewall
+
+services:
+  # ==========================================================================
+  # Caddy — reverse proxy + automatic HTTPS
+  # ==========================================================================
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"      # HTTP/3 (QUIC)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data          # TLS certificates — MUST persist
+      - caddy_config:/config      # Caddy config state
+      - caddy_logs:/var/log/caddy
+    environment:
+      - CADDY_ADMIN=unix//run/caddy/admin.sock
+    networks:
+      - web
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '1.0'
+
+  # ==========================================================================
+  # Example: Node.js / Next.js application
+  # ==========================================================================
+  app:
+    image: node:20-alpine
+    working_dir: /app
+    # command: npm start
+    # volumes:
+    #   - ./app:/app:ro
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    networks:
+      - web
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ==========================================================================
+  # Example: Python / Django / FastAPI application
+  # ==========================================================================
+  api:
+    image: python:3.12-slim
+    # command: uvicorn main:app --host 0.0.0.0 --port 8000
+    # volumes:
+    #   - ./api:/app:ro
+    restart: unless-stopped
+    expose:
+      - "8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - web
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ==========================================================================
+  # Example: PostgreSQL database (not exposed to Caddy network)
+  # ==========================================================================
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=app
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+      - POSTGRES_DB=appdb
+    networks:
+      - backend
+    secrets:
+      - db_password
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # ==========================================================================
+  # Example: Redis cache
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          memory: 192M
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  web:
+    # Caddy + public-facing services
+    driver: bridge
+  backend:
+    # Internal services (DB, cache) — no Caddy access
+    driver: bridge
+    internal: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  caddy_data:
+    # CRITICAL: Persists TLS certificates. Do NOT delete.
+  caddy_config:
+  caddy_logs:
+  postgres_data:
+
+# =============================================================================
+# Secrets
+# =============================================================================
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+
+# =============================================================================
+# Corresponding Caddyfile (save as ./Caddyfile alongside this file):
+# =============================================================================
+#
+# {
+#     email admin@example.com
+# }
+#
+# example.com {
+#     reverse_proxy app:3000
+# }
+#
+# api.example.com {
+#     reverse_proxy api:8000
+# }

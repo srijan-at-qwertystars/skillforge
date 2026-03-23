@@ -424,17 +424,11 @@ add_library(mylib ...)
 ## IDE Integration
 
 Generate `compile_commands.json` for clangd, clang-tidy, and IDEs:
-
 ```cmake
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 ```
-
 Or in presets: `"cacheVariables": { "CMAKE_EXPORT_COMPILE_COMMANDS": "ON" }`
-
-Symlink to project root for IDE discovery:
-```sh
-ln -sf build/compile_commands.json .
-```
+Symlink to project root: `ln -sf build/compile_commands.json .`
 
 ## Performance
 
@@ -466,8 +460,7 @@ target_precompile_headers(myapp REUSE_FROM mylib)
 
 ```cmake
 set_target_properties(mylib PROPERTIES UNITY_BUILD ON)
-# Or globally via preset:
-# "CMAKE_UNITY_BUILD": "ON"
+# Or globally via preset: "CMAKE_UNITY_BUILD": "ON"
 ```
 
 ### Parallel Configuration
@@ -486,3 +479,22 @@ if(ipo_supported)
   set_target_properties(mylib PROPERTIES INTERPROCEDURAL_OPTIMIZATION TRUE)
 endif()
 ```
+
+## Resources
+
+### references/
+- **`advanced-patterns.md`** — Superbuild pattern, ExternalProject_Add, custom find modules, imported/interface/object libraries, cross-compilation toolchains, sanitizers (ASan/TSan/UBSan), code coverage (gcov/lcov), CMake modules, package versioning.
+- **`troubleshooting.md`** — "Target not found" errors, linking order, generator expression gotchas, RPATH issues, Windows DLL export macros, vcpkg/Conan issues, cache pitfalls, policy warnings, CMake 2.x migration.
+- **`dependency-management.md`** — FetchContent advanced usage, vcpkg manifest mode, Conan 2.x (CMakeToolchain/CMakeDeps), system packages, vendoring, decision framework.
+
+### scripts/
+- **`cmake-init.sh`** — Initialize a modern CMake project. Flags: `--standard`, `--type` (app/lib/both), `--package-manager` (vcpkg/conan).
+- **`cmake-lint.sh`** — cmake-lint/cmake-format checks with built-in fallback. `--fix` for auto-formatting.
+- **`cmake-analyze.sh`** — Anti-pattern analysis (globals, old-style commands, missing visibility). `--json` for CI.
+
+### assets/
+- **`CMakeLists-root.txt`** — Root CMakeLists.txt template with options, sanitizers, ccache, dependencies.
+- **`CMakeLists-library.txt`** — Library template with install/export rules and GenerateExportHeader.
+- **`CMakePresets.json`** — Presets: dev/release/asan/tsan/coverage, CI, and workflow presets.
+- **`toolchain-arm.cmake`** — ARM cross-compilation toolchain (Linux + bare-metal variants).
+- **`.cmake-format.yaml`** — cmake-format config with formatting and naming rules.

@@ -1,0 +1,151 @@
+# cmake-format configuration
+# Install: pip install cmakelang
+# Usage:   cmake-format -c .cmake-format.yaml -i CMakeLists.txt
+
+# ── Formatting ───────────────────────────────────────────────────────────────
+
+format:
+  # Maximum line length before wrapping
+  line_width: 100
+
+  # Indentation width
+  tab_size: 2
+
+  # Use spaces, not tabs
+  use_tabchars: false
+
+  # Fractional tolerance for column alignment
+  fractional_tab_policy: use-space
+
+  # Max lines of heuristic packing (0 = always one-per-line after wrapping)
+  max_pargs_hwrap: 6
+
+  # Max sub-groups for heuristic packing
+  max_subgroups_hwrap: 2
+
+  # Max lines for wrapping
+  max_lines_hwrap: 2
+
+  # Dangle closing parens on wrapped function calls
+  dangle_parens: true
+
+  # Dangle alignment: prefix, prefix-indent, child, off
+  dangle_align: prefix
+
+  # Minimum prefix characters for wrapping
+  min_prefix_chars: 4
+
+  # Maximum prefix characters for wrapping
+  max_prefix_chars: 10
+
+  # Lines between top-level statements
+  max_rows_cmdline: 2
+
+  # Sort arguments for known commands
+  enable_sort: true
+
+  # Autosort: sort arguments to known functions
+  autosort: false
+
+# ── Markup ───────────────────────────────────────────────────────────────────
+
+markup:
+  # Character for bulleted lists in comments
+  bullet_char: "*"
+
+  # Enumeration character for numbered lists
+  enum_char: "."
+
+  # Enable comment markup parsing
+  enable_markup: true
+
+  # First comment is literal (no reflow)
+  first_comment_is_literal: false
+
+  # Literal comment pattern
+  literal_comment_pattern: null
+
+  # Fence pattern
+  fence_pattern: "^\\s*([`~]{3}[`~]*)(.*)$"
+
+  # Ruler pattern
+  ruler_pattern: "^\\s*[^\\w]*$"
+
+  # Canonical keywords
+  canonical_keywords:
+    - TODO
+    - FIXME
+    - NOTE
+    - HACK
+    - XXX
+
+# ── Linting ──────────────────────────────────────────────────────────────────
+
+lint:
+  # Lint disabled codes
+  disabled_codes: []
+
+  # Function pattern (naming convention)
+  function_pattern: "[0-9a-z_]+"
+
+  # Macro pattern (naming convention)
+  macro_pattern: "[0-9A-Z_]+"
+
+  # Global variable pattern
+  global_var_pattern: "[A-Z][0-9A-Z_]+"
+
+  # Internal variable pattern
+  internal_var_pattern: "_[A-Z][0-9A-Z_]+"
+
+  # Local variable pattern
+  local_var_pattern: "[a-z][a-z0-9_]+"
+
+  # Private directory variable pattern
+  private_var_pattern: "_[0-9a-z_]+"
+
+  # Public directory variable pattern
+  public_var_pattern: "[A-Z][0-9A-Z_]+"
+
+  # Argument variable pattern
+  argument_var_pattern: "[a-z][a-z0-9_]+"
+
+  # Keyword pattern
+  keyword_pattern: "[A-Z][0-9A-Z_]+"
+
+  # Maximum allowed arguments
+  max_arguments: 5
+
+  # Maximum statement spacing
+  max_localvars: 15
+
+  # Maximum returns from a function
+  max_returns: 6
+
+  # Maximum branches
+  max_branches: 12
+
+  # Maximum function statements
+  max_statements: 50
+
+# ── Parse ────────────────────────────────────────────────────────────────────
+
+parse:
+  # Additional commands to recognize
+  additional_commands:
+    foo:
+      pargs:
+        nargs: "*"
+        flags: []
+      kwargs:
+        BAR:
+          nargs: 1
+        BAZ:
+          nargs: "*"
+
+# ── Encoding ─────────────────────────────────────────────────────────────────
+
+encode:
+  # File encoding
+  emit_byteorder_mark: false
+  input_encoding: utf-8
+  output_encoding: utf-8

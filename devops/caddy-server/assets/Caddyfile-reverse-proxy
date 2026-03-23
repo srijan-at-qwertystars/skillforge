@@ -1,0 +1,133 @@
+# Production Reverse Proxy Caddyfile
+#
+# Features: automatic HTTPS, security headers, request size limits,
+# structured logging, health checks, load balancing.
+#
+# Usage: Replace example.com with your domain and localhost:8080 with your backend.
+
+{
+    email admin@example.com
+    admin unix//run/caddy/admin.sock
+
+    # Prometheus metrics
+    metrics
+
+    # Global logging
+    log {
+        output file /var/log/caddy/default.log {
+            roll_size 100MiB
+            roll_keep 5
+            roll_keep_for 720h
+        }
+        format json
+        level INFO
+    }
+
+    servers {
+        protocols h1 h2 h3
+    }
+}
+
+# Redirect www → non-www
+www.example.com {
+    redir https://example.com{uri} permanent
+}
+
+example.com {
+    # --- Security Headers ---
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+        -X-Powered-By
+    }
+
+    # --- Request Body Limit ---
+    request_body {
+        max_size 10MB
+    }
+
+    # --- Access Logging ---
+    log {
+        output file /var/log/caddy/example.com.access.log {
+            roll_size 50MiB
+            roll_keep 10
+            roll_keep_for 720h
+        }
+        format json
+    }
+
+    # --- API Routes ---
+    handle /api/* {
+        reverse_proxy {
+            to 10.0.0.1:8080 10.0.0.2:8080
+
+            lb_policy least_conn
+            lb_retries 3
+
+            # Active health checks
+            health_uri /healthz
+            health_interval 10s
+            health_timeout 3s
+            health_status 200
+
+            # Passive health checks
+            fail_duration 30s
+            max_fails 3
+            unhealthy_latency 1s
+
+            # Upstream headers
+            header_up X-Real-IP {remote_host}
+            header_up X-Request-ID {http.request.uuid}
+            header_down -Server
+
+            # Timeouts
+            transport http {
+                dial_timeout 5s
+                read_timeout 30s
+                write_timeout 30s
+                response_header_timeout 30s
+            }
+        }
+    }
+
+    # --- WebSocket / SSE ---
+    @websocket {
+        header Connection *Upgrade*
+        header Upgrade websocket
+    }
+    reverse_proxy @websocket localhost:9090 {
+        transport http {
+            keepalive off
+            read_timeout 0
+            write_timeout 0
+        }
+    }
+
+    handle /events/* {
+        reverse_proxy localhost:8080 {
+            flush_interval -1
+        }
+    }
+
+    # --- Default backend ---
+    handle {
+        reverse_proxy localhost:8080
+    }
+
+    # --- Custom Error Handling ---
+    handle_errors {
+        @4xx expression {http.error.status_code} >= 400 && {http.error.status_code} < 500
+        respond @4xx `{"error": "{http.error.status_text}", "code": {http.error.status_code}}` {http.error.status_code} {
+            header Content-Type "application/json"
+        }
+
+        @5xx expression {http.error.status_code} >= 500
+        respond @5xx `{"error": "Internal Server Error", "code": {http.error.status_code}}` {http.error.status_code} {
+            header Content-Type "application/json"
+        }
+    }
+}

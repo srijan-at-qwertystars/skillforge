@@ -1,0 +1,70 @@
+# Static Site Caddyfile
+#
+# Features: compression (gzip + zstd), long-lived cache headers, SPA fallback,
+# security headers, precompressed file serving.
+#
+# Usage: Replace example.com and /var/www/html with your values.
+
+{
+    email admin@example.com
+    admin off
+}
+
+example.com {
+    root * /var/www/html
+
+    # --- Compression ---
+    encode {
+        gzip 6
+        zstd
+        minimum_length 256
+    }
+
+    # --- Security Headers ---
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        -Server
+    }
+
+    # --- Static Asset Caching ---
+    @static_immutable {
+        path *.js *.css *.woff *.woff2 *.ttf *.otf
+        # Assumes hashed filenames (e.g., app.a1b2c3.js)
+    }
+    header @static_immutable Cache-Control "public, max-age=31536000, immutable"
+
+    @static_images {
+        path *.png *.jpg *.jpeg *.gif *.svg *.webp *.avif *.ico
+    }
+    header @static_images Cache-Control "public, max-age=86400, stale-while-revalidate=604800"
+
+    @html {
+        path *.html /
+    }
+    header @html Cache-Control "no-cache, must-revalidate"
+
+    # --- SPA Fallback ---
+    # Serves index.html for any path that doesn't match a file.
+    # Remove these two lines for a traditional multi-page site.
+    try_files {path} /index.html
+
+    # --- File Server ---
+    file_server {
+        hide .git .env .htaccess *.map
+        precompressed gzip br zstd
+    }
+
+    # --- Access Logging ---
+    log {
+        output file /var/log/caddy/static.access.log {
+            roll_size 50MiB
+            roll_keep 5
+        }
+        format json
+    }
+}

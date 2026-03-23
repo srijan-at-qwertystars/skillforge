@@ -489,3 +489,11 @@ COPY (SELECT * FROM old.main.events) TO 'events.parquet' (FORMAT parquet);
 - **Do not assume thread safety on a single connection.** Each thread needs its own cursor or connection in Python. Use `con.cursor()` per thread.
 - **Watch memory with large aggregations.** Some aggregate operators cannot spill to disk. Set `memory_limit` and `temp_directory` to avoid OOM.
 - **Do not mix DuckDB versions on the same persistent file.** The storage format may change between major versions. Export to Parquet before upgrading.
+
+## Resources
+
+**references/** — [advanced-patterns.md](references/advanced-patterns.md) (recursive CTEs, ASOF joins, PIVOT/UNPIVOT, list/struct/map types, lambdas, macros, multi-database queries, Iceberg/Delta, secrets) · [troubleshooting.md](references/troubleshooting.md) (OOM, schema evolution, type casting, concurrency, extensions, GIL, WASM, CSV edge cases) · [python-cookbook.md](references/python-cookbook.md) (pandas/Polars/Arrow recipes, Jupyter, SQLAlchemy, Ibis, streaming, Flask/FastAPI, UDFs, testing)
+
+**scripts/** — [duckdb-explore.sh](scripts/duckdb-explore.sh) (schema, stats, samples for any file) · [duckdb-benchmark.sh](scripts/duckdb-benchmark.sh) (query timing: min/avg/max/median) · [parquet-inspect.sh](scripts/parquet-inspect.sh) (row groups, compression, column statistics)
+
+**assets/** — [etl-pipeline.py](assets/etl-pipeline.py) (multi-source ETL pipeline template) · [analytics-queries.sql](assets/analytics-queries.sql) (cohort, funnel, retention, sessionization, moving averages) · [duckdb-config.sql](assets/duckdb-config.sql) (settings for laptop/server/CI/Jupyter) · [jupyter-setup.py](assets/jupyter-setup.py) (notebook bootstrap with helpers and viz)

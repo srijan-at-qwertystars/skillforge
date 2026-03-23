@@ -1,0 +1,159 @@
+# PHP-FPM / Laravel / WordPress Caddyfile
+#
+# Three site blocks below — uncomment the one you need.
+# All use unix socket for PHP-FPM. Adjust path if using TCP (e.g., 127.0.0.1:9000).
+
+{
+    email admin@example.com
+    admin off
+}
+
+# ============================================================================
+# OPTION 1: Generic PHP Site
+# ============================================================================
+
+example.com {
+    root * /var/www/html
+
+    php_fastcgi unix//run/php/php-fpm.sock {
+        index index.php
+        split .php
+        dial_timeout 10s
+        read_timeout 60s
+        write_timeout 60s
+    }
+    file_server
+
+    encode gzip
+
+    # Block sensitive files
+    @blocked {
+        path /.env /.git/* /composer.json /composer.lock
+    }
+    respond @blocked 403
+
+    log {
+        output file /var/log/caddy/php.access.log
+        format json
+    }
+}
+
+# ============================================================================
+# OPTION 2: Laravel Application
+# ============================================================================
+
+# laravel.example.com {
+#     root * /var/www/laravel/public
+#
+#     php_fastcgi unix//run/php/php-fpm.sock {
+#         # Laravel's front controller handles all routing
+#         dial_timeout 10s
+#         read_timeout 120s
+#         write_timeout 120s
+#     }
+#     file_server
+#
+#     encode gzip zstd
+#
+#     # Security headers
+#     header {
+#         X-Content-Type-Options "nosniff"
+#         X-Frame-Options "SAMEORIGIN"
+#         Referrer-Policy "strict-origin-when-cross-origin"
+#         -Server
+#         -X-Powered-By
+#     }
+#
+#     # Block dotfiles and sensitive paths
+#     @blocked {
+#         path /.env /.git/* /storage/* /vendor/*
+#         not path /vendor/livewire/*
+#     }
+#     respond @blocked 403
+#
+#     # Static asset caching
+#     @static {
+#         path /build/* /images/* /css/* /js/* /fonts/*
+#     }
+#     header @static Cache-Control "public, max-age=31536000, immutable"
+#
+#     # Large file uploads (adjust per application needs)
+#     request_body {
+#         max_size 50MB
+#     }
+#
+#     log {
+#         output file /var/log/caddy/laravel.access.log {
+#             roll_size 100MiB
+#             roll_keep 5
+#         }
+#         format json
+#     }
+# }
+
+# ============================================================================
+# OPTION 3: WordPress
+# ============================================================================
+
+# wordpress.example.com {
+#     root * /var/www/wordpress
+#
+#     php_fastcgi unix//run/php/php-fpm.sock {
+#         dial_timeout 10s
+#         read_timeout 300s
+#         write_timeout 300s
+#     }
+#     file_server
+#
+#     encode gzip
+#
+#     # WordPress upload limit
+#     request_body {
+#         max_size 64MB
+#     }
+#
+#     # Block dangerous WordPress endpoints
+#     @blocked_wp {
+#         path /xmlrpc.php
+#         path /wp-config.php
+#         path /wp-admin/includes/*
+#         path /wp-includes/*.php
+#     }
+#     respond @blocked_wp 403
+#
+#     # Block access to dot files (except .well-known for ACME)
+#     @dotfiles {
+#         path /.*
+#         not path /.well-known/*
+#     }
+#     respond @dotfiles 403
+#
+#     # Static asset caching
+#     @wp_static {
+#         path /wp-content/uploads/*
+#         path /wp-content/themes/*/assets/*
+#         path /wp-includes/css/*
+#         path /wp-includes/js/*
+#     }
+#     header @wp_static Cache-Control "public, max-age=604800"
+#
+#     # wp-admin no-cache
+#     @wp_admin path /wp-admin/*
+#     header @wp_admin Cache-Control "no-store, no-cache, must-revalidate"
+#
+#     # Security headers
+#     header {
+#         X-Content-Type-Options "nosniff"
+#         X-Frame-Options "SAMEORIGIN"
+#         -Server
+#         -X-Powered-By
+#     }
+#
+#     log {
+#         output file /var/log/caddy/wordpress.access.log {
+#             roll_size 100MiB
+#             roll_keep 5
+#         }
+#         format json
+#     }
+# }

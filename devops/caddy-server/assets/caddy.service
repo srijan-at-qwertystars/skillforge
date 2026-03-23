@@ -1,0 +1,108 @@
+# caddy.service — Systemd unit file for Caddy with security hardening
+#
+# Install to: /etc/systemd/system/caddy.service
+# Then: sudo systemctl daemon-reload && sudo systemctl enable --now caddy
+#
+# Based on official Caddy systemd unit with additional hardening.
+
+[Unit]
+Description=Caddy Web Server
+Documentation=https://caddyserver.com/docs/
+After=network-online.target
+Wants=network-online.target systemd-networkd-wait-online.service
+StartLimitIntervalSec=14400
+StartLimitBurst=10
+
+[Service]
+User=caddy
+Group=caddy
+Type=notify
+NotifyAccess=main
+
+# Runtime directory for admin socket
+RuntimeDirectory=caddy
+RuntimeDirectoryMode=0750
+
+# Config and data paths
+ExecStart=/usr/bin/caddy run --environ --config /etc/caddy/Caddyfile
+ExecReload=/usr/bin/caddy reload --config /etc/caddy/Caddyfile --force
+ExecStartPre=/usr/bin/caddy validate --config /etc/caddy/Caddyfile
+TimeoutStopSec=5s
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+RestartPreventExitStatus=1
+
+# ==========================================================================
+# Security Hardening
+# ==========================================================================
+
+# Allow binding to privileged ports (80, 443) without running as root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+# File system restrictions
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+# Read-write access for Caddy data and logs
+ReadWritePaths=/var/lib/caddy /var/log/caddy /run/caddy
+
+# Network restrictions — only allow IPv4/IPv6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Disable kernel features Caddy doesn't need
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+
+# Restrict realtime and memory locking
+LockPersonality=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true
+
+# System call filtering
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+
+# Restrict namespace creation
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+
+# No new privileges escalation
+NoNewPrivileges=true
+
+# Disable proc and sysfs access
+ProcSubset=pid
+ProtectProc=invisible
+
+# ==========================================================================
+# Resource Limits
+# ==========================================================================
+
+# File descriptors — increase for high-traffic servers
+LimitNOFILE=1048576
+
+# Process limit
+LimitNPROC=512
+
+# ==========================================================================
+# Environment
+# ==========================================================================
+
+# Load environment variables from file (for DNS provider tokens, etc.)
+# Create /etc/caddy/environment with KEY=VALUE pairs
+EnvironmentFile=-/etc/caddy/environment
+
+# XDG directories for Caddy data storage
+Environment=XDG_DATA_HOME=/var/lib/caddy/.local/share
+Environment=XDG_CONFIG_HOME=/var/lib/caddy/.config
+
+[Install]
+WantedBy=multi-user.target

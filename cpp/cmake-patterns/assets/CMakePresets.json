@@ -1,0 +1,180 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Development (Debug)",
+      "description": "Debug build for local development",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "MyProject_BUILD_TESTS": "ON",
+        "MyProject_BUILD_EXAMPLES": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "description": "Optimized release build",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "MyProject_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "relwithdebinfo",
+      "displayName": "Release with Debug Info",
+      "description": "Optimized build with debug symbols",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "MyProject_BUILD_TESTS": "OFF"
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "AddressSanitizer",
+      "description": "Debug build with ASan + UBSan",
+      "inherits": "dev",
+      "cacheVariables": {
+        "MyProject_ENABLE_ASAN": "ON",
+        "MyProject_ENABLE_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "description": "Debug build with TSan",
+      "inherits": "dev",
+      "cacheVariables": {
+        "MyProject_ENABLE_TSAN": "ON"
+      }
+    },
+    {
+      "name": "coverage",
+      "displayName": "Code Coverage",
+      "description": "Debug build with gcov coverage instrumentation",
+      "inherits": "dev",
+      "cacheVariables": {
+        "MyProject_ENABLE_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "ci-linux-gcc",
+      "displayName": "CI: Linux GCC",
+      "description": "CI build on Linux with GCC",
+      "inherits": "dev",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "ci-linux-clang",
+      "displayName": "CI: Linux Clang",
+      "description": "CI build on Linux with Clang",
+      "inherits": "dev",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "vcpkg",
+      "displayName": "vcpkg",
+      "description": "Build with vcpkg dependency management",
+      "inherits": "dev",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "configuration": "Release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "output": {
+        "outputOnFailure": true,
+        "shortProgress": true
+      },
+      "execution": {
+        "jobs": 0,
+        "timeout": 120
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "inherits": "dev",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1:print_stats=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "inherits": "dev",
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:second_deadlock_stack=1"
+      }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "inherits": "dev"
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "dev",
+      "displayName": "Dev workflow",
+      "steps": [
+        { "type": "configure", "name": "dev" },
+        { "type": "build", "name": "dev" },
+        { "type": "test", "name": "dev" }
+      ]
+    },
+    {
+      "name": "ci",
+      "displayName": "CI workflow",
+      "steps": [
+        { "type": "configure", "name": "asan" },
+        { "type": "build", "name": "asan" },
+        { "type": "test", "name": "asan" }
+      ]
+    }
+  ]
+}
