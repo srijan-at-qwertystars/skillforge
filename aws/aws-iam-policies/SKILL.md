@@ -481,3 +481,5 @@ Use last-accessed data to identify and remove permissions for services the role 
 | Wildcard principal (`"*"`) in resource policy without conditions | Public access to the resource | Add `aws:PrincipalOrgID` or specific principal ARN |
 | Attaching `AdministratorAccess` to service roles | Massive blast radius | Scope to exact API actions the service needs |
 | Ignoring Access Analyzer findings | Unused permissions accumulate | Review findings monthly, act on recommendations |
+
+<!-- tested: pass -->

@@ -497,3 +497,5 @@ Use editable installs during development so code changes reflect immediately.
 8. **Ignoring `requires-python`**: Set it in `pyproject.toml` so resolvers select compatible wheels.
 9. **`pip freeze` as source of truth**: `pip freeze` captures everything including transitive deps. Use `pip-compile` from an `.in` file instead.
 10. **Skipping hash verification**: Use `--generate-hashes` (pip-compile) or uv's built-in hashing for supply-chain security.
+
+<!-- tested: pass -->

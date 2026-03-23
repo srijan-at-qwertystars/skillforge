@@ -422,3 +422,5 @@ commit → lint + type-check → unit tests (parallel) → integration tests →
 ### Ice Cream Cone (Inverted Pyramid)
 - **Problem:** Most tests are E2E, few are unit → slow, flaky, expensive.
 - **Fix:** Push verification down. If a unit test can catch it, don't test it in E2E.
+
+<!-- tested: pass -->
