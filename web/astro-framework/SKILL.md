@@ -491,3 +491,5 @@ For static output, export `getStaticPaths`. For SSR, set `output: 'server'` or `
 **`scripts/`** — `create-astro-project.sh` (scaffold with integrations), `content-collection-scaffold.sh` (collection boilerplate), `lighthouse-audit.sh` (audit with thresholds). All executable, use `--help`.
 
 **`assets/`** — `astro.config.mjs` (production config template), `blog-layout.astro` (SEO meta, view transitions, dark mode), `content-config.ts` (multi-collection with references), `docker-compose.yml` (SSR with Postgres/Nginx/Redis).
+
+<!-- tested: pass -->

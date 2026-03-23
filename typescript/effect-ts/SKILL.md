@@ -498,3 +498,5 @@ Starter templates in `assets/`:
 | [package.json](assets/package.json) | Starter package.json with Effect core + platform + SQL deps |
 | [http-service-template.ts](assets/http-service-template.ts) | Complete HTTP service with routes, layers, error handling, schemas |
 | [repository-pattern.ts](assets/repository-pattern.ts) | Repository pattern with service tags, layers, in-memory test impl |
+
+<!-- tested: pass -->

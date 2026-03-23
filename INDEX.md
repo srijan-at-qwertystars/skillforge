@@ -125,6 +125,6 @@
 | python | [polars-dataframes](python/polars-dataframes/) | Polars DataFrame library, lazy/eager evaluation, expression API, IO, window functions, and Pandas migration | tested |
 | devops | [argocd-gitops](devops/argocd-gitops/) | Argo CD GitOps, Application/ApplicationSet CRDs, sync strategies, Helm/Kustomize, multi-cluster, and RBAC | tested |
 | databases | [turso-libsql](databases/turso-libsql/) | Turso/libSQL edge SQLite database, embedded replicas, SDK clients, vector search, and multi-tenancy | tested |
-| web | [astro-framework](web/astro-framework/) | Astro islands architecture, content collections, client directives, SSR adapters, view transitions, and deployment | enriched |
-| languages | [gleam-language](languages/gleam-language/) | Gleam type-safe BEAM language, pattern matching, Result types, OTP actors, Wisp/Lustre web, and JS/Erlang FFI | enriched |
-| typescript | [effect-ts](typescript/effect-ts/) | Effect-TS type-safe composition, tagged errors, Layer dependency injection, Schema, streams, and concurrency | enriched |
+| web | [astro-framework](web/astro-framework/) | Astro islands architecture, content collections, client directives, SSR adapters, view transitions, and deployment | tested |
+| languages | [gleam-language](languages/gleam-language/) | Gleam type-safe BEAM language, pattern matching, Result types, OTP actors, Wisp/Lustre web, and JS/Erlang FFI | tested |
+| typescript | [effect-ts](typescript/effect-ts/) | Effect-TS type-safe composition, tagged errors, Layer dependency injection, Schema, streams, and concurrency | tested |

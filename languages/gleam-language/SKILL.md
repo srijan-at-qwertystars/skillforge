@@ -472,3 +472,5 @@ Templates in `assets/`:
 | `gleam.toml` | Template gleam.toml with common web project dependencies |
 | `wisp-app-template.gleam` | Complete starter Wisp app with routing, JSON, CRUD pattern |
 | `dockerfile` | Multi-stage Dockerfile for Gleam projects (build + minimal runtime) |
+
+<!-- tested: needs-fix -->
