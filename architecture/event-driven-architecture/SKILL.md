@@ -456,3 +456,5 @@ it("completes order flow end-to-end", async () => {
 | No schema evolution strategy | Breaking schema changes crash consumers in production | Schema registry with compatibility checks in CI; version types explicitly |
 | Unbounded event replay | Replaying millions of events takes hours | Implement snapshots; checkpoint projections; archive old events |
 | Ignoring aggregate ordering | `OrderShipped` processed before `OrderCreated` | Partition by aggregate ID; use sequence numbers; buffer out-of-order |
+
+<!-- tested: pass -->

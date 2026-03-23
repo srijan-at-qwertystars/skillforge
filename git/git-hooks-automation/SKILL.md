@@ -498,3 +498,5 @@ On Windows, ensure LF line endings in hook scripts. Add to `.gitattributes`:
 | `lint-staged: no staged files match` | Wrong glob | Check glob patterns match your file extensions |
 | `pre-commit: hook id not found` | Wrong `rev` or `id` | Run `pre-commit autoupdate`, verify hook ID |
 | `core.hooksPath` conflict | Multiple hook managers | Use one manager per repo; check `git config core.hooksPath` |
+
+<!-- tested: pass -->

@@ -497,3 +497,5 @@ Run multi-step tests with real browsers. Use `webpagetest.org` or self-host.
 8. Self-host and preload web fonts.
 9. Add `font-display: swap` to all `@font-face` rules.
 10. Run `npx lighthouse` and fix the top 3 opportunities.
+
+<!-- tested: pass -->
