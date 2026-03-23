@@ -471,3 +471,30 @@ VACUUM INTO 'compacted.db';
 | Ignoring WAL checkpoint               | Run `PRAGMA wal_checkpoint(TRUNCATE)` periodically |
 | Using ORM without raw SQL escape hatch| Keep raw SQL available for complex queries         |
 | Not testing with production data size | SQLite performance changes at scale—test with real data |
+
+## Resources
+
+### References
+
+| File | Description |
+|------|-------------|
+| [references/advanced-patterns.md](references/advanced-patterns.md) | Virtual tables (FTS5, R-Tree, CSV), custom collations, authorizer callbacks, prepared statements, shared cache, mmap I/O, VACUUM strategies, UPSERT, RETURNING, math/date/window functions, B-tree internals |
+| [references/troubleshooting.md](references/troubleshooting.md) | "Database is locked" errors, WAL checkpoint stalls, corruption detection/recovery, SQLITE_BUSY handling, performance cliffs, temp storage, index selection, platform issues (NFS, Android, Docker) |
+| [references/language-bindings.md](references/language-bindings.md) | SQLite in Python (sqlite3, aiosqlite, SQLAlchemy), Node.js (better-sqlite3, sql.js, Drizzle), Go (modernc.org/sqlite, mattn/go-sqlite3), Rust (rusqlite, Diesel) with connection patterns, error handling, and migration tools |
+
+### Scripts
+
+| File | Description |
+|------|-------------|
+| [scripts/sqlite-health-check.sh](scripts/sqlite-health-check.sh) | Check database health: integrity, WAL status, page stats, freelist, schema version, table summary |
+| [scripts/sqlite-optimize.sh](scripts/sqlite-optimize.sh) | Optimize database: ANALYZE, VACUUM, REINDEX, PRAGMA optimize, incremental vacuum, index recommendations |
+| [scripts/sqlite-backup.sh](scripts/sqlite-backup.sh) | Safe online backup using `.backup` with optional verification, compression, and timestamping |
+
+### Assets
+
+| File | Description |
+|------|-------------|
+| [assets/production-pragmas.sql](assets/production-pragmas.sql) | Complete PRAGMA configuration for production use with detailed comments |
+| [assets/fts5-setup.sql](assets/fts5-setup.sql) | FTS5 full-text search setup with content table, sync triggers, and example queries |
+| [assets/migration-template.sql](assets/migration-template.sql) | Schema migration template with version tracking, up/down sections, and verification |
+| [assets/connection-pool.py](assets/connection-pool.py) | Python connection pool: single writer + multiple readers with WAL mode and context managers |

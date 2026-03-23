@@ -1,0 +1,108 @@
+# WireGuard Docker Compose — Production Template
+#
+# Uses linuxserver/wireguard image with automatic config generation.
+# Generates server and client configs on first run.
+#
+# Usage:
+#   1. Copy this file and adjust environment variables.
+#   2. Run: docker compose up -d
+#   3. Client configs are generated in ./config/peer_*/
+#   4. QR codes available via: docker compose logs wireguard
+#
+# Prerequisites:
+#   - Docker and Docker Compose v2
+#   - WireGuard kernel module loaded on the host: modprobe wireguard
+#   - Port 51820/udp open in firewall
+
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: wireguard
+    restart: unless-stopped
+
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.forwarding=1
+
+    environment:
+      # Container user/group IDs
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+
+      # Server configuration
+      - SERVERURL=vpn.example.com    # Your server's public hostname or IP
+      - SERVERPORT=51820             # WireGuard listen port
+      - INTERNAL_SUBNET=10.13.13.0   # VPN subnet (auto-assigns .1 to server)
+
+      # Client generation
+      - PEERS=client1,client2,laptop,phone   # Named peers (or use a number: PEERS=5)
+      - PEERDNS=1.1.1.1,1.0.0.1             # DNS servers pushed to clients
+      - ALLOWEDIPS=0.0.0.0/0,::/0            # Full tunnel (or specify subnets)
+      - PERSISTENTKEEPALIVE_PEERS=25         # Keepalive interval for all peers
+
+      # Logging
+      - LOG_CONFS=true    # Log generated configs to container logs
+
+    volumes:
+      # Persistent config — contains keys, server config, and client configs
+      - ./config:/config
+
+      # Required for kernel module access
+      - /lib/modules:/lib/modules:ro
+
+    ports:
+      - "51820:51820/udp"
+
+    # Health check — verify WireGuard interface is up
+    healthcheck:
+      test: ["CMD", "wg", "show", "wg0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Route another container's traffic through WireGuard
+  # Uncomment the service below to route its traffic through the VPN.
+  #
+  # app:
+  #   image: your-application:latest
+  #   container_name: app-via-vpn
+  #   network_mode: "service:wireguard"
+  #   depends_on:
+  #     wireguard:
+  #       condition: service_healthy
+  #   # Note: ports for this container must be defined on the wireguard service
+  #   # since they share the same network namespace.
+
+  # Optional: WireGuard web UI for management
+  # Uncomment to enable a browser-based management interface.
+  #
+  # wg-ui:
+  #   image: ngoduykhanh/wireguard-ui:latest
+  #   container_name: wireguard-ui
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - wireguard
+  #   environment:
+  #     - SENDGRID_API_KEY=
+  #     - EMAIL_FROM_ADDRESS=
+  #     - EMAIL_FROM_NAME=WireGuard
+  #     - SESSION_SECRET=<GENERATE_RANDOM_SECRET>
+  #     - WGUI_USERNAME=admin
+  #     - WGUI_PASSWORD=<CHANGE_ME>
+  #     - WGUI_MANAGE_START=true
+  #     - WGUI_MANAGE_RESTART=true
+  #   volumes:
+  #     - ./wg-ui-db:/app/db
+  #     - ./config:/etc/wireguard
+  #   ports:
+  #     - "5000:5000"
+  #   # Security: bind to localhost only if using a reverse proxy
+  #   # ports:
+  #   #   - "127.0.0.1:5000:5000"

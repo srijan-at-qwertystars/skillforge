@@ -456,3 +456,29 @@ change port to 443/UDP if needed.
 
 **Restarting vs reloading**: `wg-quick down && wg-quick up` drops all connections. Use
 `wg syncconf wg0 <(wg-quick strip wg0)` to apply peer changes without disruption.
+
+## Resources
+
+### References
+
+| File | Description |
+|------|-------------|
+| [references/advanced-patterns.md](references/advanced-patterns.md) | Multi-hop routing, policy-based routing with FwMark, WireGuard over TCP (udp2raw/wstunnel), dynamic peer management, network namespaces, kernel vs userspace implementations, fail2ban integration, Kubernetes (Kilo/Netbird), and Tailscale/Headscale architecture |
+| [references/troubleshooting.md](references/troubleshooting.md) | Handshake failures, MTU/fragmentation issues, DNS leaks, firewall blocking UDP, asymmetric routing, AllowedIPs conflicts, kernel module loading, systemd-resolved problems, and performance debugging |
+
+### Scripts
+
+| File | Description |
+|------|-------------|
+| [scripts/wg-genconfig.sh](scripts/wg-genconfig.sh) | Generate server + client configs from endpoint, subnet, and client count. Supports PSK, split tunneling, custom DNS |
+| [scripts/wg-status.sh](scripts/wg-status.sh) | Enhanced `wg show` — human-readable handshake ages, transfer rates, health indicators, JSON output, watch mode |
+| [scripts/wg-rotate-keys.sh](scripts/wg-rotate-keys.sh) | Key rotation — generates new keypair, updates local config, outputs peer update commands. Supports backup and auto-apply |
+
+### Assets
+
+| File | Description |
+|------|-------------|
+| [assets/server.conf](assets/server.conf) | Production server config template with iptables NAT, MSS clamping, dual-stack, and peer examples |
+| [assets/client.conf](assets/client.conf) | Client config template with full/split tunnel options, kill switch, and DNS leak prevention |
+| [assets/docker-compose.yml](assets/docker-compose.yml) | Docker Compose for WireGuard with automatic config generation, health checks, and optional web UI |
+| [assets/wg-firewall.nft](assets/wg-firewall.nft) | nftables ruleset — input filtering, forwarding, NAT masquerade, MSS clamping, rate limiting |

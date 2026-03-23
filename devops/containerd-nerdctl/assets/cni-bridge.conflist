@@ -1,0 +1,48 @@
+{
+  "cniVersion": "1.0.0",
+  "name": "containerd-bridge",
+  "plugins": [
+    {
+      "type": "bridge",
+      "bridge": "cni0",
+      "isGateway": true,
+      "isDefaultGateway": true,
+      "ipMasq": true,
+      "hairpinMode": true,
+      "promiscMode": false,
+      "mtu": 1500,
+      "ipam": {
+        "type": "host-local",
+        "ranges": [
+          [
+            {
+              "subnet": "10.88.0.0/16",
+              "rangeStart": "10.88.0.10",
+              "rangeEnd": "10.88.255.250",
+              "gateway": "10.88.0.1"
+            }
+          ]
+        ],
+        "routes": [
+          {
+            "dst": "0.0.0.0/0"
+          }
+        ],
+        "dataDir": "/var/lib/cni/networks/containerd-bridge"
+      }
+    },
+    {
+      "type": "portmap",
+      "capabilities": {
+        "portMappings": true
+      },
+      "snat": true
+    },
+    {
+      "type": "firewall"
+    },
+    {
+      "type": "tuning"
+    }
+  ]
+}

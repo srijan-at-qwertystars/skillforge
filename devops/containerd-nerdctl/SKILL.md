@@ -101,9 +101,7 @@ version = 3
 
 Always restart containerd after modifying config.toml: `sudo systemctl restart containerd`.
 
-## Image Management
-
-```bash
+## Image Management```bash
 nerdctl pull nginx:alpine
 nerdctl pull --platform linux/arm64 nginx:alpine
 nerdctl tag nginx:alpine myregistry.io/nginx:alpine
@@ -164,7 +162,6 @@ ctr --namespace k8s.io containers list
 Do NOT mix namespaces. Images pulled in one namespace are not visible in another.
 
 ## Networking (CNI)
-
 nerdctl uses CNI plugins instead of Docker's libnetwork. Install CNI plugins to `/opt/cni/bin/`.
 
 ```bash
@@ -197,7 +194,6 @@ nerdctl network ls
 Default bridge network `nerdctl0` uses subnet `10.4.0.0/24`.
 
 ## Storage (Snapshotter Plugins)
-
 ### overlayfs (default)
 
 Standard Linux overlay filesystem. Works on most kernels. Default and recommended for general use.
@@ -258,10 +254,8 @@ containerd-rootless-setuptool.sh install-bypass4netnsd
 
 ### Rootless prerequisites
 
-- `uidmap` package (for `newuidmap`/`newgidmap`)
-- Entries in `/etc/subuid` and `/etc/subgid`
-- Kernel with user namespaces enabled
-- `slirp4netns` or `bypass4netns` for networking
+- `uidmap` package (for `newuidmap`/`newgidmap`), entries in `/etc/subuid` and `/etc/subgid`
+- Kernel with user namespaces enabled, `slirp4netns` or `bypass4netns` for networking
 
 ## nerdctl compose
 
@@ -278,7 +272,7 @@ nerdctl compose exec web sh
 nerdctl compose -f production.yaml up -d
 ```
 
-Supported compose file features: services, networks, volumes, ports, environment, depends_on, restart, healthcheck, build context. Some advanced v3+ features (deploy, configs, secrets for Swarm) are not supported.
+Supported: services, networks, volumes, ports, environment, depends_on, restart, healthcheck, build context. Not supported: deploy, configs, secrets (Swarm-only features).
 
 ## Registry Mirrors and Insecure Registries
 
@@ -360,7 +354,7 @@ sudo crictl --runtime-endpoint unix:///run/containerd/containerd.sock info
 # --container-runtime-endpoint=unix:///run/containerd/containerd.sock
 ```
 
-Set `SystemdCgroup = true` when using cgroup v2 (required for modern distros). Match kubelet's cgroup driver.
+Set `SystemdCgroup = true` when using cgroup v2 (required for modern distros).
 
 ## ctr vs nerdctl vs crictl
 
@@ -394,8 +388,6 @@ crictl inspect <container-id>
 Use nerdctl for daily work. Use ctr for containerd internals debugging. Use crictl for Kubernetes node-level container debugging.
 
 ## Lazy Pulling (stargz / nydus)
-
-Lazy pulling starts containers before full image download. Only fetches layers on demand.
 
 ```bash
 # Convert existing image to eStargz format
@@ -468,21 +460,41 @@ sudo systemctl status buildkit
 
 ### Key differences to account for
 
-- No Docker daemon socket (`/var/run/docker.sock`) — update any socket mounts.
-- Log drivers differ — nerdctl uses journald or json-file, not all Docker log drivers.
-- Docker Swarm features are not available.
-- Image storage locations differ — clean up Docker's `/var/lib/docker/`.
-- CNI replaces libnetwork — review custom network configurations.
+- No Docker daemon socket (`/var/run/docker.sock`) — update any socket mounts
+- Log drivers differ — nerdctl uses journald or json-file, not all Docker log drivers
+- Docker Swarm features are not available; image storage locations differ
+- CNI replaces libnetwork — review custom network configurations
 
 ## Common Anti-Patterns
 
 - **Running nerdctl with sudo when rootless containerd is available.** Use rootless mode instead.
-- **Mixing namespaces.** Do not expect images from `default` namespace to be visible in `k8s.io`.
-- **Not running BuildKit daemon.** `nerdctl build` requires `buildkitd`. Start it first.
+- **Mixing namespaces.** Images from `default` namespace are not visible in `k8s.io`.
+- **Not running BuildKit daemon.** `nerdctl build` requires `buildkitd`.
 - **Using ctr for daily operations.** Use nerdctl — ctr is for debugging only.
 - **Inline registry mirrors in config.toml.** Use `hosts.toml` directory method instead.
-- **Keeping Docker and containerd running simultaneously.** This wastes resources and causes confusion.
-- **Ignoring SystemdCgroup setting.** Mismatched cgroup drivers cause pod sandbox creation failures.
-- **Not configuring CNI plugins.** Without them, container networking silently fails.
-- **Using deprecated config version.** Set `version = 3` in config.toml for containerd 2.x.
-- **Skipping image conversion for lazy pulling.** Standard images do not benefit from stargz/nydus snapshotters.
+- **Keeping Docker and containerd running simultaneously.** Wastes resources and causes confusion.
+- **Ignoring SystemdCgroup setting.** Mismatched cgroup drivers cause sandbox creation failures.
+- **Not configuring CNI plugins.** Container networking silently fails without them.
+- **Using deprecated config version.** Set `version = 3` for containerd 2.x.
+- **Skipping image conversion for lazy pulling.** Standard images don't benefit from stargz/nydus.
+
+## Resources
+
+### References
+
+- [references/advanced-patterns.md](references/advanced-patterns.md) — Snapshotter plugins, content store, runtime handlers (runc, Kata, gVisor), image encryption, remote snapshotters (eStargz, Nydus, SOCI), shim API, multi-platform builds, GC tuning, NRI.
+- [references/troubleshooting.md](references/troubleshooting.md) — Startup failures, pull errors, CNI problems, namespace conflicts, snapshotter corruption, memory issues, socket permissions, CRI/kubelet, BuildKit cache, rootless.
+- [references/docker-migration.md](references/docker-migration.md) — Docker→containerd migration: CLI mapping, Dockerfile compat, compose differences, volume/network/auth migration, CI/CD updates, feature gaps.
+
+### Scripts
+
+- [scripts/containerd-install.sh](scripts/containerd-install.sh) — Install containerd + nerdctl + runc + CNI + BuildKit. Flags: `--rootless`.
+- [scripts/containerd-health.sh](scripts/containerd-health.sh) — Health check across all components. Flags: `--json`, `--quiet`.
+- [scripts/docker-to-nerdctl.sh](scripts/docker-to-nerdctl.sh) — Export Docker images/volumes/networks, import into containerd. Flags: `--dry-run`, `--namespace`, `--volumes`, `--networks`.
+
+### Assets
+
+- [assets/config.toml](assets/config.toml) — Production containerd config with runtime handlers, registry, snapshotter, GC, CRI.
+- [assets/buildkitd.toml](assets/buildkitd.toml) — BuildKit daemon config with containerd worker, GC policies, multi-platform.
+- [assets/cni-bridge.conflist](assets/cni-bridge.conflist) — CNI bridge network with portmap, firewall, host-local IPAM.
+- [assets/nerdctl-compose.yml](assets/nerdctl-compose.yml) — Multi-service compose (web, API, Postgres, Redis, worker) with health checks.

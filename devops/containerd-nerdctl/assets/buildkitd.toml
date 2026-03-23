@@ -1,0 +1,106 @@
+# BuildKit daemon configuration for nerdctl builds
+# Location: /etc/buildkit/buildkitd.toml
+# After changes: sudo systemctl restart buildkit
+
+# Enable debug logging (set to true for troubleshooting)
+debug = false
+
+# Root directory for BuildKit data
+root = "/var/lib/buildkit"
+
+# gRPC server settings
+[grpc]
+  address = ["unix:///run/buildkit/buildkitd.sock"]
+  uid = 0
+  gid = 0
+  # Uncomment to also listen on TCP (for remote builds)
+  # address = ["unix:///run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]
+  # [grpc.tls]
+  #   cert = "/etc/buildkit/tls/cert.pem"
+  #   key = "/etc/buildkit/tls/key.pem"
+  #   ca = "/etc/buildkit/tls/ca.pem"
+
+# OCI worker (standalone, uses runc directly)
+[worker.oci]
+  enabled = false
+  platforms = ["linux/amd64", "linux/arm64"]
+  snapshotter = "overlayfs"
+  rootless = false
+  no-process-sandbox = false
+  gc = true
+  gckeepstorage = 10000  # 10GB in MB
+  max-parallelism = 4
+
+  # GC policies
+  [[worker.oci.gcpolicy]]
+    keepBytes = 1073741824       # 1GB — keep recent cache
+    keepDuration = 172800        # 48 hours
+    all = false                  # only unreferenced
+
+  [[worker.oci.gcpolicy]]
+    keepBytes = 10737418240      # 10GB — total cache limit
+    keepDuration = 1209600       # 14 days
+    all = true                   # include referenced
+
+# containerd worker (recommended when containerd is the runtime)
+[worker.containerd]
+  enabled = true
+  platforms = ["linux/amd64", "linux/arm64"]
+  namespace = "buildkit"
+  snapshotter = "overlayfs"
+  gc = true
+  gckeepstorage = 10000  # 10GB in MB
+  max-parallelism = 4
+
+  # Use containerd for image push/pull
+  # Shares image cache with containerd
+  [worker.containerd.labels]
+    "org.mobyproject.buildkit.worker.sandbox" = "true"
+
+  # GC policies for containerd worker
+  [[worker.containerd.gcpolicy]]
+    keepBytes = 1073741824       # 1GB
+    keepDuration = 172800        # 48 hours
+    all = false
+
+  [[worker.containerd.gcpolicy]]
+    keepBytes = 10737418240      # 10GB
+    keepDuration = 1209600       # 14 days
+    all = true
+
+# Registry mirrors for build-time pulls
+[registry."docker.io"]
+  mirrors = ["mirror.example.com"]
+
+# Insecure registry example (HTTP)
+# [registry."myregistry.local:5000"]
+#   http = true
+#   insecure = true
+
+# Private registry with TLS
+# [registry."secure-registry.example.com"]
+#   ca = ["/etc/buildkit/certs/ca.pem"]
+#   [[registry."secure-registry.example.com".keypair]]
+#     key = "/etc/buildkit/certs/client-key.pem"
+#     cert = "/etc/buildkit/certs/client-cert.pem"
+
+# DNS settings for build containers
+[dns]
+  nameservers = ["8.8.8.8", "8.8.4.4"]
+  # searchDomains = ["example.com"]
+
+# Entitlements (security — restrict by default)
+# [entitlements]
+#   network-host = false
+#   security-insecure = false
+
+# Frontend configuration
+# [frontend."dockerfile.v0"]
+#   enabled = true
+# [frontend."gateway.v0"]
+#   enabled = true
+
+# History API (for build history and attestations)
+[history]
+  maxAge = 172800      # 48 hours
+  maxEntries = 50

@@ -1,0 +1,90 @@
+#!/usr/sbin/nft -f
+#
+# nftables rules for WireGuard server
+#
+# Install:
+#   cp wg-firewall.nft /etc/nftables.d/wireguard.conf
+#   nft -f /etc/nftables.d/wireguard.conf
+#
+# Or include from main nftables.conf:
+#   include "/etc/nftables.d/wireguard.conf"
+#
+# Remove:
+#   nft delete table inet wireguard
+#
+# Adjust:
+#   - WAN_IFACE: your public-facing interface (eth0, ens3, etc.)
+#   - WG_IFACE: your WireGuard interface name
+#   - WG_PORT: WireGuard listen port
+#   - WG_SUBNET_V4 / WG_SUBNET_V6: your VPN subnets
+
+define WAN_IFACE = eth0
+define WG_IFACE  = wg0
+define WG_PORT   = 51820
+define WG_SUBNET_V4 = 10.0.0.0/24
+define WG_SUBNET_V6 = fd00:vpn::/64
+
+table inet wireguard {
+
+    # --- Input chain: traffic destined to this host ---
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        # Allow established/related connections
+        ct state established,related accept
+
+        # Allow loopback
+        iif "lo" accept
+
+        # Allow ICMP/ICMPv6 (essential for PMTUD and diagnostics)
+        ip protocol icmp accept
+        ip6 nexthdr ipv6-icmp accept
+
+        # Allow WireGuard UDP port
+        udp dport $WG_PORT accept
+
+        # Allow SSH (restrict source IP in production)
+        tcp dport 22 accept
+
+        # Allow traffic from WireGuard tunnel
+        iifname $WG_IFACE accept
+
+        # Rate-limit new connections to WireGuard port (anti-scan)
+        udp dport $WG_PORT ct state new limit rate 30/minute burst 10 packets accept
+
+        # Log and drop everything else
+        log prefix "NFT-DROP-INPUT: " flags all counter drop
+    }
+
+    # --- Forward chain: traffic passing through this host ---
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+
+        # Allow established/related
+        ct state established,related accept
+
+        # Allow WireGuard clients to reach the internet
+        iifname $WG_IFACE oifname $WAN_IFACE accept
+
+        # Allow return traffic from internet to WireGuard clients
+        iifname $WAN_IFACE oifname $WG_IFACE ct state established,related accept
+
+        # Allow WireGuard client-to-client traffic (remove if not desired)
+        iifname $WG_IFACE oifname $WG_IFACE accept
+
+        # MSS clamping — prevents fragmentation for TCP
+        tcp flags syn / syn,rst tcp option maxseg size set rt mtu
+
+        # Log dropped forwarded packets
+        log prefix "NFT-DROP-FORWARD: " flags all counter drop
+    }
+
+    # --- NAT: masquerade WireGuard traffic going to internet ---
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+
+        # Masquerade VPN traffic going out the WAN interface
+        ip saddr $WG_SUBNET_V4 oifname $WAN_IFACE masquerade
+        ip6 saddr $WG_SUBNET_V6 oifname $WAN_IFACE masquerade
+    }
+}
