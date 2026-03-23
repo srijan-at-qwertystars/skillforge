@@ -116,3 +116,6 @@
 | networking | [wireguard-vpn](networking/wireguard-vpn/) | WireGuard VPN configuration, key management, topologies, NAT traversal, split tunneling, and cloud deployment | tested |
 | databases | [sqlite-patterns](databases/sqlite-patterns/) | SQLite WAL mode, PRAGMA tuning, FTS5, JSON support, concurrency, extensions, and production patterns | tested |
 | devops | [containerd-nerdctl](devops/containerd-nerdctl/) | containerd runtime, nerdctl CLI, CNI networking, rootless containers, BuildKit, and Docker migration | tested |
+| python | [pydantic-patterns](python/pydantic-patterns/) | Pydantic v2 BaseModel, validators, Settings, serialization, discriminated unions, TypeAdapter, and FastAPI integration | created |
+| devops | [traefik-proxy](devops/traefik-proxy/) | Traefik v3 reverse proxy, Docker/Kubernetes providers, ACME TLS, middleware, TCP/UDP routing, and service discovery | created |
+| testing | [vitest-patterns](testing/vitest-patterns/) | Vitest config, mocking (vi.fn/mock/spyOn), snapshots, coverage, browser mode, component testing, and benchmarking | created |
