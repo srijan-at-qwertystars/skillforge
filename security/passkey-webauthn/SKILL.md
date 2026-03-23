@@ -261,30 +261,7 @@ Browser handles QR code display and BLE negotiation. No server-side changes need
 
 ## Database Schema
 
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT UNIQUE NOT NULL,
-  display_name TEXT NOT NULL,
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-CREATE TABLE webauthn_credentials (
-  credential_id BYTEA PRIMARY KEY,          -- raw credential ID from authenticator
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  public_key BYTEA NOT NULL,                -- COSE-encoded public key
-  counter BIGINT NOT NULL DEFAULT 0,        -- signature counter
-  transports TEXT[],                        -- ['internal','hybrid','usb','nfc','ble']
-  device_type TEXT NOT NULL,                -- 'singleDevice' | 'multiDevice'
-  backed_up BOOLEAN NOT NULL DEFAULT false, -- cloud-synced passkey?
-  aaguid UUID,                              -- authenticator model identifier
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  last_used_at TIMESTAMPTZ,
-  friendly_name TEXT                        -- user-assigned label
-);
-
-CREATE INDEX idx_credentials_user_id ON webauthn_credentials(user_id);
-```
+See [`assets/schema.sql`](assets/schema.sql) for full PostgreSQL + SQLite schemas with indexes and challenge storage.
 
 Key storage rules:
 - Store `credential_id` as binary, not base64. Index it as primary key.
@@ -402,90 +379,33 @@ const conditionalOk = await PublicKeyCredential.isConditionalMediationAvailable?
 
 ## Example: Full Registration + Authentication (SimpleWebAuthn)
 
-**Input:** User clicks "Add Passkey" button.
+**Registration input:** User clicks "Add Passkey" → server returns options with challenge, rp, user, pubKeyCredParams → client calls `startRegistration()` → server verifies with `verifyRegistrationResponse()`.
 
-**Server (registration options):**
-```json
-{
-  "challenge": "dGhpcyBpcyBhIHRlc3QgY2hhbGxlbmdl",
-  "rp": { "name": "My App", "id": "example.com" },
-  "user": { "id": "dXNlcl8xMjM", "name": "alice@example.com", "displayName": "Alice" },
-  "pubKeyCredParams": [{ "alg": -7, "type": "public-key" }],
-  "authenticatorSelection": { "residentKey": "required", "userVerification": "preferred" },
-  "timeout": 300000,
-  "attestation": "none"
-}
-```
+**Authentication input:** User visits login page → server returns options with challenge and rpId (no allowCredentials for discoverable flow) → client calls `startAuthentication()` (or conditional UI autofill) → server verifies with `verifyAuthenticationResponse()`.
 
-**Client response (sent to server):**
-```json
-{
-  "id": "ABCDef12345...",
-  "rawId": "ABCDef12345...",
-  "type": "public-key",
-  "response": {
-    "attestationObject": "o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRo...",
-    "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIi..."
-  },
-  "authenticatorAttachment": "platform",
-  "clientExtensionResults": {}
-}
-```
+See [`assets/webauthn-client.ts`](assets/webauthn-client.ts) and [`assets/webauthn-server.ts`](assets/webauthn-server.ts) for complete, production-ready implementations with error handling.
 
-**Server output (after verification):**
-```json
-{
-  "verified": true,
-  "registrationInfo": {
-    "credential": {
-      "id": "ABCDef12345...",
-      "publicKey": "<COSE-encoded bytes>",
-      "counter": 0
-    },
-    "credentialDeviceType": "multiDevice",
-    "credentialBackedUp": true
-  }
-}
-```
+## References
 
-**Input:** User visits login page with conditional UI enabled.
+In-depth guides in [`references/`](references/):
 
-**Server (authentication options, no allowCredentials for discoverable flow):**
-```json
-{
-  "challenge": "cmFuZG9tX2NoYWxsZW5nZV9ieXRlcw",
-  "rpId": "example.com",
-  "userVerification": "preferred",
-  "timeout": 300000
-}
-```
+- **[`advanced-patterns.md`](references/advanced-patterns.md)** — Enterprise attestation, cross-device (caBLE/hybrid) flows, conditional UI lifecycle, credential backup state handling, multi-device credential management, account recovery without passwords, step-up authentication, combining passkeys with other MFA, FIDO Metadata Service (MDS3), authenticator selection criteria and AAGUID allowlisting.
+- **[`troubleshooting.md`](references/troubleshooting.md)** — Origin mismatch debugging, rpId rules and migration, challenge encoding (base64 vs base64url), timeout handling, credential-not-found diagnosis, browser quirks (Chrome/Safari/Firefox/Edge), iOS and Android platform-specific issues, localhost development setup, Chrome DevTools virtual authenticator, error code reference.
+- **[`security-analysis.md`](references/security-analysis.md)** — WebAuthn threat model (trust boundaries, attack surfaces), phishing resistance proof (why it's cryptographic not behavioral), relay/AiTM attack resistance, token binding status, attestation trust chain verification, credential cloning risks (singleDevice vs multiDevice), user verification bypass scenarios, comparison with TOTP/SMS/push MFA, NIST 800-63B AAL level mapping, compliance (PCI DSS, HIPAA, SOC 2, GDPR, federal mandates).
 
-**Client response (after user selects passkey from autofill):**
-```json
-{
-  "id": "ABCDef12345...",
-  "rawId": "ABCDef12345...",
-  "type": "public-key",
-  "response": {
-    "authenticatorData": "SZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2MF...",
-    "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0Iiw...",
-    "signature": "MEUCIQDsN1Xdb...",
-    "userHandle": "dXNlcl8xMjM"
-  },
-  "authenticatorAttachment": "platform",
-  "clientExtensionResults": {}
-}
-```
+## Scripts
 
-**Server output:**
-```json
-{
-  "verified": true,
-  "authenticationInfo": {
-    "newCounter": 1,
-    "credentialDeviceType": "multiDevice",
-    "credentialBackedUp": true,
-    "userVerified": true
-  }
-}
-```
+Executable helpers in [`scripts/`](scripts/):
+
+- **[`generate-challenge.py`](scripts/generate-challenge.py)** — CSPRNG challenge generator with base64url/hex/JSON output. `python3 scripts/generate-challenge.py --format json`
+- **[`verify-attestation.py`](scripts/verify-attestation.py)** — Parse and validate attestation objects (packed, none, fido-u2f). Verifies rpId hash, flags, signatures. `python3 scripts/verify-attestation.py --file response.json --rp-id example.com`
+- **[`setup-dev-env.sh`](scripts/setup-dev-env.sh)** — Install mkcert, generate local HTTPS certificates, optionally generate nginx/Node.js config snippets. `./scripts/setup-dev-env.sh --domain localhost --nginx`
+
+## Assets
+
+Templates and configs in [`assets/`](assets/):
+
+- **[`schema.sql`](assets/schema.sql)** — Database schema for users, credentials, and challenges (PostgreSQL + SQLite variants with indexes).
+- **[`webauthn-client.ts`](assets/webauthn-client.ts)** — TypeScript browser module: registration, authentication, conditional UI, feature detection, error categorization.
+- **[`webauthn-server.ts`](assets/webauthn-server.ts)** — TypeScript Express router: full ceremony lifecycle with credential store interface, session management, challenge handling.
+- **[`nginx-https.conf`](assets/nginx-https.conf)** — Nginx config for local HTTPS with mkcert, security headers, well-known file routing, WebAuthn-appropriate timeouts.

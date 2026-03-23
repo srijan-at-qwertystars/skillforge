@@ -1,0 +1,218 @@
+# =============================================================================
+# Kamal 2 Production deploy.yml Template
+# =============================================================================
+#
+# Copy to config/deploy.yml and customize for your application.
+# Docs: https://kamal-deploy.org/docs/configuration/
+#
+# Required: service, image, servers, proxy, registry
+# =============================================================================
+
+# --- Service Name ---
+# Unique name for this application. Used as Docker container prefix.
+service: myapp
+
+# --- Docker Image ---
+# Full registry path. Kamal pushes here after build.
+image: ghcr.io/your-org/myapp
+
+# --- Minimum Kamal Version ---
+# Prevents deploys with incompatible Kamal versions.
+minimum_version: 2.0.0
+
+# =============================================================================
+# Servers & Roles
+# =============================================================================
+servers:
+  # Web role — receives HTTP traffic via kamal-proxy
+  web:
+    hosts:
+      - 203.0.113.10
+      # - 203.0.113.11           # Add more hosts for horizontal scaling
+    options:
+      # Allow containers to reach host services (e.g., host-bound DB)
+      "add-host": host.docker.internal:host-gateway
+
+  # Background worker role — no HTTP traffic
+  # job:
+  #   hosts:
+  #     - 203.0.113.20
+  #   cmd: bundle exec sidekiq -C config/sidekiq.yml
+  #   proxy:
+  #     roles: []                # Exclude from kamal-proxy
+
+  # Cron/scheduler role
+  # cron:
+  #   hosts:
+  #     - 203.0.113.20
+  #   cmd: supercronic /app/crontab
+  #   proxy:
+  #     roles: []
+
+# =============================================================================
+# Proxy (kamal-proxy)
+# =============================================================================
+proxy:
+  # SSL via Let's Encrypt — DNS A record must point to server BEFORE first deploy
+  ssl: true
+
+  # Primary hostname — kamal-proxy routes by Host header
+  host: myapp.example.com
+  # For multiple domains:
+  # hosts:
+  #   - myapp.example.com
+  #   - www.myapp.example.com
+
+  # Port your app listens on inside the container (NOT the external port)
+  # kamal-proxy listens on 80/443 externally and forwards to this port
+  app_port: 3000
+
+  # Health check — kamal-proxy verifies new container before switching traffic
+  healthcheck:
+    path: /up                    # Must return HTTP 200
+    interval: 3                  # Seconds between checks
+    timeout: 30                  # Total time to wait before failing deploy
+
+  # Response timeout for proxied requests (seconds)
+  response_timeout: 30
+
+  # Forward X-Forwarded-For/Proto headers (enable when behind external LB)
+  forward_headers: true
+
+  # HTTP → HTTPS redirect (default: true when ssl is true)
+  # ssl_redirect: true
+
+  # Path-based routing (for multi-app on same host)
+  # path_prefix: /api
+
+# =============================================================================
+# Docker Registry
+# =============================================================================
+registry:
+  server: ghcr.io                # ghcr.io | registry.digitalocean.com | "" for Docker Hub
+  username: deployer
+  password:
+    - KAMAL_REGISTRY_PASSWORD    # Read from .kamal/secrets
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Non-sensitive values — committed to git
+  clear:
+    RAILS_ENV: production
+    RAILS_LOG_TO_STDOUT: "true"
+    RAILS_SERVE_STATIC_FILES: "true"
+    # REDIS_URL: redis://myapp-redis:6379/0
+    # SOLID_QUEUE_IN_PUMA: "true"
+
+  # Sensitive values — read from .kamal/secrets at deploy time
+  secret:
+    - RAILS_MASTER_KEY
+    - DATABASE_URL
+    # - REDIS_URL
+    # - SMTP_PASSWORD
+    # - AWS_ACCESS_KEY_ID
+    # - AWS_SECRET_ACCESS_KEY
+
+# =============================================================================
+# Volumes
+# =============================================================================
+# Named Docker volumes persisted across deploys.
+volumes:
+  - "myapp_storage:/rails/storage"
+  # - "myapp_cache:/rails/tmp/cache"
+
+# =============================================================================
+# Asset Bridging
+# =============================================================================
+# Prevents 404s during deploys by keeping old assets available during drain.
+# Set to the path where your app serves static assets.
+asset_path: /rails/public/assets
+
+# =============================================================================
+# Builder
+# =============================================================================
+builder:
+  # Target architecture(s) — must match your server(s)
+  arch:
+    - amd64
+    # - arm64                    # Add for multi-arch builds
+
+  # Remote builder — avoids slow QEMU emulation on Apple Silicon
+  # remote:
+  #   arch: amd64
+  #   host: ssh://builder@build-server.internal
+
+  # Build arguments passed to Dockerfile
+  args:
+    RUBY_VERSION: "3.3"
+    # NODE_VERSION: "20"
+
+  # Secrets available during build (e.g., private gem server auth)
+  # secrets:
+  #   - BUNDLE_ENTERPRISE__CONTRIBSYS__COM
+
+  # Custom Dockerfile path (default: Dockerfile)
+  # dockerfile: Dockerfile.production
+
+  # Registry-based build cache (speeds up CI builds significantly)
+  # cache:
+  #   type: registry
+  #   image: ghcr.io/your-org/myapp-build-cache
+  #   options: mode=max
+
+# =============================================================================
+# Container Retention
+# =============================================================================
+# Number of old containers to keep for rollback. More = more disk usage.
+retain_containers: 5
+
+# =============================================================================
+# SSH
+# =============================================================================
+ssh:
+  user: deploy                   # Default: root. Use a dedicated deploy user.
+  # port: 22
+  # proxy: bastion.example.com   # Jump host
+  # keys:
+  #   - ~/.ssh/id_ed25519
+  # log_level: debug             # Enable for SSH troubleshooting
+
+# =============================================================================
+# Accessories
+# =============================================================================
+# Long-lived containers NOT redeployed with `kamal deploy`.
+# Manage with: kamal accessory boot/reboot/remove/logs/exec <name>
+accessories:
+  db:
+    image: postgres:16-alpine
+    host: 203.0.113.10
+    port: "5432:5432"
+    env:
+      clear:
+        POSTGRES_DB: myapp_production
+        POSTGRES_USER: myapp
+      secret:
+        - POSTGRES_PASSWORD
+    volumes:
+      - "db_data:/var/lib/postgresql/data"
+    options:
+      shm-size: 256m             # Shared memory for Postgres
+
+  redis:
+    image: redis:7-alpine
+    roles: [web]                 # Deploy to all web hosts
+    port: "6379:6379"
+    cmd: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - "redis_data:/data"
+
+# =============================================================================
+# Aliases (Kamal CLI shortcuts)
+# =============================================================================
+# aliases:
+#   console: app exec -i "bin/rails console"
+#   logs: app logs -f
+#   shell: app exec -i bash
+#   db: accessory exec db "psql -U myapp myapp_production"

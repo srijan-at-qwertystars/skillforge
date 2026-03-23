@@ -416,85 +416,79 @@ Install `@vanilla-extract/css` and `@vanilla-extract/vite-plugin`. Add `vanillaE
 
 ### Unit Testing Loaders/Actions (Vitest)
 ```ts
-import { loader } from "./routes/products.$id";
-
 test("loader returns product", async () => {
   const request = new Request("http://localhost/products/1");
-  const result = await loader({
-    request,
-    params: { id: "1" },
-    context: {},
-  });
+  const result = await loader({ request, params: { id: "1" }, context: {} });
   expect(result.product).toBeDefined();
-  expect(result.product.id).toBe("1");
 });
 ```
 
-### Component Testing
+### Component Testing with `createRoutesStub`
 ```tsx
 import { createRoutesStub } from "react-router";
 import { render, screen } from "@testing-library/react";
 
 test("renders product page", async () => {
-  const Stub = createRoutesStub([
-    {
-      path: "/products/:id",
-      Component: ProductPage,
-      loader: () => ({ product: { id: "1", name: "Widget" } }),
-    },
-  ]);
-
+  const Stub = createRoutesStub([{
+    path: "/products/:id",
+    Component: ProductPage,
+    loader: () => ({ product: { id: "1", name: "Widget" } }),
+  }]);
   render(<Stub initialEntries={["/products/1"]} />);
   expect(await screen.findByText("Widget")).toBeInTheDocument();
 });
 ```
 
-### E2E Testing
-Use Playwright or Cypress. Test route transitions, data loading, form submissions, and error boundaries against a running dev server or preview build.
-
 ## Migration: Remix v1/v2 → React Router v7
 
-### Automated Migration
-```bash
-npx codemod remix/2/react-router/upgrade
-```
-
-### Key Changes
-| Remix v2                          | React Router v7                       |
-|-----------------------------------|---------------------------------------|
-| `@remix-run/node`                 | `react-router`                        |
-| `@remix-run/react`               | `react-router`                        |
-| `@remix-run/serve`               | `@react-router/serve`                 |
-| `@remix-run/dev`                  | `@react-router/dev`                   |
-| `remix vite:dev`                  | `react-router dev`                    |
-| `remix vite:build`                | `react-router build`                  |
-| `vitePlugin as remix`            | `reactRouter` from `@react-router/dev/vite` |
-| `json()` helper                   | Return plain objects                  |
-| `defer()` + `Await`              | Return un-awaited promises + `Await`  |
-| `useLoaderData<typeof loader>()` | `loaderData` prop (auto-typed)        |
-| `V2_MetaFunction`                | `meta` export (standard)              |
-
-### Migration Steps
-1. Enable all future flags in Remix v2 config.
-2. Run the codemod.
-3. Update `vite.config.ts`: replace `remix()` with `reactRouter()`.
-4. Create `app/routes.ts` with `flatRoutes()` for file-based routing.
-5. Replace `json()` calls — return plain objects from loaders/actions.
-6. Replace `defer()` — return un-awaited promises directly.
-7. Run `react-router typegen` and fix type errors.
-8. Update all `@remix-run/*` imports to `react-router` or `@react-router/*`.
-9. Update package.json scripts.
-10. Test all routes, loaders, actions, and error boundaries.
+Run `npx codemod remix/2/react-router/upgrade` to automate package renames and import rewrites. See [references/migration-guide.md](references/migration-guide.md) for the full v1 → v2 → v7 walkthrough with breaking changes and post-migration checklist.
 
 ## Common Pitfalls
 
 1. **Returning `json()` or `defer()`** — Unnecessary in v7. Return plain objects. `json()` is removed.
-2. **Server code in client bundles** — Suffix server-only files with `.server.ts` (e.g., `db.server.ts`, `auth.server.ts`). The bundler strips these from client builds.
-3. **Missing `ErrorBoundary` in root** — Always export `ErrorBoundary` from `root.tsx`. Without it, unhandled errors crash the entire app with no UI.
-4. **Stale `useLoaderData` types** — Run `react-router typegen --watch` during development. Types are auto-generated into `./+types/` directories.
-5. **Cookie secrets in client code** — Keep session logic in `.server.ts` files. Never import `sessions.server.ts` from client components.
-6. **Not revalidating after actions** — Revalidation is automatic. Do not manually refetch data after form submissions.
-7. **Using `useEffect` for data fetching** — Use loaders instead. `useEffect` fetch skips SSR, causes waterfalls, and loses progressive enhancement.
-8. **Ignoring `request.signal`** — Pass `request.signal` to fetch calls inside loaders for proper cancellation on navigation.
-9. **Pathless layout confusion** — `_layout.tsx` creates a pathless layout. `layout.tsx` (no underscore) matches `/layout` URL. The underscore prefix is significant.
-10. **Missing `Outlet` in layout routes** — Layout routes must render `<Outlet />` or child routes won't appear.
+2. **Server code in client bundles** — Suffix server-only files with `.server.ts`. The bundler strips them from client builds.
+3. **Missing `ErrorBoundary` in root** — Always export `ErrorBoundary` from `root.tsx`.
+4. **Stale `useLoaderData` types** — Run `react-router typegen --watch` during development.
+5. **Cookie secrets in client code** — Keep session logic in `.server.ts` files.
+6. **Not revalidating after actions** — Revalidation is automatic. Don't manually refetch.
+7. **Using `useEffect` for data fetching** — Use loaders instead.
+8. **Ignoring `request.signal`** — Pass `request.signal` to fetch calls in loaders.
+9. **Pathless layout confusion** — `_layout.tsx` = pathless layout. `layout.tsx` = `/layout` URL.
+10. **Missing `Outlet` in layout routes** — Layout routes must render `<Outlet />`.
+
+---
+
+## References
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Optimistic UI with useFetcher, resource routes, streaming with Suspense/Await, nested error boundaries, parallel data loading, client-side cache management, form validation (Zod), file uploads, WebSocket integration, SSE endpoints, custom server entry
+- **[troubleshooting.md](references/troubleshooting.md)** — Hydration mismatches, loader/action type errors, cookie handling gotchas, CORS with resource routes, build failures, Vite plugin conflicts, module resolution, deployment problems (Node, Cloudflare, Vercel, Fly.io), debugging techniques
+- **[migration-guide.md](references/migration-guide.md)** — Step-by-step Remix v1 → v2 (future flags, flat routes, CatchBoundary removal) → React Router v7 (codemod, package mapping, API changes, adapter migration), post-migration checklist
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+- **[create-route.sh](scripts/create-route.sh)** — Generate a route file with loader, action, component, meta, error boundary. Supports `--resource` and `--layout` flags.
+  ```bash
+  ./scripts/create-route.sh products.\$id
+  ./scripts/create-route.sh api.users --resource
+  ```
+- **[setup-project.sh](scripts/setup-project.sh)** — Bootstrap a new project with Tailwind, TypeScript strict, Vitest, ESLint/Prettier, optional Docker.
+  ```bash
+  ./scripts/setup-project.sh my-app --docker
+  ```
+- **[check-routes.sh](scripts/check-routes.sh)** — Analyze route tree, detect URL conflicts, list params, find missing error boundaries.
+  ```bash
+  ./scripts/check-routes.sh
+  ```
+
+## Assets
+
+Templates and configs in `assets/`:
+
+- **[route-template.tsx](assets/route-template.tsx)** — Complete route module with typed loader/action, meta, links, headers, error boundary, shouldRevalidate
+- **[root-layout.tsx](assets/root-layout.tsx)** — Production root layout with fonts, favicon, scroll restoration, env injection, error boundary
+- **[vite.config.ts](assets/vite.config.ts)** — Vite config for RR v7 with Tailwind, source maps, chunk splitting, proxy, CSS modules
+- **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose with app + PostgreSQL + Redis for local development

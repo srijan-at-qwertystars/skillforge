@@ -1,0 +1,98 @@
+# Docker Compose — React Router v7 Local Development
+#
+# Usage:
+#   docker compose up              # Start all services
+#   docker compose up -d           # Start in background
+#   docker compose down            # Stop all services
+#   docker compose logs -f app     # Follow app logs
+#
+# Services:
+#   - app:      React Router v7 dev server (port 5173)
+#   - postgres: PostgreSQL 16 database (port 5432)
+#   - redis:    Redis 7 for sessions/cache (port 6379)
+
+services:
+  # ---------------------------------------------------------------------------
+  # React Router v7 Application
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    volumes:
+      # Mount source code for hot reload
+      - .:/app
+      # Prevent overwriting container's node_modules
+      - /app/node_modules
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://remix:remix_dev@postgres:5432/remix_dev
+      - REDIS_URL=redis://redis:6379
+      - SESSION_SECRET=local-dev-secret-change-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Use host networking workaround for HMR WebSocket
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: remix
+      POSTGRES_PASSWORD: remix_dev
+      POSTGRES_DB: remix_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: seed script runs on first start
+      # - ./scripts/seed.sql:/docker-entrypoint-initdb.d/seed.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U remix -d remix_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------------------------------------------------------------------------
+  # Redis (Sessions / Cache)
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    command: redis-server --appendonly yes
+
+# ---------------------------------------------------------------------------
+# Persistent Volumes
+# ---------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# ---------------------------------------------------------------------------
+# Dockerfile.dev (create this file alongside docker-compose.yml)
+# ---------------------------------------------------------------------------
+# FROM node:20-slim
+# WORKDIR /app
+# COPY package.json package-lock.json ./
+# RUN npm ci
+# COPY . .
+# EXPOSE 5173
+# CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

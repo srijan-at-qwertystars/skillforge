@@ -1,0 +1,177 @@
+# =============================================================================
+# GitHub Actions — Automated Kamal Deployment
+# =============================================================================
+#
+# Workflow:
+#   - Push to main  → Deploy to staging
+#   - Tag v*        → Deploy to production (with approval)
+#
+# Required GitHub Secrets:
+#   SSH_DEPLOY_KEY           — Private SSH key for deploy user
+#   KAMAL_REGISTRY_PASSWORD  — Docker registry token (e.g., GitHub PAT with packages:write)
+#   RAILS_MASTER_KEY         — Rails master key (production)
+#   DATABASE_URL             — Database connection string (if not hardcoded in secrets)
+#
+# Setup:
+#   1. Copy to .github/workflows/deploy.yml
+#   2. Add secrets in GitHub repo Settings → Secrets and Variables → Actions
+#   3. Create "production" environment in Settings → Environments (for approval gates)
+# =============================================================================
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+# Prevent concurrent deploys to the same environment
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false       # Never cancel a running deploy
+
+permissions:
+  contents: read
+  packages: write                 # Required for GHCR push
+
+env:
+  RUBY_VERSION: "3.3"
+
+jobs:
+  # ===========================================================================
+  # Test Suite
+  # ===========================================================================
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: myapp_test
+          POSTGRES_USER: myapp
+          POSTGRES_PASSWORD: password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U myapp"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - name: Run tests
+        run: |
+          bin/rails db:prepare
+          bin/rails test
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://myapp:password@localhost:5432/myapp_test
+          REDIS_URL: redis://localhost:6379/0
+
+  # ===========================================================================
+  # Deploy to Staging (on push to main)
+  # ===========================================================================
+  deploy-staging:
+    if: github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_DEPLOY_KEY }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Deploy to staging
+        run: bundle exec kamal deploy -d staging
+        env:
+          KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+
+      - name: Verify deployment
+        run: |
+          sleep 10
+          curl -sf --max-time 30 \
+            "https://staging.myapp.example.com/up" \
+            || echo "::warning::Health check did not return 200"
+
+  # ===========================================================================
+  # Deploy to Production (on tag push)
+  # ===========================================================================
+  deploy-production:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production       # Requires manual approval if configured
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VERSION }}
+          bundler-cache: true
+
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_DEPLOY_KEY }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Deploy to production
+        run: bundle exec kamal deploy
+        env:
+          KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      - name: Verify deployment
+        run: |
+          sleep 10
+          curl -sf --max-time 30 \
+            "https://myapp.example.com/up" \
+            || echo "::warning::Health check did not return 200"
+
+      - name: Notify on success
+        if: success()
+        run: |
+          curl -sf -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\": \"✅ Deployed myapp ${{ github.ref_name }} to production\"}" \
+            || true
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          curl -sf -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\": \"❌ Deploy failed: myapp ${{ github.ref_name }} to production\"}" \
+            || true

@@ -448,3 +448,41 @@ servers:
 ```
 
 Same image, different CMD. `kamal deploy` handles both roles.
+
+## References
+
+In-depth guides in `references/`:
+
+| File | Topics |
+|---|---|
+| `references/advanced-patterns.md` | Blue-green, canary deploys, multi-app setups, custom health checks, rolling restarts, accessory dependencies, deploy hooks for migrations, SSL rotation, Dockerfile strategies, multi-arch builds |
+| `references/troubleshooting.md` | Container failures, health check timeouts, SSH issues, registry auth, kamal-proxy routing, lock contention, accessory connections, SSL certs, debug commands, log analysis |
+| `references/production-checklist.md` | Pre-deploy checklist, server hardening, monitoring, backup strategies, secrets rotation, CI/CD pipeline patterns, rollback procedures |
+
+## Scripts
+
+Executable helpers in `scripts/` (run `chmod +x scripts/*.sh`):
+
+| Script | Purpose |
+|---|---|
+| `scripts/setup-server.sh` | Prepare Ubuntu/Debian server — installs Docker, creates deploy user, configures firewall, SSH hardening, fail2ban |
+| `scripts/health-check.sh` | Verify all services — checks containers, kamal-proxy, accessories, SSL certs, disk space, health endpoint |
+| `scripts/rollback.sh` | Safe rollback — lock checks, version selection, confirmation, post-rollback health verification |
+
+Usage:
+```bash
+./scripts/setup-server.sh 203.0.113.10 root deploy
+./scripts/health-check.sh -v -d production
+./scripts/rollback.sh abc123def -d production
+```
+
+## Assets
+
+Production-ready templates in `assets/`:
+
+| File | Description |
+|---|---|
+| `assets/deploy.yml` | Complete deploy.yml template with all common options annotated |
+| `assets/github-actions-deploy.yml` | GitHub Actions workflow — test, deploy staging on push, production on tag |
+| `assets/Dockerfile.production` | Multi-stage Dockerfile for Rails (jemalloc, non-root user, health check) |
+| `assets/.kamal-secrets.example` | Example secrets file with registry, DB, Redis, SMTP, cloud storage vars |
