@@ -1,0 +1,177 @@
+# Traefik v3 — Dynamic Configuration Template
+# Middleware chains, shared middleware, TLS options, and example routes.
+# Place in /etc/traefik/dynamic/ directory. Hot-reloaded when watch: true.
+
+# ─── Middleware Definitions ──────────────────────────────────────────
+http:
+  middlewares:
+    # Security headers — apply to all public routes
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        contentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        customResponseHeaders:
+          X-Powered-By: ""
+          Server: ""
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlMaxAge: 86400
+
+    # CORS — configure per-application as needed
+    cors-permissive:
+      headers:
+        accessControlAllowOriginList:
+          - "https://app.example.com"
+          - "https://admin.example.com"
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - PATCH
+          - OPTIONS
+        accessControlAllowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+        accessControlMaxAge: 86400
+
+    # Rate limiting — general purpose
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Strict rate limit — for auth endpoints
+    rate-limit-strict:
+      rateLimit:
+        average: 10
+        burst: 20
+        period: 1m
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # API rate limit — per API key
+    rate-limit-api:
+      rateLimit:
+        average: 1000
+        burst: 2000
+        period: 1h
+        sourceCriterion:
+          requestHeaderName: "X-API-Key"
+
+    # Compression
+    compress:
+      compress:
+        excludedContentTypes:
+          - "text/event-stream"
+        minResponseBodyBytes: 1024
+
+    # IP allow list — internal networks
+    internal-only:
+      ipAllowList:
+        sourceRange:
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+
+    # Retry on failure
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: 100ms
+
+    # Circuit breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"
+        checkPeriod: 10s
+        fallbackDuration: 30s
+        recoveryDuration: 60s
+
+    # Strip path prefixes
+    strip-api-v1:
+      stripPrefix:
+        prefixes:
+          - "/api/v1"
+
+    strip-api-v2:
+      stripPrefix:
+        prefixes:
+          - "/api/v2"
+
+    # ─── Middleware Chains ─────────────────────────────────────────────
+
+    # Standard chain for public web applications
+    standard-chain:
+      chain:
+        middlewares:
+          - security-headers
+          - rate-limit
+          - compress
+
+    # API chain with retry and circuit breaker
+    api-chain:
+      chain:
+        middlewares:
+          - security-headers
+          - rate-limit
+          - retry
+          - circuit-breaker
+          - compress
+
+    # Admin chain — internal access + auth
+    admin-chain:
+      chain:
+        middlewares:
+          - internal-only
+          - security-headers
+          - rate-limit-strict
+
+# ─── TLS Options ─────────────────────────────────────────────────────
+tls:
+  options:
+    modern:
+      minVersion: VersionTLS13
+
+    intermediate:
+      minVersion: VersionTLS12
+      cipherSuites:
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      curvePreferences:
+        - X25519
+        - CurveP256
+        - CurveP384
+      sniStrict: true
+
+  # Manual certificates (if not using ACME)
+  # certificates:
+  #   - certFile: /certs/example.com.crt
+  #     keyFile: /certs/example.com.key
+
+  # stores:
+  #   default:
+  #     defaultCertificate:
+  #       certFile: /certs/default.crt
+  #       keyFile: /certs/default.key

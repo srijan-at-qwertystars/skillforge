@@ -1,0 +1,101 @@
+# Production Docker Compose — Traefik v3 with dashboard, metrics, and example services.
+# Usage: docker compose up -d
+# Prerequisites: Create 'proxy' network first: docker network create proxy
+
+services:
+  # ─── Traefik Reverse Proxy ─────────────────────────────────────────
+  traefik:
+    image: traefik:v3.4
+    container_name: traefik
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "80:80"
+      - "443:443/tcp"
+      - "443:443/udp"       # HTTP/3 (QUIC)
+    environment:
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./dynamic-config.yml:/etc/traefik/dynamic/dynamic-config.yml:ro
+      - letsencrypt:/letsencrypt
+    networks:
+      - proxy
+    labels:
+      # Dashboard router
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
+      # Dashboard basic auth — generate: htpasswd -nB admin | sed 's/\$/\$\$/g'
+      - "traefik.http.middlewares.dashboard-auth.basicauth.users=${DASHBOARD_USER:-admin:$$apr1$$placeholder}"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 128M
+
+  # ─── Example Web Application ──────────────────────────────────────
+  webapp:
+    image: traefik/whoami:latest
+    container_name: webapp
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.webapp.rule=Host(`app.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.webapp.entrypoints=websecure"
+      - "traefik.http.routers.webapp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.webapp.middlewares=standard-chain@file"
+      - "traefik.http.services.webapp.loadbalancer.server.port=80"
+      - "traefik.http.services.webapp.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.webapp.loadbalancer.healthcheck.interval=15s"
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 128M
+          cpus: "0.5"
+
+  # ─── Example API Service ──────────────────────────────────────────
+  api:
+    image: traefik/whoami:latest
+    container_name: api
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.${DOMAIN:-example.com}`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.middlewares=api-chain@file"
+      - "traefik.http.services.api.loadbalancer.server.port=80"
+      - "traefik.http.services.api.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.api.loadbalancer.healthcheck.interval=10s"
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+volumes:
+  letsencrypt:
+    name: traefik-letsencrypt
+
+networks:
+  proxy:
+    external: true
+    name: proxy

@@ -436,40 +436,10 @@ http:
 ```
 
 Popular plugins: CrowdSec bouncer, GeoBlock, RewriteBody, ModSecurity, theme.park.
+
 ## Docker Compose Production Template
 
-```yaml
-services:
-  traefik:
-    image: traefik:v3.4
-    restart: unless-stopped
-    security_opt: [no-new-privileges:true]
-    ports:
-      - "80:80"
-      - "443:443/tcp"
-      - "443:443/udp"
-    environment: [CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN}]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik.yml:/etc/traefik/traefik.yml:ro
-      - ./dynamic:/etc/traefik/dynamic:ro
-      - letsencrypt:/letsencrypt
-    networks: [proxy]
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.traefik.rule=Host(`traefik.example.com`)"
-      - "traefik.http.routers.traefik.service=api@internal"
-      - "traefik.http.routers.traefik.entrypoints=websecure"
-      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.traefik.middlewares=auth"
-      - "traefik.http.middlewares.auth.basicauth.users=${DASHBOARD_USER}"
-volumes:
-  letsencrypt:
-networks:
-  proxy: { name: proxy }
-```
-
-Mount socket `:ro`. Use `no-new-privileges`. Dedicated `proxy` network. Named volumes for certs. Secrets in `.env`, never in labels.
+See `assets/docker-compose.yml` for a complete production template. Key practices: mount socket `:ro`, use `no-new-privileges`, dedicated `proxy` network, named volumes for certs, secrets in `.env` never in labels.
 ## Traefik vs Nginx vs Caddy
 
 | Feature | Traefik v3 | Nginx | Caddy |
@@ -480,10 +450,10 @@ Mount socket `:ro`. Use `no-new-privileges`. Dedicated `proxy` network. Named vo
 | Dashboard | Built-in | Third-party | None |
 | TCP/UDP | Native | Stream module | Limited |
 | HTTP/3 | Stable | Experimental | Stable |
-| Performance | Good (dynamic routing) | Superior throughput | Good |
 | K8s support | CRD + Gateway API | Ingress controller | Adapter |
 
 Choose Traefik for dynamic service discovery and container-native environments. Choose Nginx for raw throughput and static configs. Choose Caddy for simplicity and automatic HTTPS without discovery needs.
+
 ## Common Anti-Patterns
 
 1. **`api.insecure: true` in prod** — exposes unauthenticated dashboard. Secure with router + auth middleware.
@@ -498,3 +468,30 @@ Choose Traefik for dynamic service discovery and container-native environments. 
 10. **No `providers.docker.network`** — Traefik picks wrong IP on multi-network containers. Always specify.
 11. **No container resource limits** — unbounded memory under load. Set memory/CPU limits.
 12. **Using deprecated v2 syntax** — `ipWhiteList` → `ipAllowList`, `swarmMode` → `swarm` provider, `tls.caOptional` removed.
+
+## Resources
+
+### References
+
+| File | Description |
+|---|---|
+| `references/advanced-patterns.md` | Custom plugins, Traefik Hub, canary/blue-green deployments, gRPC, WebSocket, distributed rate limiting, IP filtering, content-based routing, Consul/etcd providers, multi-region setups |
+| `references/troubleshooting.md` | Certificate failures, Docker socket security, label conflicts, middleware ordering, 502/504 debugging, dashboard access, hot reload issues, memory leaks, log tuning, K8s CRD mismatches |
+| `references/kubernetes-guide.md` | Helm chart config, IngressRoute/Middleware/TLSOption CRDs, cross-namespace references, Ingress vs IngressRoute vs Gateway API, cert-manager integration |
+
+### Scripts
+
+| File | Description |
+|---|---|
+| `scripts/traefik-validate.sh` | Validate static config, dynamic config files/dirs, and Docker Compose for common issues |
+| `scripts/traefik-docker-setup.sh` | Bootstrap Traefik with Docker: creates network, directories, configs, and Compose file |
+| `scripts/traefik-cert-check.sh` | Check certificate status from acme.json, Traefik API, or live TLS handshake |
+
+### Assets
+
+| File | Description |
+|---|---|
+| `assets/docker-compose.yml` | Production Compose with Traefik, dashboard, metrics, and example services |
+| `assets/traefik.yml` | Production static config with entrypoints, providers, ACME, logging, and metrics |
+| `assets/dynamic-config.yml` | Dynamic config template: middleware chains, TLS options, rate limiting |
+| `assets/kubernetes-values.yml` | Helm values for HA Traefik on Kubernetes with autoscaling, security, and observability |

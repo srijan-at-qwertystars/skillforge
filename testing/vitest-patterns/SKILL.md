@@ -365,3 +365,30 @@ Reporters: `default` (terminal), `verbose`, `dot` (CI), `junit` (XML), `json`, `
 - **Synchronous timer APIs in async tests** — use `await vi.advanceTimersByTimeAsync()`.
 - **Forgetting vi.useRealTimers()** — fake timers leak between tests if not restored.
 - **Mixing bench and test files** — keep `.bench.ts` and `.test.ts` separate.
+
+## Resources
+
+### References
+
+| File | Description |
+|------|-------------|
+| `references/advanced-patterns.md` | Type testing (`expectTypeOf`), custom pool workers, module graph testing, dependency pre-bundling, test sequencers, custom reporters, monorepo workspaces, Vitest UI, and plugin authoring |
+| `references/troubleshooting.md` | Module resolution failures, ESM/CJS interop, mock hoisting, memory leaks, slow test diagnosis, v8 coverage gaps, snapshot serializer conflicts, jsdom limitations, CI failures |
+| `references/migration-from-jest.md` | Complete Jest→Vitest migration: config mapping, API differences (`jest.*`→`vi.*`), async `importActual`, timer migration, snapshot format, coverage tool changes, feature parity |
+
+### Scripts
+
+| File | Description |
+|------|-------------|
+| `scripts/vitest-init.sh` | Initialize Vitest in an existing project — detects framework (React/Vue/Svelte/Node), generates config, installs deps, creates setup file |
+| `scripts/vitest-coverage-check.sh` | Run coverage and enforce thresholds — parses JSON summary, exits non-zero on failure, configurable per-metric thresholds |
+| `scripts/jest-to-vitest.sh` | Automated migration — transforms `jest.*` → `vi.*`, updates imports, handles `requireActual` → `importActual`, flags async review items |
+
+### Assets (Copy-Ready Config Files)
+
+| File | Description |
+|------|-------------|
+| `assets/vitest.config.ts` | Production-ready Vitest config with coverage, reporters, pool settings, CI detection |
+| `assets/vitest-workspace.ts` | Monorepo workspace config — unit, component, integration, and edge runtime projects |
+| `assets/setup-files.ts` | Test setup with custom matchers (`toBeWithinRange`, `toBeISODate`, `toResolveWithin`), browser API stubs, cleanup |
+| `assets/component-test-utils.tsx` | React/Vue component testing helpers — provider wrappers, mock fetch, IntersectionObserver mock, test data factories |

@@ -1,0 +1,255 @@
+# Helm values for Traefik deployment on Kubernetes.
+# Usage: helm install traefik traefik/traefik -n traefik --create-namespace -f kubernetes-values.yml
+
+image:
+  tag: v3.4
+
+# ─── Deployment ──────────────────────────────────────────────────────
+deployment:
+  replicas: 2
+  annotations: {}
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8082"
+  labels: {}
+  podLabels: {}
+
+# ─── Ingress Class ───────────────────────────────────────────────────
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+
+# ─── Dashboard ───────────────────────────────────────────────────────
+ingressRoute:
+  dashboard:
+    enabled: true
+    matchRule: Host(`traefik.example.com`)
+    entryPoints:
+      - websecure
+    middlewares:
+      - name: dashboard-auth
+        namespace: traefik
+
+# ─── Ports / Entrypoints ─────────────────────────────────────────────
+ports:
+  web:
+    port: 8000
+    exposedPort: 80
+    protocol: TCP
+    redirectTo:
+      port: websecure
+    # Trust proxy headers (Cloudflare, AWS ALB)
+    # forwardedHeaders:
+    #   trustedIPs:
+    #     - "173.245.48.0/20"
+
+  websecure:
+    port: 8443
+    exposedPort: 443
+    protocol: TCP
+    http3:
+      enabled: true
+    tls:
+      enabled: true
+      certResolver: letsencrypt
+      domains:
+        - main: example.com
+          sans:
+            - "*.example.com"
+    middlewares:
+      - traefik-security-headers@kubernetescrd
+
+  metrics:
+    port: 8082
+    expose:
+      default: false
+
+# ─── Service ─────────────────────────────────────────────────────────
+service:
+  enabled: true
+  type: LoadBalancer
+  annotations: {}
+    # AWS NLB:
+    # service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    # service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    # service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    # GCP:
+    # cloud.google.com/neg: '{"ingress": true}'
+  spec:
+    externalTrafficPolicy: Local    # Preserve client IP
+
+# ─── TLS / Certificates ─────────────────────────────────────────────
+# Use cert-manager instead of Traefik ACME for production HA:
+# certResolvers are per-pod, not shared across replicas.
+# cert-manager stores certs in Kubernetes Secrets (shared).
+
+# Uncomment for Traefik-managed ACME (single replica only):
+# certResolvers:
+#   letsencrypt:
+#     email: admin@example.com
+#     httpChallenge:
+#       entryPoint: web
+#     storage: /data/acme.json
+
+# ─── Persistence (for ACME only) ─────────────────────────────────────
+persistence:
+  enabled: true
+  size: 128Mi
+  path: /data
+  accessMode: ReadWriteOnce
+  # storageClass: "gp3"
+
+# ─── Resources ───────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# ─── Autoscaling ─────────────────────────────────────────────────────
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+# ─── Providers ───────────────────────────────────────────────────────
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true
+    allowExternalNameServices: true
+  kubernetesIngress:
+    enabled: true
+    allowExternalNameServices: true
+    publishedService:
+      enabled: true
+
+# ─── Logging ─────────────────────────────────────────────────────────
+logs:
+  general:
+    level: INFO
+    format: json
+  access:
+    enabled: true
+    format: json
+    filters:
+      statuscodes: "400-599"
+      minduration: 100ms
+    fields:
+      general:
+        defaultmode: keep
+      headers:
+        defaultmode: drop
+        names:
+          User-Agent: keep
+          Authorization: redact
+          X-Forwarded-For: keep
+
+# ─── Metrics ─────────────────────────────────────────────────────────
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+    buckets:
+      - 0.1
+      - 0.3
+      - 1.2
+      - 5.0
+
+# ─── Tracing ─────────────────────────────────────────────────────────
+# tracing:
+#   otlp:
+#     grpc:
+#       endpoint: "otel-collector.observability.svc:4317"
+#       insecure: true
+#   sampleRate: 0.1
+
+# ─── Additional Arguments ────────────────────────────────────────────
+additionalArguments:
+  - "--global.checknewversion=false"
+  - "--global.sendanonymoususage=false"
+
+# ─── Environment Variables ───────────────────────────────────────────
+env: []
+  # - name: CF_DNS_API_TOKEN
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: cloudflare-credentials
+  #       key: api-token
+
+# ─── RBAC ─────────────────────────────────────────────────────────────
+rbac:
+  enabled: true
+
+serviceAccount:
+  enabled: true
+
+# ─── Pod Disruption Budget ────────────────────────────────────────────
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# ─── Topology & Scheduling ───────────────────────────────────────────
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+          topologyKey: kubernetes.io/hostname
+
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: traefik
+
+tolerations: []
+  # - key: "node-role.kubernetes.io/control-plane"
+  #   operator: "Exists"
+  #   effect: "NoSchedule"
+
+nodeSelector: {}
+  # kubernetes.io/os: linux
+
+# ─── Security Context ────────────────────────────────────────────────
+securityContext:
+  capabilities:
+    drop: [ALL]
+    add: [NET_BIND_SERVICE]
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+
+podSecurityContext:
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
+
+# ─── Plugins ─────────────────────────────────────────────────────────
+# experimental:
+#   plugins:
+#     bouncer:
+#       moduleName: github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
+#       version: v1.3.5

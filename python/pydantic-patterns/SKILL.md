@@ -486,3 +486,11 @@ except ValidationError as e:
 
 **`Optional[X]` changed in v2:** `Optional[str]` means the field accepts `str | None` but is
 still **required** unless you set `= None` as the default.
+
+## Resources
+
+**references/** — `advanced-patterns.md` (root types, recursive models, `create_model`, private attrs, context validators, custom encoders, msgpack/protobuf, extra-types, benchmarks) · `troubleshooting.md` (v1→v2 migration, validator ordering, circular refs, Optional/None, mutable defaults, FastAPI/mypy) · `settings-guide.md` (multi env files, secrets, custom sources, nested flattening, 12-factor, testing).
+
+**scripts/** — `pydantic-migrate.sh` (v1→v2 scanner + bump-pydantic) · `pydantic-schema-gen.sh` (JSON Schema from model) · `pydantic-validate-config.py` (validate JSON/YAML against model).
+
+**assets/** — `base_model_template.py` (v2 model template) · `settings_template.py` (BaseSettings template) · `fastapi_models.py` (request/response patterns) · `discriminated_union_example.py` (tagged unions + serialization).
