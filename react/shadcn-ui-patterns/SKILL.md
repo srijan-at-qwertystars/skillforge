@@ -498,3 +498,5 @@ const LoadingButton = React.forwardRef<HTMLButtonElement, LoadingButtonProps>(
   )
 )
 ```
+
+<!-- tested: pass -->

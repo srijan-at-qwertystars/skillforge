@@ -498,3 +498,5 @@ In proto3, numeric `repeated` fields default to packed encoding:
 - Use `optional` to skip serializing default values when using editions with explicit presence.
 
 ## Validation (protovalidate)
+
+<!-- tested: pass -->

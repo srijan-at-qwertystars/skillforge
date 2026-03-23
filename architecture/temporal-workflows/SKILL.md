@@ -491,3 +491,5 @@ Use OpenTelemetry interceptors for distributed tracing. Temporal SDKs provide bu
 | Hardcoded timeouts | Fragile under load | Make timeouts configurable; use appropriate timeout types |
 | Sharing mutable state across handlers | Race conditions during replay | Use workflow-local state; process signals sequentially |
 | Workflow doing too much | Long histories, complex replay | Decompose into child workflows or use continue-as-new |
+
+<!-- tested: pass -->
