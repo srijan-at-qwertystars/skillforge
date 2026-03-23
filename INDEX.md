@@ -11,3 +11,6 @@
 | typescript | [typescript-strict-migration](typescript/typescript-strict-migration/) | Strict flag reference, incremental migration strategies, error fixes, narrowing patterns, and CI integration |
 | devops | [github-actions-workflows](devops/github-actions-workflows/) | Workflow anatomy, reusable workflows, composite actions, matrix builds, caching, security, and OIDC |
 | api | [graphql-schema-design](api/graphql-schema-design/) | Schema-first vs code-first, Relay pagination, error handling, federation, DataLoader, and authorization patterns |
+| observability | [opentelemetry-instrumentation](observability/opentelemetry-instrumentation/) | OTel architecture, auto/manual instrumentation, Collector config, sampling, context propagation, and metrics API |
+| rust | [rust-error-handling](rust/rust-error-handling/) | Result/Option, thiserror/anyhow, custom error types, conversion chains, async errors, and library vs app design |
+| aws | [terraform-aws-patterns](aws/terraform-aws-patterns/) | Module design, S3 state management, VPC/ECS/Lambda/RDS patterns, lifecycle rules, IAM security, and CI/CD |
