@@ -497,4 +497,30 @@ Add to CI to prevent regression:
 11. **Remove escape hatches** — search for `@ts-ignore`, `@ts-expect-error`, `as any` and eliminate
 12. **Document** — update contributor guide with strict-mode expectations
 
+## References
+
+| File | When to read |
+|------|-------------|
+| `references/strict-flags-deep-dive.md` | Detailed reference for each strict flag with error patterns and before/after fixes |
+| `references/migration-strategies.md` | File-by-file, project references, ts-migrate, monorepo, team workflow approaches |
+| `references/type-narrowing-patterns.md` | All narrowing patterns: typeof, instanceof, discriminated unions, type guards, branded types, satisfies |
+
+## Scripts
+
+| Script | Usage |
+|--------|-------|
+| `scripts/strict-progress.sh` | Track migration progress — file counts, error grouping, suggests next files to tackle |
+| `scripts/enable-strict-incremental.sh <flag> [--dry-run\|--suppress]` | Enable a strict flag incrementally with optional `@ts-expect-error` suppression |
+| `scripts/find-any-types.sh` | Find all explicit/implicit `any` usage, categorize, suggest typed alternatives |
+
+## Assets
+
+| File | Description |
+|------|-------------|
+| `assets/tsconfig.strict.json` | Maximally strict tsconfig with all flags explicit and commented |
+| `assets/tsconfig.migration.json` | Migration-friendly tsconfig with flags commented out in recommended order |
+| `assets/type-utils.ts` | Utility types: branded types, assertNever, Result<T,E>, DeepRequired/Partial/Readonly |
+| `assets/eslint-strict.config.mjs` | ESLint flat config with strictTypeChecked, no-explicit-any, naming conventions |
+| `assets/migration-checklist.md` | Step-by-step 5-phase migration checklist |
+
 <!-- tested: pass -->

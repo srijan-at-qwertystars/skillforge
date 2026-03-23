@@ -1,0 +1,145 @@
+{
+  // ──────────────────────────────────────────────────────────────────
+  // Migration-Friendly tsconfig
+  //
+  // Start with strict: false and enable flags one at a time.
+  // Recommended order:
+  //   1. noImplicitAny
+  //   2. strictNullChecks
+  //   3. strictFunctionTypes
+  //   4. strictBindCallApply
+  //   5. strictPropertyInitialization (requires strictNullChecks)
+  //   6. noImplicitThis
+  //   7. useUnknownInCatchVariables
+  //   8. alwaysStrict
+  //   9. noUncheckedIndexedAccess
+  //  10. exactOptionalPropertyTypes
+  //  11. noImplicitOverride
+  //
+  // Once ALL flags above are enabled, replace them with "strict": true
+  // and keep the additional flags (9-11) explicitly.
+  // ──────────────────────────────────────────────────────────────────
+
+  // Extend a shared base config (adjust path to your organization's config).
+  // "extends": "@your-org/tsconfig/base.json",
+
+  "compilerOptions": {
+    // ── Master strict flag — keep OFF during migration ───────────
+    "strict": false,
+
+    // ── Step 1: noImplicitAny ────────────────────────────────────
+    // Typical fix: add explicit type annotations to function params,
+    // variables, and class members where TS can't infer the type.
+    // Errors look like: "Parameter 'x' implicitly has an 'any' type."
+    //
+    // "noImplicitAny": true,
+
+    // ── Step 2: strictNullChecks ─────────────────────────────────
+    // Typical fix: add null/undefined guards, use optional chaining,
+    // or update types to include `| null | undefined`.
+    // This is usually the highest-impact flag — expect many errors.
+    //
+    // "strictNullChecks": true,
+
+    // ── Step 3: strictFunctionTypes ──────────────────────────────
+    // Typical fix: update callback signatures to match expected types.
+    // Usually low error count; most issues are in event handlers.
+    //
+    // "strictFunctionTypes": true,
+
+    // ── Step 4: strictBindCallApply ──────────────────────────────
+    // Typical fix: ensure .bind/.call/.apply arguments match the
+    // function signature. Usually very few errors.
+    //
+    // "strictBindCallApply": true,
+
+    // ── Step 5: strictPropertyInitialization ─────────────────────
+    // Requires: strictNullChecks must be enabled first.
+    // Typical fix: initialize properties in the constructor, add
+    // definite assignment assertion (!) for DI/framework-managed props.
+    //
+    // "strictPropertyInitialization": true,
+
+    // ── Step 6: noImplicitThis ───────────────────────────────────
+    // Typical fix: add explicit `this` parameter to functions, or
+    // convert to arrow functions to capture the outer `this`.
+    //
+    // "noImplicitThis": true,
+
+    // ── Step 7: useUnknownInCatchVariables ───────────────────────
+    // Typical fix: narrow `catch(e)` with `if (e instanceof Error)`.
+    // Usually low error count.
+    //
+    // "useUnknownInCatchVariables": true,
+
+    // ── Step 8: alwaysStrict ─────────────────────────────────────
+    // Adds "use strict" to all output files. Rarely causes errors
+    // in modern code.
+    //
+    // "alwaysStrict": true,
+
+    // ── Step 9: noUncheckedIndexedAccess (beyond "strict") ──────
+    // Typical fix: add undefined checks after indexing into objects
+    // and arrays. High-impact — enable after core strict flags.
+    //
+    // "noUncheckedIndexedAccess": true,
+
+    // ── Step 10: exactOptionalPropertyTypes (beyond "strict") ───
+    // Typical fix: distinguish between `prop?: T` (maybe missing)
+    // and `prop: T | undefined` (present but maybe undefined).
+    //
+    // "exactOptionalPropertyTypes": true,
+
+    // ── Step 11: noImplicitOverride (beyond "strict") ───────────
+    // Typical fix: add `override` keyword to methods that override
+    // a base class method.
+    //
+    // "noImplicitOverride": true,
+
+    // ── Additional checks (enable when ready) ───────────────────
+    // "noUnusedLocals": true,
+    // "noUnusedParameters": true,
+    // "noImplicitReturns": true,
+    // "noFallthroughCasesInSwitch": true,
+
+    // ── Module resolution ───────────────────────────────────────
+    "moduleResolution": "bundler",
+    "module": "ESNext",
+    "target": "ES2022",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // ── Emit ─────────────────────────────────────────────────────
+    "declaration": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "skipLibCheck": true,
+
+    // ── Paths for gradual migration ─────────────────────────────
+    // Use path aliases to redirect imports from untyped legacy code
+    // to new strictly-typed wrappers or shims.
+    //
+    // Example workflow:
+    //   1. Create src/strict/ with strictly-typed versions of modules.
+    //   2. Map aliases so new code imports the strict versions.
+    //   3. Once a module is fully migrated, remove the alias.
+    "baseUrl": ".",
+    "paths": {
+      // Alias for strictly-typed modules during migration.
+      // "@strict/*": ["src/strict/*"],
+
+      // Example: redirect legacy utils to a strict wrapper.
+      // "@utils/*": ["src/strict/utils/*"],
+
+      // Keep your normal src alias working.
+      "@/*": ["src/*"]
+    }
+  },
+
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist"]
+}

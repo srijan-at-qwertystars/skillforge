@@ -1,0 +1,138 @@
+{
+  "compilerOptions": {
+    // ──────────────────────────────────────────────
+    // Strict Type-Checking (all flags explicit)
+    // ──────────────────────────────────────────────
+
+    // Master switch — we still list every sub-flag so the intent is clear
+    // and so removing "strict" never silently loosens the config.
+    "strict": true,
+
+    // Raises errors on expressions/declarations with an implied 'any' type.
+    // Forces you to annotate everything the compiler can't infer.
+    "noImplicitAny": true,
+
+    // Enables strict null checks: `null` and `undefined` are distinct types,
+    // not assignable to every other type. Catches the #1 source of runtime errors.
+    "strictNullChecks": true,
+
+    // Checks that functions are called with the correct number/types of arguments,
+    // including when using `bind`, `call`, and `apply`.
+    "strictBindCallApply": true,
+
+    // Ensures class properties match their declared types, even when assigned
+    // in the constructor via side-effect functions.
+    "strictPropertyInitialization": true,
+
+    // Makes function type parameter checking more precise. Without this,
+    // method-style declarations are bivariant (unsound).
+    "strictFunctionTypes": true,
+
+    // `this` in functions must have an explicit type annotation when its type
+    // can't be inferred — catches accidental `this` misuse.
+    "noImplicitThis": true,
+
+    // Causes catch-clause variables to default to `unknown` instead of `any`,
+    // forcing you to narrow before use.
+    "useUnknownInCatchVariables": true,
+
+    // Emits 'use strict' in every output file. Required for correct semantics
+    // in some environments and prevents silent sloppy-mode bugs.
+    "alwaysStrict": true,
+
+    // ──────────────────────────────────────────────
+    // Additional Strictness (beyond "strict": true)
+    // ──────────────────────────────────────────────
+
+    // Indexing into an object/array with a dynamic key returns `T | undefined`
+    // instead of `T`. Prevents the extremely common "accessed property might
+    // not exist" class of bugs.
+    "noUncheckedIndexedAccess": true,
+
+    // Differentiates between `{ x?: number }` (may be missing) and
+    // `{ x: number | undefined }` (must be present but can be undefined).
+    // More precise modeling of optional properties.
+    "exactOptionalPropertyTypes": true,
+
+    // Requires the `override` keyword on methods that override a base-class
+    // method. Catches accidental overrides and renames in base classes.
+    "noImplicitOverride": true,
+
+    // Errors on local variables that are declared but never read.
+    "noUnusedLocals": true,
+
+    // Errors on function parameters that are never read. Use `_prefix`
+    // convention for intentionally unused params.
+    "noUnusedParameters": true,
+
+    // Ensures every code path in a function returns a value when the return
+    // type is non-void. Catches forgotten return statements in branches.
+    "noFallthroughCasesInSwitch": true,
+
+    // Reports errors for fallthrough cases in switch statements.
+    "noImplicitReturns": true,
+
+    // Prevents importing the same file with different casing on
+    // case-insensitive file systems — avoids subtle cross-platform bugs.
+    "forceConsistentCasingInFileNames": true,
+
+    // ──────────────────────────────────────────────
+    // Module Resolution
+    // ──────────────────────────────────────────────
+
+    // "bundler" — best for projects using a bundler (Vite, webpack, esbuild).
+    //   Supports package.json "exports", bare specifiers, and extensionless
+    //   imports out of the box.
+    // Alternative: "node16" — use when targeting Node.js directly (ESM/CJS).
+    "moduleResolution": "bundler",
+
+    // Must be "ESNext" or "ES2022"+ when using moduleResolution "bundler".
+    "module": "ESNext",
+
+    // Target modern runtimes. Adjust down if supporting older environments.
+    "target": "ES2022",
+
+    // Needed for "bundler" moduleResolution — allows imports without extensions.
+    "allowImportingTsExtensions": false,
+
+    // Enables importing .json files as modules.
+    "resolveJsonModule": true,
+
+    // Treats each file as a separate module (required by most build tools).
+    "isolatedModules": true,
+
+    // ──────────────────────────────────────────────
+    // Emit
+    // ──────────────────────────────────────────────
+
+    // Generates .d.ts declaration files alongside compiled output.
+    "declaration": true,
+
+    // Generates source maps for debugging.
+    "sourceMap": true,
+
+    // Output directory for compiled files.
+    "outDir": "./dist",
+
+    // Root directory of source files.
+    "rootDir": "./src",
+
+    // Skips type-checking of declaration files in node_modules for speed.
+    // Turn off if you hit issues with library types.
+    "skipLibCheck": true,
+
+    // ──────────────────────────────────────────────
+    // Interop
+    // ──────────────────────────────────────────────
+
+    // Allows default imports from modules with no default export.
+    // Required for compatibility with many npm packages.
+    "allowSyntheticDefaultImports": true,
+
+    // Emits __importDefault/__importStar helpers for CJS/ESM interop.
+    "esModuleInterop": true
+  },
+
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}
