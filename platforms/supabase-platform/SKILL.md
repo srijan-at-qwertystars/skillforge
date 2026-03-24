@@ -494,3 +494,4 @@ Templates and boilerplate in `assets/`:
 - **[migration-template.sql](assets/migration-template.sql)** — SQL migration template with RLS policies, indexes, and updated_at trigger
 - **[edge-function-template.ts](assets/edge-function-template.ts)** — Deno edge function with CORS, auth, method routing, and structured errors
 - **[docker-compose.yml](assets/docker-compose.yml)** — Self-hosted Supabase stack (Postgres, GoTrue, PostgREST, Realtime, Storage, Kong, Studio)
+<!-- tested: pass -->

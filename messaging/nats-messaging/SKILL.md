@@ -461,3 +461,5 @@ Templates, configs, and client examples (`assets/` directory):
 | [assets/go-client-example.go](assets/go-client-example.go) | Go client: JetStream, reconnect handling, KV store, graceful shutdown |
 | [assets/python-client-example.py](assets/python-client-example.py) | Python async client: JetStream consumer, KV store, signal handling |
 | [assets/k8s-nats-helm-values.yaml](assets/k8s-nats-helm-values.yaml) | Helm values for production NATS on Kubernetes with HA, TLS, monitoring |
+
+<!-- tested: pass -->

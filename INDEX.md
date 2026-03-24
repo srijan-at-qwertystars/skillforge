@@ -161,6 +161,6 @@
 | databases | redis-patterns | Redis 7.x — data structures, caching, Pub/Sub, Streams, Cluster, Lua scripting, rate limiting | tested |
 | ci-cd | github-actions | GitHub Actions — workflows, triggers, matrix, reusable workflows, composite actions, security | tested |
 | frameworks | nextjs-app-router | Next.js 15 App Router — Server Components, Server Actions, caching, middleware, streaming | tested |
-| python | [django-patterns](python/django-patterns/) | Django web framework patterns — models, views, ORM, DRF, middleware, signals, deployment | enriched |
-| messaging | [nats-messaging](messaging/nats-messaging/) | NATS messaging system — pub/sub, JetStream, KV store, clustering, security | enriched |
-| platforms | [supabase-platform](platforms/supabase-platform/) | Supabase platform — auth, RLS, realtime, storage, edge functions, self-hosting | enriched |
+| python | [django-patterns](python/django-patterns/) | Django web framework patterns — models, views, ORM, DRF, middleware, signals, deployment | tested |
+| messaging | [nats-messaging](messaging/nats-messaging/) | NATS messaging system — pub/sub, JetStream, KV store, clustering, security | tested |
+| platforms | [supabase-platform](platforms/supabase-platform/) | Supabase platform — auth, RLS, realtime, storage, edge functions, self-hosting | tested |

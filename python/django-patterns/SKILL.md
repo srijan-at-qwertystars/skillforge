@@ -494,3 +494,4 @@ Reusable templates and configs in `assets/`:
 - **[docker-compose.yml](assets/docker-compose.yml)** — Django + PostgreSQL + Redis dev stack with health checks.
 - **[Dockerfile](assets/Dockerfile)** — Multi-stage build: base → development → production. Non-root user, proper layer caching.
 - **[conftest.py](assets/conftest.py)** — pytest fixtures: UserFactory, AdminFactory, api_client, authenticated_client, sample_image, mailoutbox.
+<!-- tested: pass -->
