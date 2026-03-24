@@ -1,463 +1,500 @@
 ---
 name: pulumi-iac
-description:
-  positive: "Use when user builds infrastructure with Pulumi, asks about Pulumi programs, component resources, stack references, Pulumi ESC (environments), automation API, or Pulumi with TypeScript/Python/Go."
-  negative: "Do NOT use for Terraform (use terraform-aws-patterns skill), CloudFormation, CDK, or Bicep."
+description: >
+  Use when writing Pulumi infrastructure-as-code programs, creating/editing Pulumi projects (Pulumi.yaml, Pulumi.*.yaml),
+  defining cloud resources with @pulumi/* packages or pulumi SDK imports, configuring stacks, managing state backends,
+  writing ComponentResources, using StackReferences, setting up Pulumi Automation API, writing CrossGuard policies,
+  importing existing cloud resources with pulumi import, or integrating Pulumi into CI/CD pipelines.
+  ALSO USE when user mentions pulumi new, pulumi up, pulumi preview, pulumi destroy, pulumi config, pulumi stack,
+  Pulumi ESC, or references pulumi.Input/Output/apply/interpolate types.
+  DO NOT USE for Terraform/OpenTofu HCL files, AWS CloudFormation templates, AWS CDK constructs, Ansible playbooks,
+  Chef/Puppet recipes, or general cloud CLI commands (aws/az/gcloud) without Pulumi context.
 ---
 
 # Pulumi Infrastructure as Code
 
-## Fundamentals
+## Philosophy
 
-A Pulumi **program** is code in TypeScript, Python, Go, Java, or C# that declares cloud resources. A **project** is a directory containing `Pulumi.yaml` and program code. A **stack** is an isolated instance of a project (e.g., `dev`, `staging`, `prod`).
+Pulumi uses real programming languages (TypeScript, Python, Go, C#, Java, YAML) to define cloud infrastructure. No DSL. Use loops, conditionals, functions, classes, packages, and IDE tooling. Infrastructure is code — test it, refactor it, review it like application code. Pulumi tracks desired vs actual state and performs diffing to apply minimal changes.
 
-**Resources** are the core primitive — each represents a cloud object (S3 bucket, Lambda, VPC). Pulumi tracks CRUD lifecycle automatically.
+## Project Setup
 
-**Inputs** are values passed to resource constructors. **Outputs** are asynchronous values resolved after provisioning (`pulumi.Output<T>`). Never treat Outputs as plain values — use `.apply()` or `pulumi.all()` to unwrap them.
-
-Export stack outputs with `pulumi.export()` (Python) or `export const` (TypeScript) to expose values for consumption by other stacks or CI/CD.
-
-```typescript
-// TypeScript: create a bucket and export its ARN
-import * as aws from "@pulumi/aws";
-
-const bucket = new aws.s3.Bucket("data", {
-  versioning: { enabled: true },
-});
-
-export const bucketArn = bucket.arn;
+### Initialize a project
+```bash
+pulumi new aws-typescript   # scaffolds TS project for AWS
+pulumi new azure-python      # Python + Azure
+pulumi new gcp-go            # Go + GCP
+pulumi new kubernetes-typescript
 ```
 
-```python
-# Python: same pattern
-import pulumi
-import pulumi_aws as aws
-
-bucket = aws.s3.Bucket("data", versioning={"enabled": True})
-pulumi.export("bucket_arn", bucket.arn)
+### Project structure
+```
+my-infra/
++-- Pulumi.yaml          # project metadata (name, runtime, description)
++-- Pulumi.dev.yaml      # stack-specific config
++-- index.ts             # entrypoint (TS) or __main__.py or main.go
++-- components/          # reusable ComponentResources
 ```
 
-## Resource Options
-
-Apply resource options as the last argument to any resource constructor:
-
-- **`dependsOn`** — explicit ordering when Pulumi cannot infer dependency.
-- **`protect`** — prevent accidental deletion (`protect: true`).
-- **`parent`** — set logical parent for grouping in the resource tree.
-- **`provider`** — override which provider instance manages the resource.
-- **`aliases`** — preserve state when renaming or refactoring resources.
-- **`deleteBeforeReplace`** — force delete-then-create instead of create-then-delete.
-- **`ignoreChanges`** — skip drift detection on specified properties.
-- **`retainOnDelete`** — remove from state without destroying the cloud resource.
-
-```typescript
-const db = new aws.rds.Instance("main", { /* ... */ }, {
-  protect: true,
-  dependsOn: [vpc],
-  ignoreChanges: ["tags"],
-});
+### Pulumi.yaml
+```yaml
+name: my-infra
+runtime: nodejs          # nodejs | python | go | dotnet | java | yaml
+description: Core infrastructure
 ```
 
-## Component Resources
+### Stacks
+```bash
+pulumi stack init dev && pulumi stack init prod && pulumi stack select dev && pulumi stack ls
+```
+Each stack has independent state, config, and secrets. Naming: `org/project/stack`.
 
-Use component resources to encapsulate related infrastructure into reusable, self-contained units. Always call `registerOutputs()` at the end.
+## TypeScript/JavaScript Provider Usage
 
+### AWS
 ```typescript
 import * as pulumi from "@pulumi/pulumi";
 import * as aws from "@pulumi/aws";
 
-interface VpcArgs {
-  cidrBlock: string;
-  azCount: number;
-}
-
-class Vpc extends pulumi.ComponentResource {
-  public readonly vpcId: pulumi.Output<string>;
-  public readonly subnetIds: pulumi.Output<string>[];
-
-  constructor(name: string, args: VpcArgs, opts?: pulumi.ComponentResourceOptions) {
-    super("custom:network:Vpc", name, {}, opts);
-
-    const vpc = new aws.ec2.Vpc(`${name}-vpc`, {
-      cidrBlock: args.cidrBlock,
-    }, { parent: this });
-
-    this.vpcId = vpc.id;
-    this.subnetIds = [];
-
-    for (let i = 0; i < args.azCount; i++) {
-      const subnet = new aws.ec2.Subnet(`${name}-subnet-${i}`, {
-        vpcId: vpc.id,
-        cidrBlock: `10.0.${i}.0/24`,
-      }, { parent: this });
-      this.subnetIds.push(subnet.id);
-    }
-
-    this.registerOutputs({ vpcId: this.vpcId });
-  }
-}
-
-const network = new Vpc("prod", { cidrBlock: "10.0.0.0/16", azCount: 3 });
-export const vpcId = network.vpcId;
+const bucket = new aws.s3.Bucket("my-bucket", {
+    versioning: { enabled: true }, tags: { Environment: "dev" },
+});
+export const bucketName = bucket.id;
 ```
+
+### Azure
+```typescript
+import * as azure from "@pulumi/azure-native";
+const rg = new azure.resources.ResourceGroup("rg", { location: "WestUS2" });
+const sa = new azure.storage.StorageAccount("sa", {
+    resourceGroupName: rg.name,
+    sku: { name: azure.storage.SkuName.Standard_LRS },
+    kind: azure.storage.Kind.StorageV2,
+});
+```
+
+### GCP
+```typescript
+import * as gcp from "@pulumi/gcp";
+const bucket = new gcp.storage.Bucket("my-bucket", { location: "US", uniformBucketLevelAccess: true });
+```
+
+### Kubernetes
+```typescript
+import * as k8s from "@pulumi/kubernetes";
+
+const deployment = new k8s.apps.v1.Deployment("app", {
+    metadata: { namespace: "my-app" },
+    spec: {
+        replicas: 3,
+        selector: { matchLabels: { app: "my-app" } },
+        template: {
+            metadata: { labels: { app: "my-app" } },
+            spec: { containers: [{ name: "app", image: "nginx:1.25", ports: [{ containerPort: 80 }] }] },
+        },
+    },
+});
+```
+
+## Python Provider Usage
 
 ```python
 import pulumi
 import pulumi_aws as aws
 
-class Vpc(pulumi.ComponentResource):
-    vpc_id: pulumi.Output[str]
-
-    def __init__(self, name: str, cidr_block: str, az_count: int,
-                 opts: pulumi.ResourceOptions = None):
-        super().__init__("custom:network:Vpc", name, None, opts)
-
-        vpc = aws.ec2.Vpc(f"{name}-vpc", cidr_block=cidr_block,
-                          opts=pulumi.ResourceOptions(parent=self))
-        self.vpc_id = vpc.id
-        self.subnet_ids = []
-
-        for i in range(az_count):
-            subnet = aws.ec2.Subnet(f"{name}-subnet-{i}",
-                vpc_id=vpc.id,
-                cidr_block=f"10.0.{i}.0/24",
-                opts=pulumi.ResourceOptions(parent=self))
-            self.subnet_ids.append(subnet.id)
-
-        self.register_outputs({"vpc_id": self.vpc_id})
+bucket = aws.s3.Bucket("my-bucket",
+    versioning=aws.s3.BucketVersioningArgs(enabled=True),
+    tags={"Environment": "dev"})
+instance = aws.ec2.Instance("web-server",
+    instance_type="t3.micro", ami="ami-0c55b159cbfafe1f0", tags={"Name": "web-server"})
+pulumi.export("bucket_name", bucket.id)
+pulumi.export("instance_ip", instance.public_ip)
 ```
+
+## Go Provider Usage
+
+```go
+package main
+import (
+    "github.com/pulumi/pulumi-aws/sdk/v6/go/aws/s3"
+    "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
+)
+func main() {
+    pulumi.Run(func(ctx *pulumi.Context) error {
+        bucket, err := s3.NewBucket(ctx, "my-bucket", &s3.BucketArgs{
+            Tags: pulumi.StringMap{"Environment": pulumi.String("dev")},
+        })
+        if err != nil { return err }
+        ctx.Export("bucketName", bucket.ID())
+        return nil
+    })
+}
+```
+
+## Core Concepts
+
+### Resources
+Every cloud object is a resource. Args: logical name (unique per stack), properties, resource options.
+```typescript
+const vpc = new aws.ec2.Vpc("main-vpc", { cidrBlock: "10.0.0.0/16" }, { protect: true, ignoreChanges: ["tags"] });
+```
+Options: `parent`, `dependsOn`, `protect`, `ignoreChanges`, `provider`, `deleteBeforeReplace`, `aliases`, `import`, `retainOnDelete`.
+
+### Outputs and Inputs
+Outputs are values resolved asynchronously after deployment. Inputs accept raw values or Outputs.
+
+```typescript
+const bucketArn = bucket.arn;                           // Output<string>
+const upperName = bucket.id.apply(id => id.toUpperCase());
+const endpoint = pulumi.interpolate`https://${bucket.bucketDomainName}/index.html`;
+const combined = pulumi.all([bucket.id, bucket.arn]).apply(([id, arn]) => `${id}: ${arn}`);
+```
+
+**Critical rule**: Never call `.apply()` to create new resources -- causes ordering issues. Pass outputs directly as inputs instead.
+
+- `apply(fn)`: transform an output value. Use when you need logic beyond string concatenation.
+- `interpolate`: tagged template literal for string building with outputs. Prefer for simple string composition.
 
 ## Stack References
 
-Share outputs across stacks without hardcoding values. The producing stack exports; the consuming stack reads via `StackReference`.
-
+Share outputs across stacks:
 ```typescript
-// Consumer stack reads from the network stack
-const networkStack = new pulumi.StackReference("org/network/prod");
-const vpcId = networkStack.getOutput("vpcId");
-const privateSubnetIds = networkStack.getOutput("privateSubnetIds");
+const networkStack = new pulumi.StackReference("org/network-infra/dev");
+const vpcId = networkStack.getOutput("vpcId");          // Output<any>
+const subnetId = networkStack.requireOutput("subnetId"); // throws if missing
+const instance = new aws.ec2.Instance("app", {
+    subnetId, vpcSecurityGroupIds: [networkStack.getOutput("sgId")],
+    instanceType: "t3.micro", ami: "ami-0c55b159cbfafe1f0",
+});
+```
+Format: `org/project/stack` or `project/stack` for personal orgs.
 
-const cluster = new aws.ecs.Cluster("app", {});
+## Component Resources
+
+Build reusable abstractions by extending `ComponentResource`:
+```typescript
+interface VpcArgs { cidrBlock: string; azCount: number; }
+
+class Vpc extends pulumi.ComponentResource {
+    public readonly vpcId: pulumi.Output<string>;
+    public readonly subnetIds: pulumi.Output<string>[];
+
+    constructor(name: string, args: VpcArgs, opts?: pulumi.ComponentResourceOptions) {
+        super("custom:network:Vpc", name, args, opts);
+        const vpc = new aws.ec2.Vpc(`${name}-vpc`, {
+            cidrBlock: args.cidrBlock, enableDnsSupport: true, enableDnsHostnames: true,
+        }, { parent: this });
+        this.vpcId = vpc.id;
+        this.subnetIds = [];
+        for (let i = 0; i < args.azCount; i++) {
+            const subnet = new aws.ec2.Subnet(`${name}-subnet-${i}`, {
+                vpcId: vpc.id, cidrBlock: `10.0.${i}.0/24`,
+            }, { parent: this });
+            this.subnetIds.push(subnet.id);
+        }
+        this.registerOutputs({ vpcId: this.vpcId });
+    }
+}
+
+// Usage
+const network = new Vpc("prod", { cidrBlock: "10.0.0.0/16", azCount: 3 });
 ```
 
-```python
-network = pulumi.StackReference("org/network/prod")
-vpc_id = network.get_output("vpc_id")
+Always pass `{ parent: this }` to child resources. Always call `this.registerOutputs()`.
+
+## Config and Secrets
+
+### CLI
+```bash
+pulumi config set aws:region us-east-1
+pulumi config set appName my-app
+pulumi config set --secret dbPassword S3cretP@ss!
+pulumi config set --secret apiKey sk-abc123
 ```
 
-Design multi-stack architectures in layers: **network → data → compute → app**. Each layer is a separate project/stack. Keep cross-stack surface area minimal — export only what consumers need.
-
-## Configuration and Secrets
-
-Use `pulumi config set` to store per-stack config in `Pulumi.<stack>.yaml`. Access in code:
-
+### Code
 ```typescript
 const config = new pulumi.Config();
-const instanceType = config.require("instanceType");       // plain
-const dbPassword = config.requireSecret("dbPassword");     // encrypted Output
+const appName = config.require("appName");              // throws if missing
+const dbPassword = config.requireSecret("dbPassword");  // Output<string>, encrypted
+const optional = config.get("optional") ?? "default";
+const awsConfig = new pulumi.Config("aws");             // namespaced config
+const region = awsConfig.require("region");
 ```
 
-```python
-config = pulumi.Config()
-instance_type = config.require("instanceType")
-db_password = config.require_secret("dbPassword")
+### Secrets providers
+```bash
+pulumi stack init dev --secrets-provider="awskms://alias/pulumi"
+pulumi stack init dev --secrets-provider="azurekeyvault://myVault.vault.azure.net/keys/myKey"
+pulumi stack init dev --secrets-provider="gcpkms://projects/p/locations/l/keyRings/r/cryptoKeys/k"
+pulumi stack init dev --secrets-provider="passphrase"
 ```
 
-Set secrets via CLI: `pulumi config set --secret dbPassword hunter2`.
+## State Backends
 
-### Pulumi ESC (Environments, Secrets, Configuration)
-
-Pulumi ESC centralizes secrets and environment config across stacks and applications. Define environments in YAML with composition via imports:
-
-```yaml
-# ESC environment definition
-imports:
-  - common/base
-values:
-  region: us-west-2
-  dbPassword:
-    fn::secret: "super-secure"
-environmentVariables:
-  AWS_REGION: ${region}
-pulumiConfig:
-  aws:region: ${region}
-  app:dbPassword: ${dbPassword}
+```bash
+pulumi login                          # Pulumi Cloud (default, recommended for teams)
+pulumi login s3://my-pulumi-state     # AWS S3
+pulumi login azblob://my-container    # Azure Blob Storage
+pulumi login gs://my-pulumi-state     # Google Cloud Storage
+pulumi login --local                  # Local filesystem
 ```
 
-Link ESC environments to stacks: `pulumi config env add myorg/prod`. ESC integrates with AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, HashiCorp Vault, and 1Password.
-
-Use the `esc` CLI to inject secrets into any command: `esc run myorg/prod -- ./deploy.sh`.
+State stores the mapping between logical resource names and cloud resource IDs. Never edit state files manually. Use `pulumi state delete` or `pulumi state unprotect` for state surgery.
 
 ## Providers
 
-Pulumi supports AWS, Azure, GCP, Kubernetes, and 100+ providers. Configure via stack config or explicit provider instances.
-
+### Explicit provider configuration
 ```typescript
-// Explicit provider for cross-account/region deployments
-const usWest = new aws.Provider("us-west", { region: "us-west-2" });
-const bucket = new aws.s3.Bucket("west-bucket", {}, { provider: usWest });
-
-// Kubernetes provider from kubeconfig
-const k8s = new k8s.Provider("cluster", { kubeconfig: kubeConfigOutput });
+const euProvider = new aws.Provider("eu-provider", { region: "eu-west-1", profile: "eu-account" });
+const bucket = new aws.s3.Bucket("eu-bucket", { tags: { Region: "eu" } }, { provider: euProvider });
 ```
 
-Use explicit providers when deploying to multiple regions, accounts, or clusters within a single stack. Set default provider config via `pulumi config set aws:region us-east-1`.
-
-## State Management
-
-Pulumi state tracks all managed resources. Backend options:
-
-| Backend | Command | Use Case |
-|---------|---------|----------|
-| Pulumi Cloud | `pulumi login` (default) | Teams, RBAC, audit, secrets |
-| S3 | `pulumi login s3://my-bucket` | Self-managed, AWS-native |
-| Azure Blob | `pulumi login azblob://container` | Self-managed, Azure-native |
-| Local | `pulumi login --local` | Development only |
-
-Export state: `pulumi stack export > state.json`. Import state: `pulumi stack import < state.json`. Import existing cloud resources: `pulumi import aws:s3/bucket:Bucket myBucket my-bucket-id`.
-
-Never edit state files manually. Use `pulumi state delete` to remove orphaned resources.
-
-## TypeScript Patterns
-
-Use `pulumi.interpolate` for safe string interpolation with Outputs:
-
+### Multi-cloud in one program
 ```typescript
-const url = pulumi.interpolate`https://${lb.dnsName}:${port}/api`;
+const awsBucket = new aws.s3.Bucket("aws-bucket");
+const gcpBucket = new gcp.storage.Bucket("gcp-bucket", { location: "US" });
 ```
 
-Use `pulumi.all()` to combine multiple Outputs:
+### Default providers
+If no explicit provider is specified, Pulumi uses the default provider configured via environment variables or `pulumi config set aws:region`.
 
+## Dynamic Providers
+
+Create custom resources with arbitrary CRUD logic:
 ```typescript
-const connectionString = pulumi.all([db.endpoint, db.port, db.name])
-  .apply(([endpoint, port, name]) => `postgresql://${endpoint}:${port}/${name}`);
-```
-
-Never create resources inside `.apply()` — it breaks the dependency graph and preview. Pass Outputs directly as resource inputs instead.
-
-Use async/await in the top-level program. Pulumi programs run to completion, building a resource graph, then the engine executes operations.
-
-## Python Patterns
-
-```python
-# Output.all for combining values
-conn_str = pulumi.Output.all(db.endpoint, db.port, db.name).apply(
-    lambda args: f"postgresql://{args[0]}:{args[1]}/{args[2]}"
-)
-
-# Output.concat for string joining
-url = pulumi.Output.concat("https://", lb.dns_name, "/api")
-
-# Conditional resources
-config = pulumi.Config()
-if config.get_bool("enableMonitoring"):
-    dashboard = aws.cloudwatch.Dashboard("main", dashboard_body="...")
-```
-
-Use type hints (`pulumi.Output[str]`) on component resource fields. Use `__all__` in `__init__.py` when packaging components as Python modules.
-
-## Go Patterns
-
-```go
-// Component resource in Go
-type MyDatabase struct {
-    pulumi.ResourceState
-    Endpoint pulumi.StringOutput `pulumi:"endpoint"`
-    Port     pulumi.IntOutput    `pulumi:"port"`
-}
-
-func NewMyDatabase(ctx *pulumi.Context, name string, opts ...pulumi.ResourceOption) (*MyDatabase, error) {
-    comp := &MyDatabase{}
-    err := ctx.RegisterComponentResource("custom:data:MyDatabase", name, comp, opts...)
-    if err != nil {
-        return nil, err
-    }
-
-    db, err := rds.NewInstance(ctx, name+"-db", &rds.InstanceArgs{
-        InstanceClass: pulumi.String("db.t3.micro"),
-        Engine:        pulumi.String("postgres"),
-    }, pulumi.Parent(comp))
-    if err != nil {
-        return nil, err
-    }
-
-    comp.Endpoint = db.Endpoint
-    comp.Port = db.Port
-    ctx.RegisterResourceOutputs(comp, pulumi.Map{
-        "endpoint": db.Endpoint,
-        "port":     db.Port,
-    })
-    return comp, nil
-}
-```
-
-Use `ApplyT` for typed transformations. Handle errors explicitly — Go Pulumi programs return `error` from every resource constructor.
-
-## Testing
-
-### Unit Testing with Mocks
-
-Mock the Pulumi engine to test resource creation logic without deploying:
-
-```typescript
-import * as pulumi from "@pulumi/pulumi";
-
-pulumi.runtime.setMocks({
-  newResource: (args) => ({ id: `${args.name}-id`, state: args.inputs }),
-  call: (args) => ({ }),
-});
-
-describe("S3 Bucket", () => {
-  let bucket: typeof import("./index");
-  beforeAll(async () => { bucket = await import("./index"); });
-
-  it("has versioning enabled", (done) => {
-    bucket.dataBucket.versioning.apply(v => {
-      expect(v?.enabled).toBe(true);
-      done();
-    });
-  });
-});
-```
-
-```python
-# Python unit test with mocks
-import pulumi
-
-class MyMocks(pulumi.runtime.Mocks):
-    def new_resource(self, args):
-        return [args.name + "_id", args.inputs]
-    def call(self, args):
-        return {}
-
-pulumi.runtime.set_mocks(MyMocks())
-
-from myproject import bucket  # import after setting mocks
-
-@pulumi.runtime.test
-def test_versioning():
-    def check(versioning):
-        assert versioning["enabled"] is True
-    return bucket.versioning.apply(check)
-```
-
-### Integration Testing
-
-Run `pulumi up` in a test stack, validate deployed resources with cloud SDK calls, then `pulumi destroy`. Use ephemeral stacks for CI.
-
-### Property Testing
-
-Use CrossGuard policy packs (see Policy as Code) to validate resource properties at preview time across all stacks.
-
-## Automation API
-
-Embed Pulumi in applications, CLIs, or services for programmatic infrastructure management:
-
-```typescript
-import { LocalWorkspace } from "@pulumi/pulumi/automation";
-
-async function deploy() {
-  const stack = await LocalWorkspace.createOrSelectStack({
-    stackName: "dev",
-    projectName: "my-service",
-    program: async () => {
-      const bucket = new aws.s3.Bucket("auto-bucket");
-      return { bucketName: bucket.id };
+const myResourceProvider: pulumi.dynamic.ResourceProvider = {
+    async create(inputs) {
+        const result = await callExternalApi(inputs.name);
+        return { id: result.id, outs: { endpoint: result.endpoint } };
     },
-  });
+    async update(id, olds, news) {
+        return { outs: { endpoint: (await updateExternalApi(id, news.name)).endpoint } };
+    },
+    async delete(id, props) { await deleteExternalApi(id); },
+};
 
-  await stack.setConfig("aws:region", { value: "us-west-2" });
-
-  const preview = await stack.preview({ onOutput: console.log });
-  console.log(`Changes: ${preview.changeSummary}`);
-
-  const result = await stack.up({ onOutput: console.log });
-  console.log(`Outputs: ${JSON.stringify(result.outputs)}`);
+class MyResource extends pulumi.dynamic.Resource {
+    public readonly endpoint!: pulumi.Output<string>;
+    constructor(name: string, args: { name: string }, opts?: pulumi.CustomResourceOptions) {
+        super(myResourceProvider, name, { endpoint: undefined, ...args }, opts);
+    }
 }
 ```
 
-Use cases for Automation API:
-- **Self-service portals** — let users provision infrastructure via a web UI.
-- **Multi-tenant SaaS** — spin up per-customer stacks programmatically.
-- **CI/CD orchestration** — sequence multi-stack deployments with custom logic.
-- **Drift detection** — run `stack.preview()` on a schedule and alert on changes.
-
-Use `LocalWorkspace` for file-based projects or inline programs. Use `stack.up()`, `stack.preview()`, `stack.destroy()`, `stack.refresh()` for lifecycle operations.
+Use dynamic providers for resources not covered by existing providers (internal APIs, custom SaaS integrations).
 
 ## Policy as Code (CrossGuard)
-
-Write compliance rules that run during `pulumi preview` and `pulumi up`:
 
 ```typescript
 import { PolicyPack, validateResourceOfType } from "@pulumi/policy";
 import * as aws from "@pulumi/aws";
 
-new PolicyPack("security", {
-  policies: [
-    {
-      name: "s3-no-public-read",
-      description: "S3 buckets must not have public-read ACL.",
-      enforcementLevel: "mandatory",  // "advisory" | "mandatory" | "disabled"
-      validateResource: validateResourceOfType(aws.s3.Bucket, (bucket, args, reportViolation) => {
-        if (bucket.acl === "public-read") {
-          reportViolation("S3 bucket must not be publicly readable.");
-        }
-      }),
-    },
-    {
-      name: "require-tags",
-      description: "All resources must have a 'team' tag.",
-      enforcementLevel: "mandatory",
-      validateResource: (args, reportViolation) => {
-        if (args.props.tags && !args.props.tags["team"]) {
-          reportViolation("Missing required 'team' tag.");
-        }
-      },
-    },
-  ],
+new PolicyPack("aws-security", {
+    policies: [{
+        name: "no-public-s3",
+        description: "S3 buckets must not have public ACLs",
+        enforcementLevel: "mandatory",  // "advisory" | "mandatory" | "disabled"
+        validateResource: validateResourceOfType(aws.s3.Bucket, (bucket, args, reportViolation) => {
+            if (bucket.acl === "public-read" || bucket.acl === "public-read-write") {
+                reportViolation("S3 bucket must not be publicly readable.");
+            }
+        }),
+    }, {
+        name: "require-tags",
+        description: "All resources must have required tags",
+        enforcementLevel: "mandatory",
+        validateResource: (args, reportViolation) => {
+            if (args.props.tags && !args.props.tags["CostCenter"]) {
+                reportViolation("Resource must have a CostCenter tag.");
+            }
+        },
+    }],
 });
 ```
 
-Enforcement levels: `advisory` (warn), `mandatory` (block), `disabled`. Run locally: `pulumi preview --policy-pack ./policy`. Publish to Pulumi Cloud for org-wide enforcement.
-
-## Migration from Terraform
-
-### Convert HCL to Pulumi
-
+### Run policies
 ```bash
-# Convert a Terraform project to TypeScript
-pulumi convert --from terraform --language typescript
-
-# Or target Python/Go
-pulumi convert --from terraform --language python
+pulumi preview --policy-pack ./policy-pack
+pulumi up --policy-pack ./policy-pack
 ```
 
-Review and refine generated code — conversion handles most resources but may need manual adjustment for complex modules or provisioners.
+## Testing
 
-### Import Existing Resources
+### Unit tests (TypeScript with mocks)
+```typescript
+import * as pulumi from "@pulumi/pulumi";
 
-```bash
-# Import a single resource
-pulumi import aws:s3/bucket:Bucket myBucket my-existing-bucket-name
+pulumi.runtime.setMocks({
+    newResource: (args: pulumi.runtime.MockResourceArgs) => ({
+        id: `${args.name}-id`, state: args.inputs,
+    }),
+    call: (args: pulumi.runtime.MockCallArgs) => args.inputs,
+});
 
-# Bulk import from Terraform state
-pulumi import --from terraform ./terraform.tfstate
+describe("infrastructure", () => {
+    let infra: typeof import("./index");
+    beforeAll(async () => { infra = await import("./index"); });
+
+    it("bucket should have versioning enabled", (done) => {
+        infra.bucket.versioning.apply(v => { expect(v?.enabled).toBe(true); done(); });
+    });
+});
 ```
 
-### Coexistence Strategy
+### Unit tests (Python with mocks)
+```python
+import pulumi
 
-Run Terraform and Pulumi side-by-side during migration. Use Terraform remote state data sources in Pulumi via the `terraform` provider, or read Terraform outputs via stack references. Migrate stack-by-stack: network first, then data, then compute.
+class MyMocks(pulumi.runtime.Mocks):
+    def new_resource(self, args): return [args.name + "_id", args.inputs]
+    def call(self, args): return {}
 
-## Anti-Patterns
+pulumi.runtime.set_mocks(MyMocks())
+from my_infra import bucket  # import after setting mocks
 
-- **Hardcoded names** — Use auto-naming (Pulumi default) or `pulumi.interpolate` with stack/project name. Hardcoded names cause collisions across stacks.
-- **Missing stack outputs** — Always export values other stacks or humans need. Silent infrastructure is hard to integrate.
-- **Monolithic stacks** — Split stacks by lifecycle and team ownership. A single stack with 500+ resources is slow and risky to deploy.
-- **Resources inside `.apply()`** — Breaks the dependency graph, prevents accurate previews, causes race conditions.
-- **Secrets in plain config** — Always use `--secret` flag or Pulumi ESC. Never store credentials in `Pulumi.<stack>.yaml` as plaintext.
-- **No state backend for teams** — Local state does not support collaboration. Use Pulumi Cloud or a remote backend.
-- **Ignoring `protect` for stateful resources** — Databases, storage, and DNS should always set `protect: true`.
-- **Copy-paste infrastructure** — Extract repeated patterns into component resources. Duplication leads to config drift.
-- **Skipping `pulumi preview`** — Always preview before `up` in CI/CD. Treat preview output as a change plan.
+@pulumi.runtime.test
+def test_bucket_tags():
+    def check_tags(tags): assert "Environment" in tags
+    return bucket.tags.apply(check_tags)
+```
 
-<!-- tested: pass -->
+### Integration tests
+Use the Automation API to deploy real infrastructure and run assertions:
+```typescript
+const stack = await LocalWorkspace.createOrSelectStack({
+    stackName: "test", projectName: "integration-test",
+    program: async () => { /* inline program */ },
+});
+await stack.up();
+const outputs = await stack.outputs();
+assert(outputs["url"].value.startsWith("https://"));
+await stack.destroy();
+```
+
+### Property tests
+CrossGuard policies act as property tests -- they validate invariants across all resources in a stack during preview and update.
+
+## Import Existing Resources
+
+```bash
+pulumi import aws:s3/bucket:Bucket my-bucket my-existing-bucket-name
+pulumi import aws:ec2/instance:Instance web i-1234567890abcdef0
+pulumi import -f resources.json                                      # bulk import
+pulumi import aws:s3/bucket:Bucket my-bucket my-bucket-name --out index.ts  # code-gen only
+```
+
+After import, paste generated code into your program. Import in code with resource options:
+```typescript
+const bucket = new aws.s3.Bucket("my-bucket", {
+    bucket: "my-existing-bucket-name",
+}, { import: "my-existing-bucket-name" });  // remove after first pulumi up
+```
+
+## Automation API
+
+Drive Pulumi programmatically without the CLI:
+
+```typescript
+import { LocalWorkspace } from "@pulumi/pulumi/automation";
+import * as aws from "@pulumi/aws";
+
+const program = async () => {
+    const bucket = new aws.s3.Bucket("auto-bucket");
+    return { bucketName: bucket.id };
+};
+
+const stack = await LocalWorkspace.createOrSelectStack({
+    stackName: "dev", projectName: "auto-deploy", program,
+});
+await stack.setConfig("aws:region", { value: "us-west-2" });
+const upResult = await stack.up({ onOutput: console.log });
+console.log("Outputs:", upResult.outputs);
+```
+
+Use cases: self-service infrastructure portals, multi-tenant provisioning, integration tests, custom deployment pipelines.
+
+## CI/CD Integration
+
+### GitHub Actions
+```yaml
+name: Pulumi
+on: { push: { branches: [main] }, pull_request: {} }
+jobs:
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm ci
+      - uses: pulumi/actions@v5
+        with: { command: preview, stack-name: org/project/dev, comment-on-pr: true }
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm ci
+      - uses: pulumi/actions@v5
+        with: { command: up, stack-name: org/project/prod }
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+```
+
+### GitLab CI
+```yaml
+pulumi-preview:
+  stage: preview
+  image: pulumi/pulumi-nodejs:latest
+  script: [npm ci, pulumi stack select dev, pulumi preview]
+  only: [merge_requests]
+
+pulumi-deploy:
+  stage: deploy
+  image: pulumi/pulumi-nodejs:latest
+  script: [npm ci, pulumi stack select prod, pulumi up --yes]
+  only: [main]
+```
+
+## Pulumi vs Terraform
+
+| Aspect | Pulumi | Terraform |
+|--------|--------|-----------|
+| Language | TypeScript, Python, Go, C#, Java, YAML | HCL (DSL) |
+| Loops/conditionals | Native language constructs | count, for_each, dynamic blocks |
+| Testing | Standard test frameworks | terraform test (limited) |
+| State | Pulumi Cloud, S3, Azure, GCS, local | Terraform Cloud, S3, Azure, GCS, local |
+| Reuse | Classes, functions, packages | Modules |
+| Secrets | Built-in encryption | Requires external tooling |
+| IDE support | Full (autocompletion, types, refactoring) | Limited (HCL extensions) |
+| Provider ecosystem | 150+ (many bridged from Terraform) | 3000+ |
+
+Pulumi can consume Terraform providers via the bridge. Migrate with `pulumi convert --from terraform`.
+
+## Common Pitfalls
+
+**Circular dependencies**: Never create resource A depending on B which depends on A. Use `dependsOn` only when implicit Output dependencies are insufficient.
+
+**Using apply() to create resources**: Do NOT create resources inside `.apply()`. Pass Outputs directly as inputs.
+```typescript
+// WRONG
+bucket.id.apply(id => new aws.s3.BucketObject("obj", { bucket: id }));
+// CORRECT
+new aws.s3.BucketObject("obj", { bucket: bucket.id, key: "index.html", source: new pulumi.asset.FileAsset("index.html") });
+```
+
+**Secret leakage**: Use `config.requireSecret()` for sensitive values. Use `pulumi.secret()` to mark outputs. Never log secret values.
+
+**State drift**: Run `pulumi refresh` to detect drift. Use `pulumi up --refresh` to refresh and update in one step.
+
+**Naming collisions**: Pulumi auto-names with random suffixes. Set explicit names but ensure uniqueness across stacks.
+
+**Forgetting registerOutputs**: Always call `this.registerOutputs()` in ComponentResource constructors.
+
+**Import cleanup**: Remove `{ import: "..." }` from resource options after the first `pulumi up`.
