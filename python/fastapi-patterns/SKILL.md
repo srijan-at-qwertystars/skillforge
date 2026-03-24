@@ -1,35 +1,22 @@
 ---
 name: fastapi-patterns
-description:
-  positive: "Use when user builds APIs with FastAPI, asks about path operations, dependency injection, Pydantic models, response models, middleware, background tasks, WebSockets, or FastAPI deployment."
-  negative: "Do NOT use for Django REST Framework, Flask, or general Python web (use python-async-concurrency for async patterns without FastAPI context)."
+description: >
+  USE when writing FastAPI web applications, REST APIs, ASGI services, or async Python web servers.
+  TRIGGER on imports of fastapi, starlette, uvicorn, or usage of APIRouter, Depends, HTTPException,
+  BackgroundTasks, WebSocket, UploadFile, OAuth2PasswordBearer, or FastAPI app instantiation.
+  TRIGGER when user asks to build an API, web service, endpoint, or microservice in Python using FastAPI.
+  DO NOT trigger for Pydantic-only validation or schemas without FastAPI (use pydantic-patterns instead).
+  DO NOT trigger for Django, Flask, or other Python web frameworks.
+  DO NOT trigger for general async Python without FastAPI context.
+  Covers: path operations, dependency injection, auth, middleware, WebSockets, file uploads,
+  database integration, testing, deployment, project structure, and performance patterns.
 ---
 
-# FastAPI Patterns & Best Practices
+# FastAPI Patterns
 
-## App Structure
+## App Instantiation and Lifespan
 
-Organize by domain, not file type. Each domain module owns its router, schemas, models, and service layer.
-
-```
-app/
-├── main.py              # App factory, lifespan
-├── core/
-│   ├── config.py        # BaseSettings, env loading
-│   └── security.py      # Auth helpers
-├── users/
-│   ├── router.py
-│   ├── schemas.py       # Pydantic models
-│   ├── models.py        # ORM models
-│   ├── service.py       # Business logic
-│   └── repository.py    # DB access
-└── db/
-    └── session.py       # Engine, session factory
-```
-
-### Lifespan Events
-
-Replace deprecated `@app.on_event`. Use `asynccontextmanager`:
+Create the app with a lifespan context manager. Never use deprecated `@app.on_event`.
 
 ```python
 from contextlib import asynccontextmanager
@@ -37,309 +24,301 @@ from fastapi import FastAPI
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.db_pool = await create_pool()  # Startup
+    # Startup: init DB pools, load ML models, start caches
+    app.state.db_engine = create_async_engine(settings.database_url)
     yield
-    await app.state.db_pool.close()          # Shutdown
+    # Shutdown: dispose connections, flush buffers
+    await app.state.db_engine.dispose()
 
-app = FastAPI(lifespan=lifespan)
-```
-
-### Router Composition
-
-```python
-router = APIRouter(prefix="/users", tags=["users"])
-
-@router.get("/")
-async def list_users(): ...
-
-# main.py — mount with version prefix
-app.include_router(router, prefix="/api/v1")
+app = FastAPI(
+    title="My API",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 ```
 
 ## Path Operations
 
-```python
-from fastapi import Path, Query, Body
-
-@router.get("/{user_id}")
-async def get_user(user_id: int = Path(..., gt=0), include_email: bool = Query(False)): ...
-
-@router.post("/", status_code=201)
-async def create_user(user: UserCreate = Body(...)): ...
-
-@router.put("/{user_id}")
-async def update_user(user_id: int, user: UserUpdate): ...
-
-@router.delete("/{user_id}", status_code=204)
-async def delete_user(user_id: int): ...
-```
-
-## Pydantic v2 Models
+Use HTTP method decorators. Always set `status_code` for non-200 and `response_model` for type safety.
 
 ```python
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from fastapi import APIRouter, status
+from pydantic import BaseModel
 
-class UserBase(BaseModel):
-    model_config = ConfigDict(from_attributes=True, strict=True)
-    name: str = Field(..., min_length=1, max_length=100)
-    email: str
+router = APIRouter(prefix="/items", tags=["items"])
 
-class UserCreate(UserBase):
-    password: str = Field(..., min_length=8)
+class ItemCreate(BaseModel):
+    name: str
+    price: float
 
-    @field_validator("email")
-    @classmethod
-    def validate_email(cls, v: str) -> str:
-        if "@" not in v:
-            raise ValueError("Invalid email")
-        return v.lower()
-
-class UserRead(UserBase):
+class ItemResponse(BaseModel):
     id: int
+    name: str
+    price: float
+    model_config = {"from_attributes": True}
+
+@router.post("/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
+async def create_item(item: ItemCreate): ...
+
+@router.get("/{item_id}", response_model=ItemResponse)
+async def get_item(item_id: int): ...
 ```
 
-### model_validator (Cross-Field)
+## Path Parameters, Query Parameters, Request Body
 
 ```python
-class DateRange(BaseModel):
-    start: date
-    end: date
+from fastapi import Query, Path
 
-    @model_validator(mode="after")
-    def check_range(self) -> "DateRange":
-        if self.start >= self.end:
-            raise ValueError("start must precede end")
-        return self
-```
+@router.get("/search")
+async def search_items(
+    q: str = Query(..., min_length=1, max_length=100),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    category: str | None = None,
+): ...
 
-### Discriminated Unions
-
-```python
-from typing import Annotated, Literal, Union
-
-class EmailNotif(BaseModel):
-    type: Literal["email"]
-    address: str
-
-class SMSNotif(BaseModel):
-    type: Literal["sms"]
-    phone: str
-
-Notification = Annotated[Union[EmailNotif, SMSNotif], Field(discriminator="type")]
+@router.get("/{item_id}")
+async def get_item(item_id: int = Path(..., gt=0)): ...
 ```
 
 ## Dependency Injection
 
+Use `Depends` for reusable logic — functions, classes, or generators.
+
 ```python
 from fastapi import Depends
 
-# Yield dependency — session auto-closes after request
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_maker() as session:
-        yield session
+def common_params(skip: int = 0, limit: int = 100):
+    return {"skip": skip, "limit": limit}
 
 @router.get("/")
-async def list_users(db: AsyncSession = Depends(get_db)): ...
+async def list_items(params: dict = Depends(common_params)): ...
+
+# Yield dependency for resource cleanup
+async def get_db():
+    async with SessionLocal() as session:
+        yield session
+
+@router.get("/users")
+async def list_users(db: AsyncSession = Depends(get_db)):
+    return (await db.execute(select(User))).scalars().all()
+
+# Sub-dependencies chain automatically
+async def get_current_user(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
+    return (await db.execute(select(User).where(User.token == token))).scalar_one_or_none()
 ```
 
-### Sub-Dependencies
+## Authentication and Security
 
-```python
-async def get_current_user(
-    token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db),
-) -> User:
-    user = await authenticate(token, db)
-    if not user:
-        raise HTTPException(401, "Invalid credentials")
-    return user
-
-async def get_admin_user(user: User = Depends(get_current_user)) -> User:
-    if user.role != "admin":
-        raise HTTPException(403, "Admin required")
-    return user
-```
-
-### Class-Based Dependencies
-
-```python
-class Pagination:
-    def __init__(self, skip: int = Query(0, ge=0), limit: int = Query(20, le=100)):
-        self.skip = skip
-        self.limit = limit
-```
-
-## Response Handling
-
-```python
-from fastapi.responses import JSONResponse, StreamingResponse, FileResponse
-
-@router.get("/users", response_model=list[UserRead])
-async def list_users(): ...
-
-@router.post("/users", response_model=UserRead, status_code=201)
-async def create_user(): ...
-
-@router.get("/download")
-async def download():
-    return StreamingResponse((chunk async for chunk in generate()), media_type="application/octet-stream")
-
-@router.get("/file")
-async def serve_file():
-    return FileResponse("report.pdf", filename="report.pdf")
-```
-
-## Authentication
-
-### OAuth2 + JWT
+### OAuth2 with JWT
 
 ```python
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import jwt
+from jose import jwt, JWTError
+from passlib.context import CryptContext
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+SECRET_KEY = "load-from-env"  # Use pydantic-settings in production
+ALGORITHM = "HS256"
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    to_encode = data.copy()
+    to_encode["exp"] = datetime.utcnow() + (expires_delta or timedelta(minutes=30))
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return await fetch_user(user_id)
 
 @router.post("/auth/token")
-async def login(form: OAuth2PasswordRequestForm = Depends()):
-    user = await authenticate_user(form.username, form.password)
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = await authenticate_user(form_data.username, form_data.password)
     if not user:
-        raise HTTPException(400, "Incorrect credentials")
-    token = jwt.encode({"sub": user.id, "exp": expire}, SECRET, algorithm="HS256")
-    return {"access_token": token, "token_type": "bearer"}
+        raise HTTPException(status_code=401, detail="Incorrect credentials")
+    return {"access_token": create_access_token({"sub": str(user.id)}), "token_type": "bearer"}
 ```
 
-### API Key Auth
+### API Key Authentication
 
 ```python
 from fastapi.security import APIKeyHeader
 api_key_header = APIKeyHeader(name="X-API-Key")
 
 async def verify_api_key(key: str = Depends(api_key_header)):
-    if key != settings.API_KEY:
-        raise HTTPException(403, "Invalid API key")
+    if key not in VALID_API_KEYS:
+        raise HTTPException(status_code=403, detail="Invalid API key")
 ```
-
-### Scopes
-
-Use `SecurityScopes` parameter alongside `OAuth2PasswordBearer(scopes={"read": "Read", "write": "Write"})` to enforce per-endpoint scope requirements.
 
 ## Middleware
 
-### CORS
-
+### CORS, Trusted Hosts
 ```python
 from fastapi.middleware.cors import CORSMiddleware
-app.add_middleware(CORSMiddleware, allow_origins=["https://example.com"],
-                   allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+
+app.add_middleware(CORSMiddleware,
+    allow_origins=["https://example.com"],  # Never ["*"] in production
+    allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["example.com", "*.example.com"])
 ```
 
-### Custom Middleware (BaseHTTPMiddleware)
+### Custom Middleware
 
 ```python
 from starlette.middleware.base import BaseHTTPMiddleware
+import time
 
 class TimingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         start = time.perf_counter()
         response = await call_next(request)
-        response.headers["X-Process-Time"] = f"{time.perf_counter() - start:.4f}"
+        response.headers["X-Process-Time"] = str(time.perf_counter() - start)
         return response
+
+app.add_middleware(TimingMiddleware)
 ```
 
-### Pure ASGI Middleware (Better Performance)
-
-Implement `__init__(self, app: ASGIApp)` and `__call__(self, scope, receive, send)`. Check `scope["type"] == "http"`, mutate state, then `await self.app(scope, receive, send)`.
+For high-performance middleware, use pure ASGI middleware instead of `BaseHTTPMiddleware`.
 
 ## Background Tasks
 
-### Built-in BackgroundTasks
-
-Fire-and-forget. Not crash-resilient. Use for emails, logging.
-
 ```python
-@router.post("/register")
-async def register(user: UserCreate, bg: BackgroundTasks):
-    new_user = await create_user(user)
-    bg.add_task(send_email, new_user.email, "Welcome!")
-    return new_user
+from fastapi import BackgroundTasks
+
+def send_notification(email: str, message: str): ...
+
+@router.post("/orders/", status_code=201)
+async def create_order(order: OrderCreate, background_tasks: BackgroundTasks):
+    new_order = await save_order(order)
+    background_tasks.add_task(send_notification, order.email, "Order confirmed")
+    return new_order
 ```
 
-### Celery (Heavy/CPU-Bound)
+For CPU-heavy or long-running jobs, use Celery or ARQ instead.
+
+## WebSockets
 
 ```python
-celery_app = Celery("worker", broker="redis://localhost:6379/0")
+from fastapi import WebSocket, WebSocketDisconnect
 
-@celery_app.task
-def generate_report(user_id: int): ...
-
-@router.post("/reports")
-async def request_report(user_id: int):
-    task = generate_report.delay(user_id)
-    return {"task_id": task.id}
-
-@router.get("/reports/{task_id}")
-async def get_report_status(task_id: str):
-    result = celery_app.AsyncResult(task_id)
-    return {"status": result.status, "result": result.result}
-```
-
-### ARQ (Async-Native)
-
-Use `arq.create_pool(RedisSettings())` to enqueue jobs. Define worker functions as `async def task(ctx, ...)`. Lighter than Celery, native async/await.
-
-## WebSocket Endpoints
-
-### Connection Manager with Rooms
-
-```python
 class ConnectionManager:
     def __init__(self):
-        self.rooms: dict[str, list[WebSocket]] = {}
-
-    async def connect(self, room: str, ws: WebSocket):
-        await ws.accept()
-        self.rooms.setdefault(room, []).append(ws)
-
-    def disconnect(self, room: str, ws: WebSocket):
-        self.rooms.get(room, []).remove(ws)
-
-    async def broadcast(self, room: str, message: dict):
-        for ws in self.rooms.get(room, []):
-            await ws.send_json(message)
+        self.active: list[WebSocket] = []
+    async def connect(self, ws: WebSocket):
+        await ws.accept(); self.active.append(ws)
+    def disconnect(self, ws: WebSocket):
+        self.active.remove(ws)
+    async def broadcast(self, msg: str):
+        for c in self.active: await c.send_text(msg)
 
 manager = ConnectionManager()
 
-@router.websocket("/ws/{room}")
-async def websocket_endpoint(ws: WebSocket, room: str):
-    await manager.connect(room, ws)
+@app.websocket("/ws/{room}")
+async def ws_endpoint(ws: WebSocket, room: str):
+    await manager.connect(ws)
     try:
         while True:
-            data = await ws.receive_json()
-            await manager.broadcast(room, data)
+            data = await ws.receive_text()
+            await manager.broadcast(f"{room}: {data}")
     except WebSocketDisconnect:
-        manager.disconnect(room, ws)
+        manager.disconnect(ws)
 ```
 
-### Heartbeat
+## File Uploads
 
-Spawn `asyncio.create_task` inside the WebSocket handler to send periodic pings. Cancel the task on `WebSocketDisconnect`.
+Stream large files in chunks. Never load entire file into memory.
+
+```python
+from fastapi import UploadFile, File
+import uuid; from pathlib import Path
+
+@router.post("/upload/")
+async def upload_file(file: UploadFile = File(...)):
+    if file.content_type not in ["image/png", "image/jpeg", "application/pdf"]:
+        raise HTTPException(status_code=400, detail="Invalid file type")
+    dest = Path("uploads") / f"{uuid.uuid4()}{Path(file.filename).suffix}"
+    with open(dest, "wb") as f:
+        while chunk := await file.read(1024 * 1024):  # 1MB chunks
+            f.write(chunk)
+    return {"filename": dest.name, "size": dest.stat().st_size}
+```
+
+Multiple files: `files: list[UploadFile] = File(...)`.
+
+## Response Models and Custom Responses
+
+```python
+from fastapi.responses import StreamingResponse
+
+@router.get("/items/{id}", response_model=ItemResponse, response_model_exclude_unset=True)
+async def get_item(id: int): ...
+
+@router.delete("/items/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(id: int): ...
+
+@router.get("/export")  # Streaming for large data
+async def export_csv():
+    async def generate():
+        yield "id,name\n"
+        async for row in fetch_rows(): yield f"{row.id},{row.name}\n"
+    return StreamingResponse(generate(), media_type="text/csv")
+```
+
+## Error Handling
+
+```python
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+
+@router.get("/items/{id}")
+async def get_item(id: int):
+    item = await fetch_item(id)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"Item {id} not found")
+    return item
+
+# Custom exception with handler
+class AppException(Exception):
+    def __init__(self, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
+
+@app.exception_handler(AppException)
+async def app_exc_handler(request: Request, exc: AppException):
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+@app.exception_handler(RequestValidationError)
+async def validation_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422,
+        content={"errors": [{"field": e["loc"][-1], "msg": e["msg"]} for e in exc.errors()]})
+```
 
 ## Database Integration (SQLAlchemy Async)
 
 ```python
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.orm import DeclarativeBase
 
 engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/db",
-    pool_size=20, max_overflow=10, pool_pre_ping=True, pool_recycle=3600)
-async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    pool_size=10, max_overflow=20, pool_pre_ping=True)
+SessionLocal = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+
+class Base(DeclarativeBase):
+    pass
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session_maker() as session:
+    async with SessionLocal() as session:
         yield session
-```
 
-### Repository Pattern
-
-```python
+# Repository pattern
 class UserRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -348,7 +327,8 @@ class UserRepository:
         result = await self.session.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
-    async def create(self, user: User) -> User:
+    async def create(self, data: UserCreate) -> User:
+        user = User(**data.model_dump())
         self.session.add(user)
         await self.session.commit()
         await self.session.refresh(user)
@@ -358,79 +338,108 @@ def get_user_repo(db: AsyncSession = Depends(get_db)) -> UserRepository:
     return UserRepository(db)
 ```
 
+## Async Patterns
+
+- Use `async def` for I/O-bound operations (DB, HTTP calls, file I/O).
+- Use plain `def` for CPU-bound — FastAPI runs sync handlers in a threadpool automatically.
+- Never call blocking code inside `async def`. Use `httpx` (not `requests`).
+
+```python
+import httpx
+
+@router.get("/proxy")
+async def proxy_request():
+    async with httpx.AsyncClient() as client:
+        resp = await client.get("https://api.example.com/data")
+        return resp.json()
+
+@router.get("/compute")
+def heavy_compute():  # sync: auto-runs in threadpool
+    return {"result": expensive_cpu_operation()}
+```
+
 ## Testing
 
 ```python
-# Sync — TestClient
-client = TestClient(app)
-def test_read_users():
-    assert client.get("/api/v1/users").status_code == 200
+from fastapi.testclient import TestClient
 
-# Async — httpx + ASGITransport
+def test_read_items():
+    with TestClient(app) as client:  # Context manager triggers lifespan events
+        resp = client.get("/items/1")
+        assert resp.status_code == 200
+
+# Async testing with httpx
+import pytest
+from httpx import AsyncClient, ASGITransport
+
 @pytest.fixture
 async def async_client():
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        yield ac
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
 
 @pytest.mark.anyio
-async def test_create_user(async_client):
-    resp = await async_client.post("/api/v1/users", json={"name": "Jo", "email": "j@x.com"})
+async def test_create_item(async_client: AsyncClient):
+    resp = await async_client.post("/items/", json={"name": "Widget", "price": 9.99})
     assert resp.status_code == 201
-```
 
-### Dependency Overrides
-
-```python
-async def override_get_db():
-    async with test_session_maker() as session:
-        yield session
-
+# Override dependencies for testing
 app.dependency_overrides[get_db] = override_get_db
-# After tests:
-app.dependency_overrides.clear()
 ```
 
-### Factory Fixtures
+## Project Structure
 
-Create `@pytest.fixture` returning an async factory function that builds and commits test entities with overridable defaults.
+Organize by layer. Group routers, services, repositories, models, and schemas separately.
+```
+app/
+├── main.py           # App, lifespan, include_router
+├── config.py         # pydantic-settings
+├── database.py       # Engine, session, Base
+├── dependencies.py   # get_db, get_current_user
+├── models/           # SQLAlchemy models
+├── schemas/          # Pydantic request/response models
+├── routers/          # APIRouter modules (auth.py, users.py, items.py)
+├── services/         # Business logic
+├── repositories/     # Data access layer
+└── tests/            # conftest.py, test_*.py
+```
 
-## Error Handling
+Register routers in `main.py`:
 
 ```python
-# Built-in
-raise HTTPException(status_code=404, detail="User not found")
-
-# Custom domain errors
-class DomainError(Exception):
-    def __init__(self, message: str, code: str):
-        self.message = message
-        self.code = code
-
-@app.exception_handler(DomainError)
-async def domain_error_handler(request, exc: DomainError):
-    return JSONResponse(status_code=400, content={"error": exc.code, "message": exc.message})
-
-@app.exception_handler(RequestValidationError)
-async def validation_handler(request, exc):
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+app.include_router(auth.router)
+app.include_router(users.router, prefix="/api/v1")
+app.include_router(items.router, prefix="/api/v1")
 ```
 
-## Performance
-
-- Use `async def` for I/O-bound endpoints. Use `def` (sync) for CPU-bound — FastAPI runs it in a threadpool.
-- Never call blocking I/O inside `async def` without `run_in_executor`.
-- Tune pool: `pool_size`, `max_overflow`, `pool_pre_ping`, `pool_recycle` (see Database section).
-- Use `fastapi-cache` with Redis for endpoint caching:
+## Settings Management
 
 ```python
-from fastapi_cache.decorator import cache
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
-@router.get("/stats")
-@cache(expire=60)
-async def get_stats(): return await compute_stats()
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    database_url: str
+    secret_key: str
+    debug: bool = False
+    allowed_origins: list[str] = ["http://localhost:3000"]
+
+settings = Settings()  # Reads from env vars / .env file
 ```
 
-- Profile with `py-spy` or `yappi`. Use OpenTelemetry for distributed tracing.
+## OpenAPI Customization
+
+```python
+app = FastAPI(
+    title="My API", version="2.0.0",
+    docs_url="/docs",       # Set to None to disable in production
+    redoc_url="/redoc",
+    openapi_tags=[{"name": "items", "description": "Item operations"}],
+)
+
+@router.get("/health", include_in_schema=False)  # Exclude from OpenAPI
+async def health():
+    return {"status": "ok"}
+```
 
 ## Deployment
 
@@ -438,63 +447,55 @@ async def get_stats(): return await compute_stats()
 # Development
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Production — set workers to CPU core count, --preload shares memory
-gunicorn app.main:app -k uvicorn.workers.UvicornWorker \
-  --workers 4 --bind 0.0.0.0:8000 --timeout 120 --preload
+# Production (gunicorn + uvicorn workers)
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
-### Dockerfile
+Dockerfile:
 
 ```dockerfile
-FROM python:3.12-slim AS builder
+FROM python:3.12-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-FROM python:3.12-slim
-WORKDIR /app
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
 COPY . .
 EXPOSE 8000
-USER nobody
-CMD ["gunicorn", "app.main:app", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "4"]
+CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
 ```
 
-### Health Checks
+## Performance
+
+- Use `async def` for I/O-bound endpoints, `def` for CPU-bound (auto-threadpooled).
+- Configure connection pooling: `pool_size`, `max_overflow`, `pool_pre_ping`.
+- Cache with Redis or `cachetools`. Use cursor-based pagination over offset.
+- Use `ORJSONResponse` for faster serialization. Set `response_model_exclude_unset=True`.
 
 ```python
-@app.get("/healthz")
-async def health():
-    return {"status": "ok"}
+from fastapi.responses import ORJSONResponse
+app = FastAPI(default_response_class=ORJSONResponse)
 
-@app.get("/readyz")
-async def readiness(db: AsyncSession = Depends(get_db)):
-    await db.execute(text("SELECT 1"))
-    return {"status": "ready"}
+# Cursor pagination
+@router.get("/items/")
+async def list_items(cursor: int | None = None, limit: int = Query(20, le=100),
+                     db: AsyncSession = Depends(get_db)):
+    query = select(Item).order_by(Item.id).limit(limit + 1)
+    if cursor:
+        query = query.where(Item.id > cursor)
+    results = (await db.execute(query)).scalars().all()
+    next_cursor = results[-1].id if len(results) > limit else None
+    return {"items": results[:limit], "next_cursor": next_cursor}
 ```
 
-```yaml
-# docker-compose healthcheck
-healthcheck:
-  test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
-  interval: 30s
-  timeout: 5s
-  retries: 3
-```
+## Common Pitfalls
 
-### Settings
-
-```python
-from pydantic_settings import BaseSettings
-
-class Settings(BaseSettings):
-    model_config = ConfigDict(env_file=".env")
-    DATABASE_URL: str
-    SECRET_KEY: str
-    DEBUG: bool = False
-    WORKERS: int = 4
-
-settings = Settings()
-
-<!-- tested: pass -->
-```
+1. **Blocking in async**: Never use `time.sleep()`, `requests`, or sync DB drivers in `async def`. Use `asyncio.sleep()`, `httpx`, async drivers.
+2. **Missing `await`**: Forgetting `await` returns a coroutine object, not the result.
+3. **Shared mutable state**: Avoid module-level mutable globals. Use `app.state` or DI.
+4. **`expire_on_commit` not disabled**: Async SQLAlchemy requires `expire_on_commit=False`.
+5. **CORS with credentials**: `allow_origins=["*"]` + `allow_credentials=True` is rejected by browsers.
+6. **No response_model**: Always set it to prevent leaking internal fields.
+7. **Large file in memory**: Use chunked `file.read(size)`, not `await file.read()` unbounded.
+8. **BackgroundTasks for heavy work**: Shares the event loop. Use Celery/ARQ instead.
+9. **Deprecated on_event**: Use `lifespan` context manager instead.
+10. **TestClient without context manager**: Use `with TestClient(app) as client:` for lifespan.
+10. **TestClient without context manager**: Use `with TestClient(app) as client:` for lifespan.

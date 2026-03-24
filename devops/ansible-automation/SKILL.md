@@ -1,486 +1,392 @@
 ---
 name: ansible-automation
-description:
-  positive: "Use when user writes Ansible playbooks, asks about inventory, roles, collections, modules, handlers, variables, templates (Jinja2), vault, or AWX/AAP automation."
-  negative: "Do NOT use for Terraform (infrastructure provisioning), Chef/Puppet, SaltStack, or shell scripts without Ansible context."
+description: >
+  Use this skill when the user asks about Ansible playbooks, roles, inventories, modules, collections,
+  Ansible Vault, Jinja2 templates, Molecule testing, ansible-lint, AWX/Tower, or any Ansible
+  configuration management and automation task. Triggers on: writing playbooks, creating roles,
+  managing inventory, encrypting secrets with Vault, deploying with Ansible, ansible-galaxy,
+  handler notifications, task delegation, async tasks, fact gathering, variable precedence,
+  block/rescue error handling, ansible.cfg tuning, pipelining, mitogen, check mode, diff mode,
+  or debugging Ansible runs. Do NOT trigger for Terraform/Pulumi/OpenTofu (infrastructure-as-code
+  provisioning), Nomad/Kubernetes (container orchestration), Chef/Puppet (competing config mgmt),
+  or general SSH/shell scripting unrelated to Ansible.
 ---
 
-# Ansible Automation Best Practices
+# Ansible Automation
 
-## Fundamentals
+## Architecture
 
-Ansible is agentless configuration management over SSH. Core concepts:
-- **Control node**: machine running `ansible` or `ansible-playbook`.
-- **Managed nodes**: target hosts (no agent required).
-- **Inventory**: list of managed nodes (hosts and groups).
-- **Playbook**: YAML file containing ordered lists of plays.
-- **Play**: maps a group of hosts to tasks.
-- **Task**: single call to an Ansible module.
-- **Module**: unit of work (e.g., `ansible.builtin.copy`).
-- **Idempotency**: running the same playbook twice produces the same state. Prefer declarative modules over `command`/`shell`.
+Ansible is agentless. The **control node** (Linux/macOS only) executes playbooks over **SSH** (Linux/Unix) or **WinRM** (Windows) against **managed nodes**. No agent runs on targets.
 
-## Inventory Management
+Components: **Inventory** (hosts/groups), **Playbooks** (YAML desired-state), **Modules** (units of work), **Plugins** (connection, callback, lookup, filter, strategy), **Collections** (packaged modules+roles+plugins).
 
-### Static Inventory (YAML preferred)
+Flow: parse inventory → load playbook → compile tasks → fork connections to hosts → transfer/execute modules → return JSON → fire handlers.
+
+## Inventory
+
+Static INI: groups in `[brackets]`, children via `[group:children]`, group vars via `[group:vars]`.
+Static YAML: nested `all.children.<group>.hosts` with per-host vars.
+
 ```yaml
+# inventory/hosts.yml
 all:
   children:
     webservers:
       hosts:
-        web1.example.com:
-        web2.example.com:
-      vars:
-        http_port: 80
+        web1.example.com: { ansible_host: 10.0.1.10 }
+      vars: { http_port: 8080 }
     dbservers:
       hosts:
-        db1.example.com:
-          ansible_port: 2222
+        db1.example.com: { ansible_port: 2222 }
 ```
 
-### Dynamic Inventory
+**Dynamic inventory**: use plugins (`aws_ec2`, `azure_rm`, `gcp_compute`). Enable in `ansible.cfg` under `[inventory] enable_plugins`. Plugin files are YAML with `plugin:` key.
+
+**Host/group vars**: place in `inventory/group_vars/<group>.yml` and `inventory/host_vars/<host>.yml`.
+
+**Patterns**: `webservers` (group), `web*` (glob), `webservers:&production` (intersection), `webservers:!web2` (exclusion).
+
+## Playbooks
+
 ```yaml
-# inventories/aws_ec2.yml
-plugin: amazon.aws.aws_ec2
-regions: [us-east-1]
-keyed_groups:
-  - key: tags.Environment
-    prefix: env
-filters:
-  instance-state-name: running
-```
-
-### Directory Layout
-```
-inventories/
-├── production/
-│   ├── hosts.yml
-│   ├── group_vars/
-│   │   ├── all.yml
-│   │   └── dbservers/
-│   │       ├── vars.yml
-│   │       └── vault.yml    # encrypted
-│   └── host_vars/
-│       └── web1.example.com.yml
-└── staging/
-    └── hosts.yml
-```
-Split vault-encrypted vars into separate files (`vault.yml`) alongside plaintext `vars.yml`.
-
-### Host Patterns
-```bash
-ansible webservers -m ping                      # group
-ansible 'webservers:&production' -m ping        # intersection
-ansible 'webservers:!web1.example.com' -m ping  # exclusion
-```
-
-## Playbook Structure
-```yaml
----
 - name: Configure web servers
   hosts: webservers
   become: true
-  gather_facts: true
   vars:
-    app_version: "2.4.1"
+    app_port: 8080
   pre_tasks:
     - name: Update apt cache
-      ansible.builtin.apt:
-        update_cache: true
-        cache_valid_time: 3600
-  roles:
-    - role: common
-    - role: nginx
-      vars:
-        nginx_worker_processes: 4
+      ansible.builtin.apt: { update_cache: true, cache_valid_time: 3600 }
   tasks:
-    - name: Deploy application
-      ansible.builtin.copy:
-        src: "app-{{ app_version }}.tar.gz"
-        dest: /opt/app/
-      notify: Restart app
-  post_tasks:
-    - name: Verify health
-      ansible.builtin.uri:
-        url: "http://localhost:{{ http_port }}/health"
-        status_code: 200
+    - name: Install nginx
+      ansible.builtin.apt: { name: nginx, state: present }
+      notify: restart nginx
+    - name: Deploy config
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        mode: '0644'
+      notify: restart nginx
+    - name: Ensure running
+      ansible.builtin.service: { name: nginx, state: started, enabled: true }
   handlers:
-    - name: Restart app
-      ansible.builtin.systemd:
-        name: myapp
-        state: restarted
+    - name: restart nginx
+      ansible.builtin.service: { name: nginx, state: restarted }
+  post_tasks:
+    - name: Health check
+      ansible.builtin.uri: { url: "http://localhost:{{ app_port }}", status_code: 200 }
 ```
 
-### imports vs includes
+**Conditionals**: `when: ansible_os_family == "Debian"`. Chain with `and`/`or` or use list (implicit AND).
 
-| Feature | `import_*` | `include_*` |
-|---------|-----------|-------------|
-| Processing | Static (pre-processed) | Dynamic (at runtime) |
-| Tags/when | Applied to all child tasks | Applied only to include |
-| Loops | Cannot loop | Can loop |
+**Loops**: `loop:` with list of items. Access via `{{ item }}`. For dicts: `loop: "{{ mydict | dict2items }}"`.
 
-```yaml
-- import_tasks: common_setup.yml                              # static
-- include_tasks: "{{ ansible_os_family | lower }}_packages.yml"  # dynamic
-```
-Prefer `import_*` for predictability. Use `include_*` only for runtime conditionals or loops.
+**Register**: capture output with `register: result`, use `result.stdout`, `result.rc`, `result.stdout_lines`.
 
-## Variables
+## Modules
 
-### Precedence (lowest → highest)
-1. Role defaults (`defaults/main.yml`)
-2. Inventory `group_vars/all`
-3. Inventory `group_vars/<group>`
-4. Inventory `host_vars/<host>`
-5. Play vars
-6. Role vars (`vars/main.yml`)
-7. Task vars (`set_fact`, registered)
-8. Extra vars (`-e`) — **always win**
+Always use FQCN. Key modules:
 
-### Facts and Registered Variables
-```yaml
-- name: Gather disk info
-  ansible.builtin.command: df -h /
-  register: disk_info
-  changed_when: false
-- name: Set custom fact
-  ansible.builtin.set_fact:
-    app_memory_mb: "{{ ansible_memtotal_mb // 2 }}"
-```
-Set `changed_when: false` on informational commands.
-
-## Jinja2 Templates
-
-### Common Filters
-```yaml
-"{{ hostname | upper }}"                                    # string
-"{{ optional_var | default('fallback') }}"                  # default
-"{{ dict_var | dict2items }}"                               # data structure
-"{{ users | map(attribute='name') | list }}"                # map/filter
-"{{ items | selectattr('active', 'equalto', true) | list }}"
-"{{ port_string | int }}"                                   # type cast
-```
-
-### Template File
-```jinja2
-{# templates/nginx.conf.j2 #}
-# {{ ansible_managed }}
-upstream backend {
-{% for server in backend_servers %}
-    server {{ server.host }}:{{ server.port | default(8080) }};
-{% endfor %}
-}
-server {
-    listen {{ http_port | default(80) }};
-    server_name {{ server_name }};
-{% if ssl_enabled | default(false) %}
-    listen 443 ssl;
-    ssl_certificate {{ ssl_cert_path }};
-{% endif %}
-}
-```
-```yaml
-- name: Deploy nginx config
-  ansible.builtin.template:
-    src: nginx.conf.j2
-    dest: /etc/nginx/conf.d/app.conf
-    mode: "0644"
-    validate: nginx -t -c %s
-  notify: Reload nginx
-```
-Include `{{ ansible_managed }}` in templates. Use `validate` to check config before deploying.
+| Module | Purpose |
+|--------|---------|
+| `ansible.builtin.command` | Run command (no shell expansion) |
+| `ansible.builtin.shell` | Run via shell (pipes, redirects) |
+| `ansible.builtin.copy` | Copy files to remote |
+| `ansible.builtin.template` | Render Jinja2 → remote |
+| `ansible.builtin.file` | Manage files/dirs/links/perms |
+| `ansible.builtin.apt` / `yum` / `dnf` | Package management |
+| `ansible.builtin.service` | Start/stop/restart services |
+| `ansible.builtin.user` | Manage users |
+| `ansible.builtin.git` | Clone/update repos |
+| `ansible.builtin.lineinfile` | Edit single line in file |
+| `ansible.builtin.uri` | HTTP requests |
+| `community.docker.docker_container` | Manage Docker containers |
 
 ## Roles
 
-### Directory Structure
-```
-roles/nginx/
-├── tasks/main.yml       # entry point
-├── handlers/main.yml    # handler definitions
-├── templates/           # Jinja2 templates
-├── files/               # static files
-├── vars/main.yml        # high-priority vars (don't override)
-├── defaults/main.yml    # low-priority vars (meant to be overridden)
-├── meta/main.yml        # dependencies, galaxy metadata
-└── README.md
+Structure: `defaults/main.yml` (lowest-precedence vars), `vars/main.yml` (high-precedence), `tasks/main.yml`, `handlers/main.yml`, `files/`, `templates/`, `meta/main.yml` (dependencies).
+
+```yaml
+# Use in playbook
+- hosts: webservers
+  roles:
+    - role: webserver
+      vars: { http_port: 8080 }
 ```
 
-### Meta and Dependencies
+Role deps in `meta/main.yml`: `dependencies: [{role: common}, {role: firewall}]`.
+
+**Galaxy**: `ansible-galaxy role init myrole` (scaffold), `ansible-galaxy install -r requirements.yml` (install).
+
 ```yaml
-# roles/nginx/meta/main.yml
-galaxy_info:
-  author: your_name
-  description: Install and configure nginx
-  min_ansible_version: "2.15"
-  platforms:
-    - name: Ubuntu
-      versions: [jammy, noble]
-dependencies:
-  - role: common
-  - role: firewall
-    vars:
-      firewall_allowed_ports: [80, 443]
+# requirements.yml
+roles:
+  - name: geerlingguy.nginx
+    version: "3.2.0"
+collections:
+  - name: community.general
+    version: ">=8.0.0"
 ```
-Place tunables in `defaults/main.yml`. Use `vars/main.yml` only for internal constants.
 
 ## Collections
 
-### Installing
-```yaml
-# requirements.yml
-collections:
-  - name: amazon.aws
-    version: ">=7.0.0"
-  - name: community.general
-    version: ">=9.0.0"
-roles:
-  - name: geerlingguy.docker
-    version: "7.4.1"
-```
-```bash
-ansible-galaxy install -r requirements.yml
+Namespace-scoped bundles of modules, roles, plugins. Install: `ansible-galaxy collection install community.general`. Pin versions in `requirements.yml`. Structure: `galaxy.yml`, `plugins/{modules,inventory,callback}`, `roles/`, `playbooks/`.
+
+Build: `ansible-galaxy collection build`. Publish: `ansible-galaxy collection publish`.
+
+## Jinja2 Templates
+
+```jinja2
+server {
+    listen {{ http_port | default(80) }};
+    server_name {{ ansible_fqdn }};
+    {% for loc in app_locations %}
+    location {{ loc.path }} {
+        proxy_pass http://{{ loc.backend }}:{{ loc.port }};
+    }
+    {% endfor %}
+    {% if ssl_enabled | default(false) %}
+    ssl_certificate {{ ssl_cert_path }};
+    {% endif %}
+}
 ```
 
-### FQCN (Fully Qualified Collection Name)
-Always use FQCN — never short names:
-```yaml
-- ansible.builtin.copy:       # correct
-    src: file.txt
-    dest: /tmp/
-```
+**Filters**: `| default('x')`, `| join(',')`, `| password_hash('sha512')`, `| basename`, `| to_nice_yaml`, `| selectattr('active')`, `| regex_replace('old','new')`, `| map('extract', hostvars, 'ansible_host')`.
 
-### Creating a Collection
-```bash
-ansible-galaxy collection init myorg.myapp
-ansible-galaxy collection build
-ansible-galaxy collection publish myorg-myapp-1.0.0.tar.gz
-```
+**Lookups**: `lookup('file','/etc/hostname')`, `lookup('env','HOME')`, `lookup('password','/dev/null length=16')`, `query('fileglob','files/*.conf')`.
 
-## Common Modules
-```yaml
-- ansible.builtin.file:
-    path: /opt/app
-    state: directory
-    owner: app
-    mode: "0755"
-- ansible.builtin.copy:
-    src: config.yml
-    dest: /etc/app/config.yml
-    backup: true
-- ansible.builtin.package:
-    name: [nginx, curl]
-    state: present
-- ansible.builtin.systemd:
-    name: nginx
-    state: started
-    enabled: true
-    daemon_reload: true
-- ansible.builtin.user:
-    name: deploy
-    groups: [sudo, docker]
-    shell: /bin/bash
-- ansible.builtin.uri:
-    url: https://api.example.com/health
-    status_code: [200, 201]
-  register: api_response
-- ansible.builtin.command:
-    cmd: /opt/app/bin/migrate
-    creates: /opt/app/.migrated     # idempotent — skip if exists
-- ansible.builtin.shell:
-    cmd: cat /etc/hosts | grep myhost
-  changed_when: false
-```
-Prefer `command` over `shell` (avoids injection). Prefer dedicated modules over both.
+## Variables
 
-## Conditionals and Loops
+**Precedence** (lowest→highest): role defaults → inventory group_vars/all → inventory group_vars/* → inventory host_vars → playbook group_vars → playbook host_vars → facts/set_fact/registered → play vars → play vars_files → role vars/main.yml → block vars → task vars → include_vars → set_fact/registered → **extra vars (`-e`) always win**.
 
 ```yaml
-- name: Install on Debian-family
-  ansible.builtin.apt:
-    name: nginx
-    state: present
-  when: ansible_os_family == "Debian"
-
-- name: Create users
-  ansible.builtin.user:
-    name: "{{ item.name }}"
-    groups: "{{ item.groups }}"
-  loop:
-    - { name: alice, groups: [sudo] }
-    - { name: bob, groups: [docker] }
-
-- name: Wait for services
-  ansible.builtin.uri:
-    url: "http://localhost:{{ item }}/health"
-  loop: [8080, 8081, 8082]
-  retries: 5
-  delay: 3
-  until: result.status == 200
-  register: result
+- ansible.builtin.set_fact:
+    full_url: "https://{{ domain }}:{{ port }}/{{ path }}"
+- ansible.builtin.include_vars:
+    file: "{{ env }}.yml"
 ```
 
-### Block / Rescue / Always
-```yaml
-- name: Deploy with rollback
-  block:
-    - name: Deploy new version
-      ansible.builtin.copy:
-        src: "app-{{ new_version }}.tar.gz"
-        dest: /opt/app/
-    - name: Run migrations
-      ansible.builtin.command: /opt/app/migrate
-  rescue:
-    - name: Rollback
-      ansible.builtin.copy:
-        src: "app-{{ old_version }}.tar.gz"
-        dest: /opt/app/
-    - name: Alert on failure
-      ansible.builtin.uri:
-        url: "{{ slack_webhook }}"
-        method: POST
-        body_format: json
-        body:
-          text: "Deploy failed on {{ inventory_hostname }}"
-  always:
-    - name: Restart service
-      ansible.builtin.systemd:
-        name: myapp
-        state: restarted
-```
-
-## Vault
+## Ansible Vault
 
 ```bash
-ansible-vault encrypt group_vars/production/vault.yml
-ansible-vault encrypt_string 'SuperSecret123' --name 'db_password'
-# Multi-vault with vault-id
-ansible-vault encrypt --vault-id prod@prompt secrets_prod.yml
-ansible-playbook site.yml --vault-id prod@prompt --vault-id dev@~/.vault_dev_pass
+ansible-vault create secrets.yml                     # create encrypted
+ansible-vault edit secrets.yml                        # edit in-place
+ansible-vault encrypt vars/prod.yml                   # encrypt existing
+ansible-vault encrypt_string 'secret' --name 'db_pw'  # inline encrypted var
+ansible-vault rekey secrets.yml                       # change password
 ```
 
-### Best Practices
-- Store vault password files outside the repo. Add to `.gitignore`.
-- Prefix vault vars with `vault_` and reference via indirection:
-```yaml
-# group_vars/production/vault.yml (encrypted)
-vault_db_password: "SuperSecret123"
-# group_vars/production/vars.yml (plaintext)
-db_password: "{{ vault_db_password }}"
-```
-- Add `no_log: true` to tasks handling sensitive data.
+Run: `ansible-playbook site.yml --vault-password-file ~/.vault_pass` or `--ask-vault-pass`.
+
+**Multiple vaults**: use `--vault-id prod@prompt --vault-id dev@~/.dev_pass`. Encrypt with `--vault-id prod@prompt`.
+
+Store vault password files outside the repo. Never commit plaintext secrets. Keep vault files separate from regular vars.
 
 ## Error Handling
+
+**ignore_errors**: task continues on failure. **failed_when**: custom failure condition.
+**changed_when**: override change detection (critical for command/shell).
+
 ```yaml
-- name: Check optional service
-  ansible.builtin.command: systemctl status optional-svc
+- ansible.builtin.command: systemctl status myapp
+  register: svc
   ignore_errors: true
-- name: Check app version
-  ansible.builtin.command: /opt/app/version
-  register: version_check
-  failed_when: "'2.0' not in version_check.stdout"
-- name: Query database
-  ansible.builtin.command: psql -c "SELECT count(*) FROM users"
   changed_when: false
-- name: Validate input
-  ansible.builtin.fail:
-    msg: "app_version must be defined"
-  when: app_version is not defined
-- name: Pre-flight checks
-  ansible.builtin.assert:
-    that:
-      - ansible_memtotal_mb >= 2048
-      - ansible_distribution == "Ubuntu"
-    fail_msg: "Host does not meet requirements"
 ```
 
-## Performance Optimization
+**block/rescue/always**: try/catch/finally for tasks.
 
-### ansible.cfg Tuning
-```ini
-[defaults]
-forks = 50
-gathering = smart
-fact_caching = jsonfile
-fact_caching_connection = /tmp/ansible_facts
-fact_caching_timeout = 3600
-callbacks_enabled = profile_tasks
-stdout_callback = yaml
-
-[ssh_connection]
-pipelining = True
-ssh_args = -o ControlMaster=auto -o ControlPersist=60s
-```
-
-### Async Tasks
 ```yaml
-- name: Long-running update
-  ansible.builtin.apt:
-    upgrade: dist
-  async: 600
-  poll: 0
-  register: apt_job
-- name: Wait for update
-  ansible.builtin.async_status:
-    jid: "{{ apt_job.ansible_job_id }}"
-  register: job_result
-  until: job_result.finished
-  retries: 60
-  delay: 10
+- block:
+    - ansible.builtin.copy: { src: app-v2.tar.gz, dest: /opt/app/ }
+    - ansible.builtin.service: { name: myapp, state: restarted }
+  rescue:
+    - ansible.builtin.copy: { src: app-v1.tar.gz, dest: /opt/app/ }
+    - ansible.builtin.service: { name: myapp, state: restarted }
+  always:
+    - ansible.builtin.uri:
+        url: https://hooks.slack.com/...
+        method: POST
+        body: '{"text":"deploy finished"}'
+        body_format: json
 ```
 
-### Key Optimizations
-- Set `gather_facts: false` when facts not needed. Use `gather_subset` for selective gathering.
-- Enable **Mitogen** for 2–7x speedup (persistent Python RPC replaces SSH file-copy).
-- Use `strategy: free` so hosts proceed independently.
-- Use `serial` for rolling deployments to limit blast radius.
-- Cache facts with Redis or JSON between runs.
-- Profile with `profile_tasks` callback to find bottlenecks.
+**any_errors_fatal: true**: stop all hosts if any host fails. Combine with `serial: "30%"` for rolling deploys.
+
+## Async and Polling
+
+```yaml
+- name: Start migration
+  ansible.builtin.command: /opt/app/migrate.sh
+  async: 3600       # max runtime
+  poll: 0           # fire and forget
+  register: mig_job
+
+- name: Wait for migration
+  ansible.builtin.async_status:
+    jid: "{{ mig_job.ansible_job_id }}"
+  register: result
+  until: result.finished
+  retries: 60
+  delay: 30
+```
+
+Set `poll: N` (N>0) to poll every N seconds inline instead.
+
+## Delegation and Local Actions
+
+```yaml
+- name: Register with LB
+  ansible.builtin.uri:
+    url: "https://lb.example.com/api/members"
+    method: POST
+    body: '{"host":"{{ inventory_hostname }}"}'
+    body_format: json
+  delegate_to: localhost
+
+- name: Wait for reboot
+  ansible.builtin.wait_for_connection: { delay: 30, timeout: 300 }
+```
+
+`delegate_to: localhost` runs task on control node. Use `delegate_facts: true` to assign gathered facts to the delegated host.
+
+## Tags and Limits
+
+Tag tasks: `tags: [install, nginx]`. Run: `--tags configure`, `--skip-tags install`.
+Limit hosts: `--limit web1.example.com`, `--limit "webservers:&staging"`.
 
 ## Testing
 
-```bash
-# Molecule — test role lifecycle
-molecule init role myorg.myrole --driver-name docker
-molecule test          # full: create → converge → idempotence → verify → destroy
+**Molecule**: test framework for roles. `pip install molecule molecule-docker`. Commands: `molecule test` (full lifecycle), `molecule converge` (apply), `molecule verify` (assert), `molecule login` (shell into container).
 
-# ansible-lint — enforce standards
-ansible-lint playbooks/ roles/
-
-# Dry run with diff
-ansible-playbook site.yml --check --diff --limit web1.example.com
+```yaml
+# molecule/default/molecule.yml
+driver: { name: docker }
+platforms:
+  - { name: ubuntu-test, image: "ubuntu:22.04", pre_build_image: true }
+provisioner: { name: ansible }
+verifier: { name: ansible }
 ```
-Use `check_mode: true` on individual tasks for permanent dry-run.
 
-## AWX / Ansible Automation Platform (AAP)
+**ansible-lint**: `pip install ansible-lint && ansible-lint playbooks/`. Enforces best practices.
 
-### Core Concepts
-- **Job Template**: playbook + inventory + credentials + variables. Use "Prompt on Launch" for flexibility.
-- **Workflow Template**: chains job templates with success/failure/always paths. Nest workflows for scale.
-- **Inventory**: static or cloud-sourced (synced on schedule).
-- **Credentials**: stored encrypted — SSH keys, vault passwords, cloud tokens.
-- **RBAC**: per-object permissions (admin, execute, read) for users and teams.
-- **Surveys**: user-facing forms for self-service automation.
-- **Execution Environments**: containerized runtime replacing virtualenvs. Pin dependencies.
+**Check/diff mode**: `--check` (dry run), `--check --diff` (dry run + diffs), `--diff` (apply + show diffs).
 
-### Best Practices
-- Define workflows as code using `controller_configuration` collection.
-- Use workflow visualizer for debugging complex chains.
-- Parameterize with surveys and extra vars — never hardcode.
-- Enforce least-privilege RBAC on credentials and templates.
-- Enable webhook triggers for CI/CD integration (GitHub, GitLab).
-- Schedule recurring jobs for drift detection and compliance.
-- Configure notification templates (Slack, email, PagerDuty) on job outcomes.
+## Best Practices
 
-## Anti-Patterns to Avoid
+**Project layout**:
+```
+ansible-project/
+  ansible.cfg
+  inventory/{production,staging}/{hosts.yml,group_vars/,host_vars/}
+  playbooks/{site.yml,webservers.yml}
+  roles/{common,webserver,database}/
+  collections/requirements.yml
+  vault/{prod_secrets.yml,dev_secrets.yml}
+```
 
-1. **Overusing `command`/`shell`** — use dedicated modules. Add `creates`/`removes` or `changed_when`.
-2. **Ignoring idempotency** — test with `--check` and molecule idempotence.
-3. **Secrets in plaintext** — use Vault or external secret manager. Add `no_log: true`.
-4. **Monolithic playbooks** — break into roles. One role = one concern.
-5. **Hardcoded values** — use variables with defaults via `group_vars` or `--extra-vars`.
-6. **Missing task names** — every task needs a descriptive `name:`.
-7. **Short module names** — always use FQCN (`ansible.builtin.copy`, not `copy`).
-8. **Skipping lint** — run `ansible-lint` in CI.
-9. **No error handling** — use `block/rescue/always`. Set `failed_when`/`changed_when`.
-10. **Running as root everywhere** — use `become: true` only on tasks that need it.
+- Write idempotent tasks. Prefer modules over command/shell.
+- Always use FQCN (`ansible.builtin.copy` not `copy`).
+- Apply `become: true` per-task, not play-wide.
+- Name every task. Unnamed tasks are undebuggable.
+- Pin collection/role versions in `requirements.yml`.
+- Add `changed_when`/`failed_when` to all command/shell tasks.
+- Avoid `vars_prompt` in CI — use extra-vars or vault.
 
-<!-- tested: pass -->
+## Performance
+
+```ini
+[defaults]
+forks = 20                    # default 5; scale to hardware
+gathering = smart             # cache facts across plays
+fact_caching = jsonfile
+fact_caching_connection = /tmp/ansible_facts
+fact_caching_timeout = 7200
+callbacks_enabled = timer, profile_tasks
+[ssh_connection]
+pipelining = True             # modules via stdin, not scp
+ssh_args = -o ControlMaster=auto -o ControlPersist=60s
+```
+
+**Mitogen**: drop-in strategy plugin, 2-7x speedup via persistent Python channel. Set `strategy = mitogen_linear`.
+
+**Other**: `gather_facts: false` when unused. `serial: [1, 5, "100%"]` for canary deploys. `strategy: free` for independent hosts. `max_fail_percentage: 10` for partial-failure tolerance.
+
+## AWX / Automation Platform
+
+AWX (open-source) / AAP (Red Hat) add: web UI + REST API, RBAC, job templates with surveys, scheduling, credential management, smart inventories (cloud-synced), notifications (Slack/email/webhook), workflow templates (chained jobs with conditionals).
+
+## Common Pitfalls
+
+| Pitfall | Fix |
+|---------|-----|
+| `command`/`shell` for everything | Use dedicated modules for idempotency |
+| Bare module names | Always use FQCN |
+| Play-level `become: true` | Per-task become for least privilege |
+| Missing `changed_when` on commands | Add `changed_when: false` to check commands |
+| Hardcoded hosts in playbooks | Use inventory groups + `--limit` |
+| Plaintext secrets in vars | Use ansible-vault |
+| No role testing | Molecule + ansible-lint in CI |
+| Monolithic playbooks | Split into roles, use `import_role`/`include_role` |
+| Ignoring variable precedence | Know the 15 levels; extra-vars for overrides only |
+| Unpinned collection versions | Pin in `requirements.yml` |
+
+## Examples
+
+### Input: "Set up Docker on Ubuntu"
+
+```yaml
+- name: Configure Docker host
+  hosts: docker_hosts
+  become: true
+  vars: { docker_users: [deploy] }
+  tasks:
+    - name: Install prereqs
+      ansible.builtin.apt:
+        name: [ca-certificates, curl, gnupg]
+        state: present
+        update_cache: true
+    - name: Add Docker GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+    - name: Add Docker repo
+      ansible.builtin.apt_repository:
+        repo: "deb https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    - name: Install Docker
+      ansible.builtin.apt:
+        name: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
+        state: present
+      notify: restart docker
+    - name: Add users to docker group
+      ansible.builtin.user: { name: "{{ item }}", groups: docker, append: true }
+      loop: "{{ docker_users }}"
+    - name: Ensure running
+      ansible.builtin.service: { name: docker, state: started, enabled: true }
+  handlers:
+    - name: restart docker
+      ansible.builtin.service: { name: docker, state: restarted }
+```
+
+### Input: "Create Molecule test for nginx role"
+
+```bash
+ansible-galaxy role init nginx_role && cd nginx_role
+molecule init scenario --driver-name docker
+```
+
+```yaml
+# molecule/default/verify.yml
+- name: Verify nginx
+  hosts: all
+  tasks:
+    - name: Check nginx installed
+      ansible.builtin.command: nginx -v
+      changed_when: false
+    - name: Gather services
+      ansible.builtin.service_facts:
+    - name: Assert running
+      ansible.builtin.assert:
+        that:
+          - "'nginx' in services"
+          - "services['nginx'].state == 'running'"
+```
