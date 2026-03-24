@@ -1,0 +1,132 @@
+# Selenium Grid 4 Docker Compose — Full Setup
+# Includes Chrome, Firefox, Edge nodes with video recording and VNC debug access.
+#
+# Usage:
+#   docker compose -f docker-compose-grid.yml up -d
+#   docker compose -f docker-compose-grid.yml down -v
+#
+# Grid UI: http://localhost:4444/ui
+# VNC:     http://localhost:7900 (Chrome), :7901 (Firefox), :7902 (Edge)
+# Videos:  ./videos/
+
+version: "3"
+
+services:
+  # --- Selenium Hub ---
+  selenium-hub:
+    image: selenium/hub:4
+    container_name: selenium-hub
+    ports:
+      - "4444:4444"
+    environment:
+      - GRID_MAX_SESSION=16
+      - SE_SESSION_REQUEST_TIMEOUT=300
+      - SE_NEW_SESSION_WAIT_TIMEOUT=600
+      - SE_NODE_SESSION_TIMEOUT=300
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Chrome Node ---
+  chrome:
+    image: selenium/node-chrome:4
+    container_name: selenium-chrome
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+    shm_size: "2g"
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_SCREEN_WIDTH=1920
+      - SE_SCREEN_HEIGHT=1080
+      - SE_SCREEN_DEPTH=24
+      - SE_VNC_NO_PASSWORD=true
+    ports:
+      - "7900:7900"   # noVNC web viewer
+    volumes:
+      - /dev/shm:/dev/shm
+
+  # --- Firefox Node ---
+  firefox:
+    image: selenium/node-firefox:4
+    container_name: selenium-firefox
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+    shm_size: "2g"
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_SCREEN_WIDTH=1920
+      - SE_SCREEN_HEIGHT=1080
+      - SE_VNC_NO_PASSWORD=true
+    ports:
+      - "7901:7900"
+
+  # --- Edge Node ---
+  edge:
+    image: selenium/node-edge:4
+    container_name: selenium-edge
+    depends_on:
+      selenium-hub:
+        condition: service_healthy
+    shm_size: "2g"
+    environment:
+      - SE_EVENT_BUS_HOST=selenium-hub
+      - SE_EVENT_BUS_PUBLISH_PORT=4442
+      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+      - SE_NODE_MAX_SESSIONS=4
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_SCREEN_WIDTH=1920
+      - SE_SCREEN_HEIGHT=1080
+      - SE_VNC_NO_PASSWORD=true
+    ports:
+      - "7902:7900"
+
+  # --- Video Recording (Chrome) ---
+  chrome-video:
+    image: selenium/video:ffmpeg-6.1-20240402
+    container_name: selenium-chrome-video
+    depends_on:
+      - chrome
+    volumes:
+      - ./videos:/videos
+    environment:
+      - DISPLAY_CONTAINER_NAME=chrome
+      - SE_VIDEO_FILE_NAME=chrome_video.mp4
+      - SE_VIDEO_FRAME_RATE=15
+
+  # --- Video Recording (Firefox) ---
+  firefox-video:
+    image: selenium/video:ffmpeg-6.1-20240402
+    container_name: selenium-firefox-video
+    depends_on:
+      - firefox
+    volumes:
+      - ./videos:/videos
+    environment:
+      - DISPLAY_CONTAINER_NAME=firefox
+      - SE_VIDEO_FILE_NAME=firefox_video.mp4
+      - SE_VIDEO_FRAME_RATE=15
+
+  # --- Video Recording (Edge) ---
+  edge-video:
+    image: selenium/video:ffmpeg-6.1-20240402
+    container_name: selenium-edge-video
+    depends_on:
+      - edge
+    volumes:
+      - ./videos:/videos
+    environment:
+      - DISPLAY_CONTAINER_NAME=edge
+      - SE_VIDEO_FILE_NAME=edge_video.mp4
+      - SE_VIDEO_FRAME_RATE=15

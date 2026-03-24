@@ -76,9 +76,7 @@ Build with `cargo lambda build --release`. The binary must be named `bootstrap` 
 
 ```java
 package example;
-
-import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.amazonaws.services.lambda.runtime.*;
 import java.util.Map;
 
 public class Handler implements RequestHandler<Map<String, Object>, Map<String, Object>> {
@@ -89,7 +87,7 @@ public class Handler implements RequestHandler<Map<String, Object>, Map<String, 
 }
 ```
 
-Initialize SDK clients and DB connections outside the handler method to reuse across warm invocations.
+Initialize SDK clients outside the handler to reuse across warm invocations.
 
 ## Event Sources
 
@@ -268,25 +266,7 @@ Use `AWS::Lambda::Function` resource type. SAM is preferred for serverless workl
 
 - **JWT authorizer** (HTTP API): Validates JWT tokens from any OIDC provider. Simplest setup.
 - **Cognito authorizer** (REST API): Validates tokens from a Cognito User Pool.
-- **Lambda authorizer**: Custom auth logic. Return an IAM policy document. Cache results with `authorizationResultTtlInSeconds`.
-
-```python
-# Lambda authorizer (token-based)
-def handler(event, context):
-    token = event["authorizationToken"]
-    if validate(token):
-        return generate_policy("user", "Allow", event["methodArn"])
-    return generate_policy("user", "Deny", event["methodArn"])
-
-def generate_policy(principal, effect, resource):
-    return {
-        "principalId": principal,
-        "policyDocument": {
-            "Version": "2012-10-17",
-            "Statement": [{"Action": "execute-api:Invoke", "Effect": effect, "Resource": resource}]
-        }
-    }
-```
+- **Lambda authorizer**: Custom auth logic. Return an IAM policy document with `execute-api:Invoke` action. Cache results with `authorizationResultTtlInSeconds`.
 
 ## Cold Start Optimization
 
@@ -451,21 +431,11 @@ Deploy: `docker build -t my-func . && docker push <ecr-uri>`. Set `PackageType: 
 
 ### Execution Role
 
-Every Lambda function needs an execution role. Start with `AWSLambdaBasicExecutionRole` (CloudWatch Logs access), then add only the permissions the function needs.
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {"Effect": "Allow", "Action": ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"], "Resource": "arn:aws:logs:*:*:*"},
-    {"Effect": "Allow", "Action": ["dynamodb:GetItem", "dynamodb:PutItem"], "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/MyTable"}
-  ]
-}
-```
+Every Lambda function needs an execution role. Start with `AWSLambdaBasicExecutionRole` (CloudWatch Logs access), then add only the permissions the function needs. Scope IAM actions and resources narrowly — avoid `*` wildcards, use separate roles per function, and use IAM Access Analyzer to identify unused permissions.
 
 ### Resource Policies
 
-Control who can invoke the function. API Gateway, S3, SNS, and other services need `lambda:InvokeFunction` permission. Use `aws lambda add-permission` or resource-based policy in IaC.
+Control who can invoke the function. API Gateway, S3, SNS, and other services need `lambda:InvokeFunction` permission via resource-based policy.
 
 ### Least Privilege
 
@@ -483,3 +453,33 @@ Scope IAM actions and resources narrowly. Avoid `*` wildcards. Use separate role
 8. **Implement idempotency**: Use Powertools idempotency utility or DynamoDB conditional writes to handle retries safely.
 9. **Monitor and alert**: Set CloudWatch alarms on `Errors`, `Throttles`, and `Duration` p99. Track `InitDuration` for cold start trends.
 10. **Pin dependency versions**: Lock dependency versions in `package-lock.json`, `requirements.txt`, or equivalent to ensure reproducible builds.
+
+## Reference Guides
+
+Deep-dive documentation in `references/`:
+
+| Guide | Topics |
+|-------|--------|
+| [Advanced Patterns](references/advanced-patterns.md) | Lambda extensions, custom runtimes, Lambda@Edge vs CloudFront Functions, Powertools deep dive (batch, feature flags, parameters, streaming), Step Functions patterns, EventBridge architectures, destinations, provisioned concurrency auto-scaling, SnapStart internals, streaming responses, recursive invocation protection |
+| [Troubleshooting](references/troubleshooting.md) | Cold start diagnosis, timeout debugging, memory tuning (power tuning tool), VPC connectivity, permission errors, package size limits, dependency packaging, CloudWatch Logs, X-Ray traces, event source mapping failures, concurrency throttling |
+| [Deployment Patterns](references/deployment-patterns.md) | SAM/CDK/Serverless Framework/Terraform full examples, GitHub Actions CI/CD, blue-green and canary deployments, multi-environment setup, infrastructure testing |
+
+## Helper Scripts
+
+Executable scripts in `scripts/`:
+
+| Script | Usage |
+|--------|-------|
+| `scaffold-lambda.sh` | `./scaffold-lambda.sh --runtime node\|python\|go\|rust --trigger api\|sqs\|s3\|schedule --deploy sam\|cdk\|serverless` |
+| `lambda-local-test.sh` | `./lambda-local-test.sh --function MyFunc --event event.json` or `--generate api\|sqs\|s3\|sns\|dynamodb\|schedule` |
+| `lambda-optimize.sh` | `./lambda-optimize.sh --function my-func --region us-east-1` — analyzes config and CloudWatch metrics, suggests optimizations |
+
+## Asset Templates
+
+Production-ready templates in `assets/`:
+
+| Template | Description |
+|----------|-------------|
+| [sam-template.yaml](assets/sam-template.yaml) | Complete SAM template with HTTP API, DynamoDB (GSI), Lambda layers, SQS/DLQ, CloudWatch alarms |
+| [cdk-stack.ts](assets/cdk-stack.ts) | CDK TypeScript stack with NodejsFunction, REST API, DynamoDB, SQS, IAM grants |
+| [github-actions-deploy.yml](assets/github-actions-deploy.yml) | GitHub Actions workflow with OIDC auth, multi-environment deploy (dev/staging/prod), testing, caching |

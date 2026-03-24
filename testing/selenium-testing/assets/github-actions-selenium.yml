@@ -1,0 +1,177 @@
+# GitHub Actions workflow for Selenium tests with Grid service containers.
+#
+# Features:
+#   - Selenium Grid with Chrome and Firefox nodes as service containers
+#   - Python test execution with pytest
+#   - Automatic screenshot capture on failure
+#   - Test result upload as artifacts
+#   - Configurable browser and parallelism
+#
+# Usage:
+#   Copy to .github/workflows/selenium-tests.yml in your repository.
+
+name: Selenium Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: "Browser to test"
+        required: false
+        default: "chrome"
+        type: choice
+        options:
+          - chrome
+          - firefox
+          - all
+
+env:
+  GRID_URL: http://localhost:4444
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  selenium-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      selenium-hub:
+        image: selenium/hub:4
+        ports:
+          - 4444:4444
+        options: >-
+          --health-cmd "curl -f http://localhost:4444/status || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+      chrome-node:
+        image: selenium/node-chrome:4
+        env:
+          SE_EVENT_BUS_HOST: selenium-hub
+          SE_EVENT_BUS_PUBLISH_PORT: 4442
+          SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+          SE_NODE_MAX_SESSIONS: 4
+          SE_NODE_OVERRIDE_MAX_SESSIONS: true
+        options: --shm-size=2g
+
+      firefox-node:
+        image: selenium/node-firefox:4
+        env:
+          SE_EVENT_BUS_HOST: selenium-hub
+          SE_EVENT_BUS_PUBLISH_PORT: 4442
+          SE_EVENT_BUS_SUBSCRIBE_PORT: 4443
+          SE_NODE_MAX_SESSIONS: 4
+          SE_NODE_OVERRIDE_MAX_SESSIONS: true
+        options: --shm-size=2g
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest-xdist pytest-html allure-pytest
+
+      - name: Wait for Selenium Grid
+        run: |
+          echo "Waiting for Selenium Grid to be ready..."
+          for i in $(seq 1 60); do
+            if curl -s $GRID_URL/status | grep -q '"ready":true'; then
+              echo "Grid is ready!"
+              curl -s $GRID_URL/status | python -m json.tool
+              break
+            fi
+            echo "Attempt $i/60 — waiting..."
+            sleep 2
+          done
+          # Final check
+          curl -sf $GRID_URL/status | grep -q '"ready":true' || {
+            echo "ERROR: Grid did not become ready"
+            exit 1
+          }
+
+      - name: Run Selenium tests (Chrome)
+        if: github.event.inputs.browser != 'firefox'
+        run: |
+          pytest tests/ \
+            --browser chrome \
+            --grid-url $GRID_URL \
+            -n 4 \
+            --junitxml=reports/chrome-results.xml \
+            --html=reports/chrome-report.html \
+            --self-contained-html \
+            --alluredir=allure-results/chrome \
+            -v \
+            --timeout=120
+        continue-on-error: true
+
+      - name: Run Selenium tests (Firefox)
+        if: github.event.inputs.browser == 'firefox' || github.event.inputs.browser == 'all' || github.event.inputs.browser == ''
+        run: |
+          pytest tests/ \
+            --browser firefox \
+            --grid-url $GRID_URL \
+            -n 4 \
+            --junitxml=reports/firefox-results.xml \
+            --html=reports/firefox-report.html \
+            --self-contained-html \
+            --alluredir=allure-results/firefox \
+            -v \
+            --timeout=120
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            reports/
+            allure-results/
+            test-artifacts/
+            screenshots/
+          retention-days: 14
+
+      - name: Upload JUnit results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-results
+          path: reports/*-results.xml
+
+      - name: Publish test results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Selenium Test Results
+          path: reports/*-results.xml
+          reporter: java-junit
+
+      - name: Check test results
+        if: always()
+        run: |
+          FAILED=0
+          for f in reports/*-results.xml; do
+            if [ -f "$f" ]; then
+              FAILURES=$(grep -oP 'failures="\K[0-9]+' "$f" || echo "0")
+              ERRORS=$(grep -oP 'errors="\K[0-9]+' "$f" || echo "0")
+              if [ "$FAILURES" -gt 0 ] || [ "$ERRORS" -gt 0 ]; then
+                echo "FAILED: $f (failures=$FAILURES, errors=$ERRORS)"
+                FAILED=1
+              fi
+            fi
+          done
+          exit $FAILED

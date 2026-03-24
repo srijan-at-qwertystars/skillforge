@@ -401,3 +401,31 @@ export default defineConfig({ output: 'server', adapter: vercel() });
 ```
 
 Use `export const prerender = true` per page to prerender at build time in server mode. Set `site` for canonical URLs. Add `@astrojs/sitemap` for sitemap.xml. Test with `astro preview`.
+
+## References
+
+In-depth guides for advanced topics:
+
+- **`references/advanced-patterns.md`** — Content Layer API (custom loaders, remote sources), Server Islands, advanced View Transitions (persistent elements, animation customization, lifecycle events), dynamic OG image generation, complex routing (i18n with content collections, redirects, rewrites), middleware chaining, Astro Actions deep dive (form actions, progressive enhancement, error handling), custom integrations development, Astro + HTMX patterns, RSS/sitemap generation, asset handling pipeline.
+
+- **`references/troubleshooting.md`** — Hydration errors (framework mismatches, missing client directives), build failures (SSR vs static conflicts, adapter issues), content collection schema errors, image optimization failures, View Transition glitches (state persistence, scroll position), TypeScript strictness issues, Tailwind purging in Astro, deployment adapter gotchas (Vercel, Netlify, Cloudflare, Node), Vite config conflicts, slow builds with large content collections.
+
+- **`references/integration-guide.md`** — React in Astro (state, context, hooks), Vue (Composition API, Pinia), Svelte (stores, transitions), sharing state between frameworks (Nano Stores, custom events), UI component libraries (shadcn/ui, Radix, Headless UI), CMS integrations (Contentful, Sanity, Strapi, WordPress headless), authentication patterns (Clerk, Auth.js, Lucia), database integration (Drizzle, Prisma, Astro DB).
+
+## Scripts
+
+Helper scripts in `scripts/`:
+
+- **`scripts/scaffold-astro-project.sh`** — Scaffolds a complete Astro project. Options: `--template blog|docs|portfolio|ecommerce`, `--integrations react,vue,svelte,tailwind`, `--output static|server`, `--adapter node|vercel|netlify|cloudflare`, `--typescript base|strict|strictest`. Run with `--dry-run` to preview.
+
+- **`scripts/astro-content-migrate.sh`** — Migrates existing markdown files with frontmatter into Astro Content Collections. Analyzes frontmatter fields, infers Zod schema types, generates `content.config.ts`. Options: `--source <dir>`, `--collection <name>`, `--move` to copy files into `src/content/`, `--analyze-only` to just inspect fields.
+
+## Assets
+
+Reusable templates in `assets/`:
+
+- **`assets/astro.config.mjs`** — Production-ready Astro config with common integrations (React, Tailwind, Sitemap, MDX), image optimization, i18n, redirects, markdown/Shiki config, Vite aliases, and adapter placeholders. Copy and customize.
+
+- **`assets/content-config.ts`** — Content Collection config with schemas for blog posts (full metadata, SEO, image optimization), documentation pages (sidebar ordering, navigation), and authors (JSON data file with social links). Includes commented-out portfolio and changelog schemas.
+
+- **`assets/base-layout.astro`** — Full-featured base layout with complete SEO meta tags (Open Graph, Twitter Cards), View Transitions, responsive navigation with mobile hamburger menu, dark mode persistence, skip-to-content accessibility link, named slots (head, before-content, after-content), and CSS custom properties for theming.

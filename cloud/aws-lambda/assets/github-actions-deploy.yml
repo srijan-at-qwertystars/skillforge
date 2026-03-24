@@ -1,0 +1,199 @@
+# GitHub Actions - SAM Serverless Deployment Pipeline
+# Deploys to dev (auto on main push), staging & prod (manual with approvals)
+# Uses OIDC federation for keyless AWS authentication
+
+name: Deploy Serverless Application
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'template.yaml'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options: [staging, prod]
+
+permissions:
+  id-token: write   # Required for OIDC federation
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  SAM_CLI_TELEMETRY: 0
+  STACK_NAME: my-service
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+jobs:
+
+  # -------------------------------------------------------------------------
+  # Test - lint and unit tests
+  # -------------------------------------------------------------------------
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test -- --coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: coverage/
+          retention-days: 7
+
+  # -------------------------------------------------------------------------
+  # Build - SAM build with caching
+  # -------------------------------------------------------------------------
+  build:
+    name: SAM Build
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: aws-actions/setup-sam@v2
+        with: { use-installer: true }
+      - uses: actions/setup-node@v4
+        with: { node-version: '20', cache: npm }
+      - uses: actions/cache@v4
+        with:
+          path: .aws-sam/
+          key: sam-build-${{ runner.os }}-${{ hashFiles('**/package-lock.json', 'template.yaml') }}
+          restore-keys: sam-build-${{ runner.os }}-
+      - run: sam build --use-container --cached
+      - uses: actions/upload-artifact@v4
+        with: { name: sam-build, path: .aws-sam/, retention-days: 1 }
+
+  # -------------------------------------------------------------------------
+  # Deploy to Dev - automatic on push to main
+  # -------------------------------------------------------------------------
+  deploy-dev:
+    name: Deploy to Dev
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency: { group: deploy-dev, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with: { use-installer: true }
+      - uses: actions/download-artifact@v4
+        with: { name: sam-build, path: .aws-sam/ }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy
+        run: |
+          sam deploy --stack-name "${{ env.STACK_NAME }}-dev" \
+            --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides "Environment=dev LogRetentionDays=7" \
+            --capabilities CAPABILITY_IAM --resolve-s3
+      - name: Integration tests
+        run: |
+          API_URL=$(aws cloudformation describe-stacks --stack-name "${{ env.STACK_NAME }}-dev" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
+          curl --fail --silent --show-error "${API_URL}health" | jq .
+
+  # -------------------------------------------------------------------------
+  # Deploy to Staging - manual trigger
+  # -------------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency: { group: deploy-staging, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with: { use-installer: true }
+      - uses: actions/download-artifact@v4
+        with: { name: sam-build, path: .aws-sam/ }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_STAGING }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy
+        run: |
+          sam deploy --stack-name "${{ env.STACK_NAME }}-staging" \
+            --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides "Environment=staging LogRetentionDays=30" \
+            --capabilities CAPABILITY_IAM --resolve-s3
+      - name: Integration tests
+        run: |
+          API_URL=$(aws cloudformation describe-stacks --stack-name "${{ env.STACK_NAME }}-staging" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
+          curl --fail --silent --show-error "${API_URL}health" | jq .
+
+  # -------------------------------------------------------------------------
+  # Deploy to Production - manual with environment protection rules
+  # -------------------------------------------------------------------------
+  deploy-prod:
+    name: Deploy to Production
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    environment: prod   # Requires reviewers configured in repo settings
+    concurrency: { group: deploy-prod, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/setup-sam@v2
+        with: { use-installer: true }
+      - uses: actions/download-artifact@v4
+        with: { name: sam-build, path: .aws-sam/ }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_PROD }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Deploy
+        run: |
+          sam deploy --stack-name "${{ env.STACK_NAME }}-prod" \
+            --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides "Environment=prod LogRetentionDays=90" \
+            --capabilities CAPABILITY_IAM --resolve-s3
+      - name: Smoke test
+        run: |
+          API_URL=$(aws cloudformation describe-stacks --stack-name "${{ env.STACK_NAME }}-prod" \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue' --output text)
+          curl --fail --silent --show-error "${API_URL}health" | jq .
+
+  # -------------------------------------------------------------------------
+  # Notify on failure
+  # -------------------------------------------------------------------------
+  notify-failure:
+    name: Notify on Failure
+    needs: [deploy-dev, deploy-staging, deploy-prod]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "🚨 Deploy failed: ${{ github.repository }} #${{ github.run_number }} (<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|view>)"
+            }

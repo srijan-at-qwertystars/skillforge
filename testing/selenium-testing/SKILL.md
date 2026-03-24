@@ -375,37 +375,14 @@ java -jar selenium-server-4.x.jar node --detect-drivers true
 ```
 
 ### Docker Compose
-```yaml
-version: "3"
-services:
-  hub:
-    image: selenium/hub:4
-    ports: ["4444:4444"]
-  chrome:
-    image: selenium/node-chrome:4
-    depends_on: [hub]
-    environment:
-      - SE_EVENT_BUS_HOST=hub
-      - SE_EVENT_BUS_PUBLISH_PORT=4442
-      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
-  firefox:
-    image: selenium/node-firefox:4
-    depends_on: [hub]
-    environment:
-      - SE_EVENT_BUS_HOST=hub
-      - SE_EVENT_BUS_PUBLISH_PORT=4442
-      - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
-```
 
-Point tests to `http://localhost:4444`:
+See `assets/docker-compose-grid.yml` for a full compose file with Chrome, Firefox, Edge, video recording, and VNC. Quick start:
+
 ```python
-driver = webdriver.Remote(
-    command_executor="http://localhost:4444",
-    options=Options()
-)
+driver = webdriver.Remote(command_executor="http://localhost:4444", options=Options())
 ```
 
-For Kubernetes, use the official Selenium Helm chart. Scale browser nodes with `kubectl scale` or KEDA autoscaling.
+For Kubernetes, use the official Selenium Helm chart with KEDA autoscaling.
 
 ## Cross-Browser Testing
 
@@ -430,12 +407,11 @@ def test_title(driver):
 
 ## Test Framework Integration
 
+See `references/framework-integration.md` for complete integration guides. See `assets/conftest.py` for a ready-to-use pytest configuration.
+
 ### Python — pytest
 ```python
-# conftest.py
-import pytest
-from selenium import webdriver
-
+# conftest.py — see assets/conftest.py for full version
 @pytest.fixture
 def driver():
     d = webdriver.Chrome()
@@ -466,23 +442,6 @@ class LoginTest {
 // TestNG — use @BeforeMethod/@AfterMethod instead, Assert.assertEquals()
 ```
 
-### JavaScript — Mocha
-```javascript
-const { Builder, By } = require("selenium-webdriver");
-describe("Login", function () {
-  let driver;
-  before(async () => { driver = await new Builder().forBrowser("chrome").build(); });
-  after(async () => { await driver.quit(); });
-  it("should login", async function () {
-    await driver.get("https://app.example.com/login");
-    await driver.findElement(By.id("username")).sendKeys("user");
-    await driver.findElement(By.id("password")).sendKeys("pass");
-    await driver.findElement(By.css("button[type='submit']")).click();
-    assert.strictEqual(await driver.getTitle(), "Dashboard");
-  });
-});
-```
-
 ## Key Rules
 
 - NEVER use `Thread.sleep()` or `time.sleep()` — use explicit waits with ExpectedConditions.
@@ -494,3 +453,35 @@ describe("Login", function () {
 - Keep locators stable: prefer `data-testid` attributes over DOM structure.
 - Use Selenium Grid or Docker for parallel cross-browser execution.
 - Pin Selenium and driver versions in CI to avoid flaky version mismatches.
+
+## References
+
+Deep-dive guides for advanced usage. See `references/` directory.
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — BiDi protocol (network interception, console logs, authentication), Chrome DevTools Protocol (performance metrics, network throttling, geolocation, device emulation), custom ExpectedConditions, advanced Actions API (pointer/keyboard/wheel sequences), shadow DOM interaction, Web Components testing, multi-window orchestration, browser extensions, Selenium Grid observability (Jaeger tracing, VNC, GraphQL), SeleniumManager configuration, W3C WebDriver spec compliance.
+
+- **[Troubleshooting](references/troubleshooting.md)** — StaleElementReferenceException (retry patterns, staleness waits), NoSuchElementException (iframe/shadow DOM/timing issues), ElementNotInteractableException (scroll, overlay, JS click), TimeoutException (diagnosis with diagnostics capture), WebDriverException (driver version mismatch resolution), flaky test patterns (race conditions, animations, data pollution), session management (leaks, zombie processes), memory leaks in long suites, headless mode rendering differences, CI/CD problems (missing fonts, Chrome sandbox, /dev/shm), screenshot comparison drift, Selenium Grid session allocation debugging.
+
+- **[Framework Integration](references/framework-integration.md)** — pytest + Selenium (fixtures, conftest, markers, pytest-xdist parallel, parameterized browsers, screenshot hooks), JUnit 5 + Selenium (extensions, parameterized tests, parallel execution), TestNG + Selenium (data providers, groups, listeners, parallel suites), Mocha/Jest + Selenium (async patterns, shared driver), BDD with Cucumber (Java and Python/Behave step definitions), Allure reporting (Python and Java, attachments), CI/CD pipelines (GitHub Actions, Jenkins, GitLab CI with Grid service containers).
+
+## Scripts
+
+Helper scripts in `scripts/`. All are self-contained and executable.
+
+- **`scripts/setup-selenium-grid.sh`** — Sets up Selenium Grid 4 via Docker Compose. Supports three modes: `standalone` (single container), `hub-node` (hub + configurable browser nodes), and `full-grid` (all browsers + video recording). Options: `--chrome-nodes N`, `--firefox-nodes N`, `--edge-nodes N`, `--vnc`, `--video`, `--down`, `--status`.
+
+- **`scripts/generate-page-object.sh`** — Generates a Page Object class from a live URL. Inspects the page for interactive elements (inputs, buttons, links, selects) and outputs a Python or Java class with locators and action methods. Usage: `./generate-page-object.sh URL --lang python|java --class ClassName`.
+
+- **`scripts/run-cross-browser.sh`** — Runs your test suite across Chrome, Firefox, and Edge in parallel via Selenium Grid. Collects per-browser results and generates a summary report. Options: `--browsers chrome,firefox,edge`, `--parallel N`, `--runner pytest|maven`, `--fail-fast`.
+
+## Assets
+
+Ready-to-use templates in `assets/`. Copy and customize for your project.
+
+- **`assets/docker-compose-grid.yml`** — Full Selenium Grid 4 Docker Compose with hub, Chrome/Firefox/Edge nodes, VNC debug access (ports 7900-7902), and video recording sidecars. Includes health checks and shm configuration.
+
+- **`assets/conftest.py`** — pytest conftest with `driver` fixture supporting Chrome/Firefox/Edge, headless mode, Selenium Grid remote execution, and automatic screenshot/console log capture on test failure. Adds CLI options: `--browser`, `--headless`, `--grid-url`, `--base-url`.
+
+- **`assets/base_page.py`** — Python Page Object base class with 30+ helper methods: `find`, `click`, `type`, `select_by_text`, `hover`, `drag_and_drop`, `scroll_to`, `wait_for_text`, `wait_for_invisible`, `switch_to_frame`, `accept_alert`, `take_screenshot`, `disable_animations`, `upload_file`, and more. Extend for each page.
+
+- **`assets/github-actions-selenium.yml`** — GitHub Actions workflow with Selenium Grid as service containers (hub + Chrome/Firefox nodes), pytest execution with parallel workers, Allure reporting, artifact upload, and JUnit result publishing.
