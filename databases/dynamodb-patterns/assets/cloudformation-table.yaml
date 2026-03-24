@@ -1,0 +1,418 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Production-ready DynamoDB table with GSIs, auto-scaling, backups,
+  and DynamoDB Streams. Designed for single-table design patterns.
+
+Parameters:
+  TableName:
+    Type: String
+    Default: AppTable
+    Description: Name of the DynamoDB table
+
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [development, staging, production]
+    Description: Deployment environment
+
+  BillingMode:
+    Type: String
+    Default: PROVISIONED
+    AllowedValues: [PROVISIONED, PAY_PER_REQUEST]
+    Description: >
+      PROVISIONED for predictable workloads (with auto-scaling).
+      PAY_PER_REQUEST for unpredictable/spiky workloads.
+
+  MinReadCapacity:
+    Type: Number
+    Default: 5
+    Description: Minimum read capacity units (provisioned mode only)
+
+  MaxReadCapacity:
+    Type: Number
+    Default: 1000
+    Description: Maximum read capacity units for auto-scaling
+
+  MinWriteCapacity:
+    Type: Number
+    Default: 5
+    Description: Minimum write capacity units (provisioned mode only)
+
+  MaxWriteCapacity:
+    Type: Number
+    Default: 1000
+    Description: Maximum write capacity units for auto-scaling
+
+  TargetUtilization:
+    Type: Number
+    Default: 70
+    MinValue: 20
+    MaxValue: 90
+    Description: Target utilization percentage for auto-scaling
+
+  StreamViewType:
+    Type: String
+    Default: NEW_AND_OLD_IMAGES
+    AllowedValues:
+      - KEYS_ONLY
+      - NEW_IMAGE
+      - OLD_IMAGE
+      - NEW_AND_OLD_IMAGES
+    Description: DynamoDB Streams view type
+
+  EnablePITR:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable Point-in-Time Recovery
+
+  TTLAttributeName:
+    Type: String
+    Default: ttl
+    Description: Attribute name for TTL (Time To Live)
+
+Conditions:
+  IsProvisioned: !Equals [!Ref BillingMode, PROVISIONED]
+  PITREnabled: !Equals [!Ref EnablePITR, 'true']
+
+Resources:
+  # ─────────────────────────────────────────────
+  # DynamoDB Table
+  # ─────────────────────────────────────────────
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Ref TableName
+      BillingMode: !Ref BillingMode
+
+      # Key Schema — generic names for single-table design
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+      # Provisioned throughput (only when PROVISIONED mode)
+      ProvisionedThroughput: !If
+        - IsProvisioned
+        - ReadCapacityUnits: !Ref MinReadCapacity
+          WriteCapacityUnits: !Ref MinWriteCapacity
+        - !Ref AWS::NoValue
+
+      # Global Secondary Indexes
+      GlobalSecondaryIndexes:
+        # GSI1: Inverted index / overloaded access patterns
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - IsProvisioned
+            - ReadCapacityUnits: !Ref MinReadCapacity
+              WriteCapacityUnits: !Ref MinWriteCapacity
+            - !Ref AWS::NoValue
+
+        # GSI2: Secondary access patterns
+        - IndexName: GSI2
+          KeySchema:
+            - AttributeName: GSI2PK
+              KeyType: HASH
+            - AttributeName: GSI2SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput: !If
+            - IsProvisioned
+            - ReadCapacityUnits: !Ref MinReadCapacity
+              WriteCapacityUnits: !Ref MinWriteCapacity
+            - !Ref AWS::NoValue
+
+      # TTL
+      TimeToLiveSpecification:
+        AttributeName: !Ref TTLAttributeName
+        Enabled: true
+
+      # DynamoDB Streams
+      StreamSpecification:
+        StreamViewType: !Ref StreamViewType
+
+      # Point-in-Time Recovery
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [PITREnabled, true, false]
+
+      # Contributor Insights (helps identify hot keys)
+      ContributorInsightsSpecification:
+        Enabled: true
+
+      # Tags
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Application
+          Value: !Ref TableName
+
+  # ─────────────────────────────────────────────
+  # Auto-Scaling — Table Read Capacity
+  # ─────────────────────────────────────────────
+  TableReadScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: IsProvisioned
+    Properties:
+      MaxCapacity: !Ref MaxReadCapacity
+      MinCapacity: !Ref MinReadCapacity
+      ResourceId: !Sub table/${TableName}
+      ScalableDimension: dynamodb:table:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  TableReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: IsProvisioned
+    Properties:
+      PolicyName: !Sub ${TableName}-read-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref TableReadScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+        TargetValue: !Ref TargetUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  # ─────────────────────────────────────────────
+  # Auto-Scaling — Table Write Capacity
+  # ─────────────────────────────────────────────
+  TableWriteScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: IsProvisioned
+    Properties:
+      MaxCapacity: !Ref MaxWriteCapacity
+      MinCapacity: !Ref MinWriteCapacity
+      ResourceId: !Sub table/${TableName}
+      ScalableDimension: dynamodb:table:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  TableWriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: IsProvisioned
+    Properties:
+      PolicyName: !Sub ${TableName}-write-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref TableWriteScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+        TargetValue: !Ref TargetUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  # ─────────────────────────────────────────────
+  # Auto-Scaling — GSI1 Read/Write
+  # ─────────────────────────────────────────────
+  GSI1ReadScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: IsProvisioned
+    Properties:
+      MaxCapacity: !Ref MaxReadCapacity
+      MinCapacity: !Ref MinReadCapacity
+      ResourceId: !Sub table/${TableName}/index/GSI1
+      ScalableDimension: dynamodb:index:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  GSI1ReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: IsProvisioned
+    Properties:
+      PolicyName: !Sub ${TableName}-gsi1-read-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref GSI1ReadScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+        TargetValue: !Ref TargetUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  GSI1WriteScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: IsProvisioned
+    Properties:
+      MaxCapacity: !Ref MaxWriteCapacity
+      MinCapacity: !Ref MinWriteCapacity
+      ResourceId: !Sub table/${TableName}/index/GSI1
+      ScalableDimension: dynamodb:index:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  GSI1WriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: IsProvisioned
+    Properties:
+      PolicyName: !Sub ${TableName}-gsi1-write-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref GSI1WriteScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+        TargetValue: !Ref TargetUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  # ─────────────────────────────────────────────
+  # Auto-Scaling — GSI2 Read/Write
+  # ─────────────────────────────────────────────
+  GSI2ReadScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: IsProvisioned
+    Properties:
+      MaxCapacity: !Ref MaxReadCapacity
+      MinCapacity: !Ref MinReadCapacity
+      ResourceId: !Sub table/${TableName}/index/GSI2
+      ScalableDimension: dynamodb:index:ReadCapacityUnits
+      ServiceNamespace: dynamodb
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  GSI2ReadScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: IsProvisioned
+    Properties:
+      PolicyName: !Sub ${TableName}-gsi2-read-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref GSI2ReadScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBReadCapacityUtilization
+        TargetValue: !Ref TargetUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  GSI2WriteScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Condition: IsProvisioned
+    Properties:
+      MaxCapacity: !Ref MaxWriteCapacity
+      MinCapacity: !Ref MinWriteCapacity
+      ResourceId: !Sub table/${TableName}/index/GSI2
+      ScalableDimension: dynamodb:index:WriteCapacityUnits
+      ServiceNamespace: dynamodb
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  GSI2WriteScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Condition: IsProvisioned
+    Properties:
+      PolicyName: !Sub ${TableName}-gsi2-write-scaling
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref GSI2WriteScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: DynamoDBWriteCapacityUtilization
+        TargetValue: !Ref TargetUtilization
+        ScaleInCooldown: 60
+        ScaleOutCooldown: 60
+
+  # ─────────────────────────────────────────────
+  # Auto-Scaling IAM Role
+  # ─────────────────────────────────────────────
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Condition: IsProvisioned
+    Properties:
+      RoleName: !Sub ${TableName}-autoscaling-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: application-autoscaling.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/DynamoDBAutoscalePolicy
+
+  # ─────────────────────────────────────────────
+  # CloudWatch Alarms
+  # ─────────────────────────────────────────────
+  ThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${TableName}-throttle-alarm
+      AlarmDescription: DynamoDB throttling detected
+      Namespace: AWS/DynamoDB
+      MetricName: ThrottledRequests
+      Dimensions:
+        - Name: TableName
+          Value: !Ref TableName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  SystemErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${TableName}-system-error-alarm
+      AlarmDescription: DynamoDB system errors detected
+      Namespace: AWS/DynamoDB
+      MetricName: SystemErrors
+      Dimensions:
+        - Name: TableName
+          Value: !Ref TableName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  TableName:
+    Description: DynamoDB table name
+    Value: !Ref DynamoDBTable
+    Export:
+      Name: !Sub ${AWS::StackName}-TableName
+
+  TableArn:
+    Description: DynamoDB table ARN
+    Value: !GetAtt DynamoDBTable.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-TableArn
+
+  StreamArn:
+    Description: DynamoDB Streams ARN
+    Value: !GetAtt DynamoDBTable.StreamArn
+    Export:
+      Name: !Sub ${AWS::StackName}-StreamArn
+
+  GSI1Name:
+    Description: GSI1 index name
+    Value: GSI1
+
+  GSI2Name:
+    Description: GSI2 index name
+    Value: GSI2

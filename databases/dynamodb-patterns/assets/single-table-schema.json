@@ -1,0 +1,312 @@
+{
+  "$schema": "single-table-design",
+  "description": "Single-table DynamoDB schema for a SaaS project management application. Demonstrates entity storage, GSI overloading, sparse indexes, and adjacency list patterns.",
+  "tableName": "SaaSApp",
+  "keySchema": {
+    "partitionKey": { "name": "PK", "type": "S" },
+    "sortKey": { "name": "SK", "type": "S" }
+  },
+  "globalSecondaryIndexes": [
+    {
+      "indexName": "GSI1",
+      "partitionKey": { "name": "GSI1PK", "type": "S" },
+      "sortKey": { "name": "GSI1SK", "type": "S" },
+      "projectionType": "ALL",
+      "purpose": "Inverted lookups, cross-entity queries (email lookup, org member listing, status-based queries)"
+    },
+    {
+      "indexName": "GSI2",
+      "partitionKey": { "name": "GSI2PK", "type": "S" },
+      "sortKey": { "name": "GSI2SK", "type": "S" },
+      "projectionType": "KEYS_ONLY",
+      "purpose": "Sparse index for pending approvals, flagged items, expiring resources"
+    }
+  ],
+  "entities": {
+    "Tenant": {
+      "description": "Organization/company account",
+      "keyPattern": {
+        "PK": "TENANT#<tenantId>",
+        "SK": "METADATA"
+      },
+      "attributes": {
+        "tenantId": { "type": "S", "required": true },
+        "name": { "type": "S", "required": true },
+        "plan": { "type": "S", "enum": ["free", "pro", "enterprise"] },
+        "createdAt": { "type": "S", "format": "ISO8601" },
+        "updatedAt": { "type": "S", "format": "ISO8601" },
+        "settings": { "type": "M", "description": "Tenant-level configuration" },
+        "entityType": { "type": "S", "value": "Tenant" }
+      },
+      "gsiMappings": {
+        "GSI1": { "GSI1PK": "PLAN#<plan>", "GSI1SK": "TENANT#<tenantId>" }
+      }
+    },
+    "User": {
+      "description": "User account within a tenant",
+      "keyPattern": {
+        "PK": "USER#<userId>",
+        "SK": "METADATA"
+      },
+      "attributes": {
+        "userId": { "type": "S", "required": true },
+        "email": { "type": "S", "required": true },
+        "name": { "type": "S", "required": true },
+        "role": { "type": "S", "enum": ["admin", "member", "viewer"] },
+        "avatarUrl": { "type": "S" },
+        "lastLoginAt": { "type": "S", "format": "ISO8601" },
+        "createdAt": { "type": "S", "format": "ISO8601" },
+        "entityType": { "type": "S", "value": "User" }
+      },
+      "gsiMappings": {
+        "GSI1": { "GSI1PK": "EMAIL#<email>", "GSI1SK": "USER" }
+      }
+    },
+    "TenantMembership": {
+      "description": "Many-to-many relationship between tenants and users (adjacency list)",
+      "keyPattern": {
+        "PK": "TENANT#<tenantId>",
+        "SK": "USER#<userId>"
+      },
+      "attributes": {
+        "role": { "type": "S", "enum": ["owner", "admin", "member"] },
+        "joinedAt": { "type": "S", "format": "ISO8601" },
+        "entityType": { "type": "S", "value": "TenantMembership" }
+      },
+      "gsiMappings": {
+        "GSI1": { "GSI1PK": "USER#<userId>", "GSI1SK": "TENANT#<tenantId>" }
+      },
+      "notes": "Inverted GSI1 enables 'list tenants for user'. Bidirectional edge stored as single item."
+    },
+    "Project": {
+      "description": "Project within a tenant",
+      "keyPattern": {
+        "PK": "TENANT#<tenantId>",
+        "SK": "PROJECT#<projectId>"
+      },
+      "attributes": {
+        "projectId": { "type": "S", "required": true },
+        "name": { "type": "S", "required": true },
+        "description": { "type": "S" },
+        "status": { "type": "S", "enum": ["active", "archived", "deleted"] },
+        "ownerId": { "type": "S" },
+        "createdAt": { "type": "S", "format": "ISO8601" },
+        "updatedAt": { "type": "S", "format": "ISO8601" },
+        "entityType": { "type": "S", "value": "Project" }
+      },
+      "gsiMappings": {
+        "GSI1": { "GSI1PK": "STATUS#<status>", "GSI1SK": "DATE#<createdAt>#PROJECT#<projectId>" }
+      }
+    },
+    "Task": {
+      "description": "Task within a project",
+      "keyPattern": {
+        "PK": "PROJECT#<projectId>",
+        "SK": "TASK#<createdAt>#<taskId>"
+      },
+      "attributes": {
+        "taskId": { "type": "S", "required": true },
+        "title": { "type": "S", "required": true },
+        "description": { "type": "S" },
+        "status": { "type": "S", "enum": ["todo", "in_progress", "review", "done"] },
+        "priority": { "type": "N", "range": [1, 5] },
+        "assigneeId": { "type": "S" },
+        "dueDate": { "type": "S", "format": "ISO8601" },
+        "createdAt": { "type": "S", "format": "ISO8601" },
+        "updatedAt": { "type": "S", "format": "ISO8601" },
+        "entityType": { "type": "S", "value": "Task" }
+      },
+      "gsiMappings": {
+        "GSI1": { "GSI1PK": "ASSIGNEE#<assigneeId>", "GSI1SK": "DUE#<dueDate>#TASK#<taskId>" }
+      },
+      "sparseGSI": {
+        "GSI2": {
+          "condition": "status IN ('todo', 'in_progress', 'review')",
+          "GSI2PK": "PENDING#PROJECT#<projectId>",
+          "GSI2SK": "PRI#<priority_padded>#TASK#<taskId>",
+          "notes": "Sparse index: only non-done tasks appear. Remove GSI2 keys when task is marked done."
+        }
+      }
+    },
+    "Comment": {
+      "description": "Comment on a task",
+      "keyPattern": {
+        "PK": "TASK#<taskId>",
+        "SK": "COMMENT#<createdAt>#<commentId>"
+      },
+      "attributes": {
+        "commentId": { "type": "S", "required": true },
+        "authorId": { "type": "S", "required": true },
+        "body": { "type": "S", "required": true },
+        "createdAt": { "type": "S", "format": "ISO8601" },
+        "editedAt": { "type": "S", "format": "ISO8601" },
+        "entityType": { "type": "S", "value": "Comment" }
+      },
+      "gsiMappings": {
+        "GSI1": { "GSI1PK": "USER#<authorId>", "GSI1SK": "COMMENT#<createdAt>" }
+      }
+    },
+    "Notification": {
+      "description": "User notification with TTL for auto-expiry",
+      "keyPattern": {
+        "PK": "USER#<userId>",
+        "SK": "NOTIF#<createdAt>#<notificationId>"
+      },
+      "attributes": {
+        "notificationId": { "type": "S", "required": true },
+        "type": { "type": "S", "enum": ["task_assigned", "comment_added", "mention", "due_soon"] },
+        "message": { "type": "S" },
+        "read": { "type": "BOOL", "default": false },
+        "sourceEntityPK": { "type": "S", "description": "PK of the entity that triggered this notification" },
+        "sourceEntitySK": { "type": "S", "description": "SK of the entity that triggered this notification" },
+        "createdAt": { "type": "S", "format": "ISO8601" },
+        "ttl": { "type": "N", "description": "Epoch seconds, auto-expires after 90 days" },
+        "entityType": { "type": "S", "value": "Notification" }
+      },
+      "sparseGSI": {
+        "GSI2": {
+          "condition": "read = false",
+          "GSI2PK": "UNREAD#USER#<userId>",
+          "GSI2SK": "NOTIF#<createdAt>",
+          "notes": "Sparse index for unread notifications. Remove GSI2 keys when notification is read."
+        }
+      }
+    },
+    "AuditLog": {
+      "description": "Immutable audit trail entry",
+      "keyPattern": {
+        "PK": "TENANT#<tenantId>#AUDIT",
+        "SK": "<timestamp>#<auditId>"
+      },
+      "attributes": {
+        "auditId": { "type": "S", "required": true },
+        "action": { "type": "S", "enum": ["create", "update", "delete", "login", "permission_change"] },
+        "actorId": { "type": "S", "required": true },
+        "entityType": { "type": "S", "value": "AuditLog" },
+        "targetEntity": { "type": "S" },
+        "changes": { "type": "M", "description": "Before/after values for updates" },
+        "ipAddress": { "type": "S" },
+        "timestamp": { "type": "S", "format": "ISO8601" },
+        "ttl": { "type": "N", "description": "Epoch seconds, retain for 1 year" }
+      }
+    }
+  },
+  "accessPatterns": [
+    {
+      "name": "Get tenant details",
+      "operation": "GetItem",
+      "keys": { "PK": "TENANT#<tenantId>", "SK": "METADATA" },
+      "notes": "Direct lookup by tenant ID"
+    },
+    {
+      "name": "List users in a tenant",
+      "operation": "Query",
+      "keys": { "PK": "TENANT#<tenantId>", "SK_begins_with": "USER#" },
+      "notes": "Returns TenantMembership items with user details"
+    },
+    {
+      "name": "List tenants for a user",
+      "operation": "Query",
+      "index": "GSI1",
+      "keys": { "GSI1PK": "USER#<userId>", "GSI1SK_begins_with": "TENANT#" },
+      "notes": "Inverted adjacency list via GSI1"
+    },
+    {
+      "name": "Lookup user by email",
+      "operation": "Query",
+      "index": "GSI1",
+      "keys": { "GSI1PK": "EMAIL#<email>", "GSI1SK": "USER" },
+      "notes": "Unique email lookup via GSI1"
+    },
+    {
+      "name": "List projects in a tenant",
+      "operation": "Query",
+      "keys": { "PK": "TENANT#<tenantId>", "SK_begins_with": "PROJECT#" },
+      "notes": "All projects for a tenant"
+    },
+    {
+      "name": "List active projects (cross-tenant)",
+      "operation": "Query",
+      "index": "GSI1",
+      "keys": { "GSI1PK": "STATUS#active", "GSI1SK_begins_with": "DATE#" },
+      "notes": "All active projects sorted by creation date"
+    },
+    {
+      "name": "List tasks in a project",
+      "operation": "Query",
+      "keys": { "PK": "PROJECT#<projectId>", "SK_begins_with": "TASK#" },
+      "notes": "Tasks sorted by creation date"
+    },
+    {
+      "name": "List tasks assigned to user",
+      "operation": "Query",
+      "index": "GSI1",
+      "keys": { "GSI1PK": "ASSIGNEE#<userId>", "GSI1SK_begins_with": "DUE#" },
+      "notes": "User's tasks sorted by due date"
+    },
+    {
+      "name": "List pending tasks in project (by priority)",
+      "operation": "Query",
+      "index": "GSI2",
+      "keys": { "GSI2PK": "PENDING#PROJECT#<projectId>", "GSI2SK_begins_with": "PRI#" },
+      "notes": "Sparse index — only non-done tasks appear, sorted by priority"
+    },
+    {
+      "name": "List comments on a task",
+      "operation": "Query",
+      "keys": { "PK": "TASK#<taskId>", "SK_begins_with": "COMMENT#" },
+      "notes": "Comments sorted by creation time"
+    },
+    {
+      "name": "List user's notifications (newest first)",
+      "operation": "Query",
+      "keys": { "PK": "USER#<userId>", "SK_begins_with": "NOTIF#" },
+      "scanIndexForward": false,
+      "notes": "ScanIndexForward=false for newest first"
+    },
+    {
+      "name": "List unread notifications for user",
+      "operation": "Query",
+      "index": "GSI2",
+      "keys": { "GSI2PK": "UNREAD#USER#<userId>", "GSI2SK_begins_with": "NOTIF#" },
+      "notes": "Sparse GSI2 — only unread notifications"
+    },
+    {
+      "name": "Audit log for tenant (time range)",
+      "operation": "Query",
+      "keys": { "PK": "TENANT#<tenantId>#AUDIT", "SK_between": ["<startTime>", "<endTime>"] },
+      "notes": "Time-range query on audit logs"
+    },
+    {
+      "name": "Create task + update project task count (transactional)",
+      "operation": "TransactWriteItems",
+      "items": [
+        { "Put": { "PK": "PROJECT#<projectId>", "SK": "TASK#<createdAt>#<taskId>" } },
+        { "Update": { "PK": "TENANT#<tenantId>", "SK": "PROJECT#<projectId>", "expression": "ADD taskCount :one" } }
+      ],
+      "notes": "Atomic task creation with counter update"
+    }
+  ],
+  "ttlStrategy": {
+    "attribute": "ttl",
+    "rules": [
+      { "entity": "Notification", "retention": "90 days" },
+      { "entity": "AuditLog", "retention": "365 days" },
+      { "entity": "Session", "retention": "24 hours" }
+    ],
+    "notes": "TTL deletions appear in Streams for archiving to S3 before final deletion"
+  },
+  "capacityEstimates": {
+    "itemSizes": {
+      "Tenant": "~500 bytes",
+      "User": "~400 bytes",
+      "TenantMembership": "~200 bytes",
+      "Project": "~600 bytes",
+      "Task": "~800 bytes",
+      "Comment": "~1-2 KB",
+      "Notification": "~300 bytes",
+      "AuditLog": "~500 bytes"
+    },
+    "notes": "Keep items under 4KB for optimal RCU efficiency. Comments may exceed 4KB with rich text — consider capping body length or compressing."
+  }
+}

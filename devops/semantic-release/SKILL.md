@@ -293,33 +293,17 @@ Extend a preset to reduce boilerplate:
 ```json
 { "extends": "@semantic-release/gitlab-config" }
 ```
-Override or append plugins on top of the shared config as needed.
 
 ## Private Package Publishing
 
-### npm private registry
-Set `publishConfig` in `package.json`:
+Set `publishConfig` in `package.json` for private registries:
 ```json
-{
-  "name": "@myorg/private-pkg",
-  "publishConfig": {
-    "access": "restricted",
-    "registry": "https://npm.pkg.github.com"
-  }
-}
+{ "publishConfig": { "access": "restricted", "registry": "https://npm.pkg.github.com" } }
 ```
 
-### .npmrc for CI
-```
-//npm.pkg.github.com/:_authToken=${NPM_TOKEN}
-@myorg:registry=https://npm.pkg.github.com
-```
+`.npmrc` for CI: `//npm.pkg.github.com/:_authToken=${NPM_TOKEN}`
 
-### Skip npm publish (library not published)
-```json
-["@semantic-release/npm", { "npmPublish": false }]
-```
-Still updates `package.json` version but does not publish.
+Skip npm publish (version bump only): `["@semantic-release/npm", { "npmPublish": false }]`
 
 ## Custom Plugins
 
@@ -415,6 +399,38 @@ The `--no-ci` flag skips CI environment validation. Combine with `--dry-run` for
 - Add `[skip ci]` to release commit message via `@semantic-release/git` config.
 - Filter workflow triggers to release branches only.
 - Use `if: "!contains(github.event.head_commit.message, '[skip ci]')"` in GitHub Actions.
+
+## References
+
+In-depth guides in `references/`:
+
+- **[`references/advanced-patterns.md`](references/advanced-patterns.md)** — Custom plugin development, commit analyzer customization, release rules, monorepo strategies (multi-semantic-release, semantic-release-monorepo, Nx), pre-release channels, maintenance branches and backport workflows, programmatic API usage, advanced branch configuration, conditional releases, performance optimization.
+
+- **[`references/troubleshooting.md`](references/troubleshooting.md)** — Diagnosing and fixing common failures: ENOGHTOKEN, ENOGITHEAD, ENOREPOURL, missing commits, wrong version bumps, CI permission issues, npm 2FA, GPG signing, dry-run discrepancies, branch config errors, plugin ordering issues. Includes a quick diagnostic checklist.
+
+- **[`references/plugin-ecosystem.md`](references/plugin-ecosystem.md)** — Complete guide to the plugin lifecycle, all official plugins with full option reference, community plugins (Slack, Docker, Helm, JIRA, version-file replacement), writing and testing custom plugins, plugin composition patterns, shareable configs, and a compatibility matrix.
+
+## Scripts
+
+Ready-to-use helper scripts in `scripts/`:
+
+| Script | Purpose |
+|---|---|
+| `scripts/setup-project.sh` | Initialize semantic-release in a project: install deps, create `.releaserc`, configure CI (GitHub Actions/GitLab), set up commitlint+husky. Run with `--help` for options. |
+| `scripts/validate-commits.sh` | Check if recent commits follow Conventional Commits format. Reports violations with optional `--fix-hints`. Shows version bump preview. |
+| `scripts/dry-run.sh` | Enhanced dry-run wrapper with pre/post analysis, token auto-detection, commit preview, error diagnosis, and formatted results summary. |
+
+Usage: `bash scripts/setup-project.sh --ci github` or copy scripts into the target project.
+
+## Assets / Templates
+
+Copy-ready configuration templates in `assets/`:
+
+| Asset | Description |
+|---|---|
+| `assets/.releaserc.json` | Production-ready `.releaserc.json` with conventionalcommits preset, emoji-sectioned release notes, multi-branch support (main/next/beta + maintenance), and all common plugins configured. |
+| `assets/github-actions.yml` | GitHub Actions release workflow with test gate, npm caching, proper permissions (including `id-token` for npm provenance), concurrency control, and `[skip ci]` filtering. Copy to `.github/workflows/release.yml`. |
+| `assets/commitlint.config.js` | Commitlint config aligned with semantic-release conventions. Includes all standard types, header/body rules, and optional commitizen prompt configuration. |
 
 ## Examples
 

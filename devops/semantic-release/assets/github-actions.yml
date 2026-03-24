@@ -1,0 +1,112 @@
+# .github/workflows/release.yml
+# semantic-release GitHub Actions workflow
+#
+# Required secrets:
+#   - NPM_TOKEN: npm automation token (if publishing to npm)
+#   - GITHUB_TOKEN: automatically provided by GitHub Actions
+#
+# Setup:
+#   1. Copy this file to .github/workflows/release.yml
+#   2. Set NPM_TOKEN secret in repo Settings > Secrets and variables > Actions
+#   3. Ensure branch protection allows the GitHub Actions bot to push
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - next
+      - beta
+      - alpha
+      # Maintenance branches (e.g., 1.x, 2.x)
+      - '[0-9]+.x'
+      - '[0-9]+.[0-9]+.x'
+
+# Prevent concurrent releases
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write        # Create releases and tags, push commits
+  issues: write          # Comment on resolved issues
+  pull-requests: write   # Comment on merged PRs
+  id-token: write        # npm provenance (optional, remove if not using)
+
+jobs:
+  # Optional: Run tests before releasing
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  release:
+    name: Release
+    needs: [test]
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # CRITICAL: Full git history required for commit analysis
+          fetch-depth: 0
+          # Use GITHUB_TOKEN for pushing release commits/tags
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          # Uncomment for GitHub Packages:
+          # registry-url: https://npm.pkg.github.com
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Optional: Build step (uncomment if needed)
+      # - name: Build
+      #   run: npm run build
+
+      - name: Semantic Release
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # For GitHub Packages, use GITHUB_TOKEN as NPM_TOKEN:
+          # NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Optional: Post-release notification (uncomment to use)
+  # notify:
+  #   name: Notify
+  #   needs: [release]
+  #   runs-on: ubuntu-latest
+  #   if: success()
+  #   steps:
+  #     - name: Notify Slack
+  #       uses: slackapi/slack-github-action@v1
+  #       with:
+  #         payload: |
+  #           {
+  #             "text": "New release published for ${{ github.repository }}"
+  #           }
+  #       env:
+  #         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

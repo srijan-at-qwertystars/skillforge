@@ -372,3 +372,44 @@ Access patterns served:
 - List tasks by assignee: `Query GSI1 PK=ASSIGNEE#u1, SK begins_with DUE#`
 - Active projects by date: `Query GSI1 PK=STATUS#active, SK begins_with DATE#`
 - User sessions with TTL: auto-expire via TTL attribute on session items
+
+## References
+
+In-depth guides in the `references/` directory:
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Single-table design deep dive, adjacency list pattern, composite sort keys, sparse indexes, write sharding, hot partition mitigation, hierarchical data modeling, time-series patterns, graph-like queries, materialized aggregations, multi-tenant isolation, event sourcing.
+
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Throttling diagnosis, hot partition identification, GSI backpressure, scan performance optimization, large item issues, transaction conflicts, Stream processing lag, capacity estimation errors, cost optimization, common error codes, monitoring and alerting.
+
+- **[references/api-reference.md](references/api-reference.md)** — Complete DynamoDB API patterns with code examples: GetItem, PutItem, UpdateItem, DeleteItem, Query, Scan, BatchGetItem, BatchWriteItem, TransactGetItems, TransactWriteItems, PartiQL, expression syntax (key conditions, filters, projections, conditions, update expressions), pagination patterns, error handling.
+
+## Scripts
+
+Executable helper scripts in the `scripts/` directory:
+
+- **[scripts/table-design.sh](scripts/table-design.sh)** — Interactive CLI to scaffold a DynamoDB table definition. Prompts for table name, keys, billing mode, GSIs, TTL, Streams, and PITR. Outputs CloudFormation YAML, CDK TypeScript, or Terraform HCL. Supports `--non-interactive` mode for automation.
+  ```bash
+  ./scripts/table-design.sh                    # interactive
+  ./scripts/table-design.sh --output cdk       # CDK output
+  ./scripts/table-design.sh --output terraform  # Terraform output
+  ```
+
+- **[scripts/capacity-calculator.sh](scripts/capacity-calculator.sh)** — Calculate RCU/WCU requirements and estimated monthly cost based on item size, read/write rates, consistency mode, and GSI count. Compares provisioned vs on-demand pricing.
+  ```bash
+  ./scripts/capacity-calculator.sh --item-size 2.5 --reads 500 --writes 200 --consistency eventual
+  ./scripts/capacity-calculator.sh --item-size 4 --reads 1000 --writes 100 --gsi-count 3
+  ```
+
+- **[scripts/scan-table.sh](scripts/scan-table.sh)** — Parallel scan a DynamoDB table with progress tracking. Supports filtering, projection, rate limiting, and JSON output. Requires AWS CLI and jq.
+  ```bash
+  ./scripts/scan-table.sh --table MyTable --segments 10 --output results.json
+  ./scripts/scan-table.sh --table MyTable --filter "status = :s" --values '{":s":{"S":"active"}}'
+  ```
+
+## Assets
+
+Reusable templates in the `assets/` directory:
+
+- **[assets/cloudformation-table.yaml](assets/cloudformation-table.yaml)** — Production-ready CloudFormation template for a DynamoDB table with: two GSIs (GSI1, GSI2), auto-scaling on all indexes, Point-in-Time Recovery, DynamoDB Streams, Contributor Insights, TTL, CloudWatch alarms for throttling and system errors. Parameterized for billing mode, capacity ranges, and environment.
+
+- **[assets/single-table-schema.json](assets/single-table-schema.json)** — Complete single-table design schema document for a SaaS project management app. Documents 8 entity types (Tenant, User, TenantMembership, Project, Task, Comment, Notification, AuditLog), their key patterns, GSI mappings (including sparse indexes), 14 access patterns with query specifications, TTL strategy, and capacity estimates.

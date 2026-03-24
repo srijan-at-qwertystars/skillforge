@@ -406,94 +406,59 @@ http {
 
 | Anti-Pattern | Fix |
 |---|---|
-| `proxy_pass` trailing slash mismatch | Decide: `http://backend/` (strip prefix) vs `http://backend` (keep prefix) |
-| Using `if` for request routing | Use `map` + `try_files` or separate `location` blocks instead |
-| `root` inside `location` with `alias` semantics | Use `alias` when the location prefix should not appear in the file path |
-| Hardcoding IPs in `proxy_pass` without `resolver` | Use upstream blocks or set `resolver` for DNS-based backends |
-| Missing `proxy_set_header Connection ""` with keepalive | Required to prevent hop-by-hop Connection header forwarding |
-| `worker_connections` too low | Set to at least 1024; for high traffic use 10240+ |
-| Not using `proxy_cache_use_stale` | Serve stale content during backend failures instead of returning errors |
-| SSL with `ssl on` directive | Deprecated — use `listen 443 ssl` instead |
-| Duplicate `add_header` in nested blocks | Inner block clears all parent `add_header` directives — re-include them |
+| `proxy_pass` trailing slash mismatch | `http://backend/` strips location prefix; `http://backend` preserves it |
+| Using `if` for request routing | Use `map` + `try_files` or separate `location` blocks |
+| `root` inside `location` with `alias` semantics | Use `alias` when location prefix shouldn't appear in file path |
+| Hardcoding IPs in `proxy_pass` without `resolver` | Use upstream blocks or set `resolver` for DNS backends |
+| Missing `proxy_set_header Connection ""` with keepalive | Required to prevent hop-by-hop header forwarding |
+| `worker_connections` too low | Set to at least 1024; high traffic: 10240+ |
+| Not using `proxy_cache_use_stale` | Serve stale during backend failures instead of errors |
+| SSL with `ssl on` directive | Deprecated — use `listen 443 ssl` |
+| Duplicate `add_header` in nested blocks | Inner block clears parent `add_header` — re-include them |
 
-## Example: Full Production Server Block
-
-Input requirement: "Set up nginx for api.example.com with SSL, rate limiting, caching, WebSocket support, and security headers."
-
-```nginx
-upstream api_backend {
-    least_conn;
-    server 10.0.0.1:8080 max_fails=3 fail_timeout=30s;
-    server 10.0.0.2:8080 max_fails=3 fail_timeout=30s;
-    keepalive 32;
-}
-
-map $http_upgrade $connection_upgrade {
-    default upgrade;
-    ''      close;
-}
-
-limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
-
-proxy_cache_path /var/cache/nginx/api
-    levels=1:2 keys_zone=api_cache:50m max_size=5g inactive=60m use_temp_path=off;
-
-server {
-    listen 80;
-    server_name api.example.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name api.example.com;
-
-    ssl_certificate /etc/letsencrypt/live/api.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
-    include snippets/ssl-params.conf;
-    include snippets/security-headers.conf;
-
-    # Health endpoint
-    location = /health {
-        access_log off;
-        return 200 '{"status":"ok"}';
-        add_header Content-Type application/json;
-    }
-
-    # WebSocket
-    location /ws/ {
-        proxy_pass http://api_backend;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-        proxy_set_header Host $host;
-        proxy_read_timeout 3600s;
-        proxy_buffering off;
-    }
-
-    # Cached API responses
-    location /api/public/ {
-        proxy_cache api_cache;
-        proxy_cache_valid 200 5m;
-        proxy_cache_use_stale error timeout updating http_500 http_502 http_503;
-        add_header X-Cache-Status $upstream_cache_status;
-        limit_req zone=api burst=50 nodelay;
-        proxy_pass http://api_backend;
-        include snippets/proxy-params.conf;
-    }
-
-    # Default API
-    location / {
-        limit_req zone=api burst=20 nodelay;
-        proxy_pass http://api_backend;
-        include snippets/proxy-params.conf;
-    }
-
-    access_log /var/log/nginx/api.access.log detailed buffer=32k flush=5s;
-    error_log /var/log/nginx/api.error.log warn;
-}
-```
+For a complete production server block example, see `assets/reverse-proxy.conf`.
 
 ## Config Validation and Reload
 
 Always test before applying: `nginx -t` (syntax check), `nginx -T` (dump full config), `nginx -s reload` (graceful zero-downtime reload).
+
+## References
+
+Deep-dive reference docs for advanced topics:
+
+| Reference | Covers |
+|---|---|
+| `references/advanced-patterns.md` | Dynamic upstreams, Lua/OpenResty scripting, stream module (TCP/UDP), map directive patterns, split_clients A/B testing, mirror module, auth_request subrequests, GeoIP module, content-based routing |
+| `references/troubleshooting.md` | 502/504 gateway errors, upstream timeout tuning, buffer overflow errors, SSL handshake failures, worker_connections exhaustion, memory issues, log analysis, debug log level, strace/tcpdump |
+| `references/security-hardening.md` | ModSecurity WAF, DDoS mitigation, bot detection, mTLS client certificate auth, OCSP stapling, CSP/HSTS/X-Frame headers, fail2ban integration, request body inspection, IP allowlisting |
+
+## Scripts
+
+Helper scripts in `scripts/` — all executable, with usage comments at top:
+
+| Script | Purpose |
+|---|---|
+| `scripts/generate-ssl.sh` | Generate self-signed certs (with SAN), request Let's Encrypt certs via certbot, generate DH parameters, verify existing certs |
+| `scripts/test-config.sh` | Validate nginx syntax, audit security settings, test SSL for a domain, check upstream connectivity |
+| `scripts/log-analyzer.sh` | Parse access/error logs — top IPs, status codes, slow requests, bandwidth, bot detection, error patterns, request rate |
+
+Usage examples:
+```bash
+scripts/generate-ssl.sh selfsigned example.com --days 365
+scripts/generate-ssl.sh letsencrypt example.com --email admin@example.com
+scripts/generate-ssl.sh dhparam --bits 4096
+scripts/test-config.sh                    # run all checks
+scripts/test-config.sh --ssl example.com  # SSL audit
+scripts/log-analyzer.sh --all             # full log analysis
+scripts/log-analyzer.sh --slow 2.0 --since "1 hour ago"
+```
+
+## Assets (Config Templates)
+
+Production-ready config templates in `assets/` — copy, search for `CHANGEME`, customize:
+
+| Template | Description |
+|---|---|
+| `assets/reverse-proxy.conf` | Full reverse proxy with SSL termination, caching, rate limiting, security headers, static asset optimization |
+| `assets/load-balancer.conf` | Load balancer with multiple algorithms, health checks, sticky sessions, WebSocket support, failover to backup servers |
+| `assets/security-headers.conf` | Include file with X-Frame-Options, HSTS, CSP, Permissions-Policy, CORP/COOP/COEP — drop into any server block |
