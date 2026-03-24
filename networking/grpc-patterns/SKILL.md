@@ -497,3 +497,5 @@ Use `grpc_testing.server_from_dictionary` to create an in-process server. Call `
 - **[service.proto](assets/service.proto)** — Proto3 template: messages, enums, oneofs, maps, all four RPC types, pagination, FieldMask.
 - **[buf.yaml](assets/buf.yaml)** — Buf config with lint rules, FILE-level breaking change detection, and deps.
 - **[grpc-server.go](assets/grpc-server.go)** — Go server: interceptors, health check, reflection, channelz, keepalive, graceful shutdown.
+
+<!-- tested: pass -->

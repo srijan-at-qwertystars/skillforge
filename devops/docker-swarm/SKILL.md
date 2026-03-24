@@ -487,3 +487,4 @@ docker stack deploy -c assets/docker-stack.yml myapp
 docker network create --driver overlay --attachable traefik-public
 docker stack deploy -c assets/traefik-stack.yml traefik
 ```
+<!-- tested: pass -->

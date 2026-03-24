@@ -380,3 +380,5 @@ Reusable code templates — copy into your project and customize:
 | [`assets/oauth-middleware.ts`](assets/oauth-middleware.ts) | Express/Node middleware for JWT access token validation with JWKS auto-discovery, key caching with rotation, and scope-based authorization |
 | [`assets/oauth-client.ts`](assets/oauth-client.ts) | TypeScript OAuth2 client with PKCE (S256), OIDC discovery, automatic token refresh with mutex, configurable token storage, and typed OAuth errors |
 | [`assets/nextauth-config.ts`](assets/nextauth-config.ts) | NextAuth.js configuration template with Google, GitHub, Azure AD, Auth0, Okta, and Keycloak providers — includes JWT callbacks with token refresh and session management |
+
+<!-- tested: pass -->
