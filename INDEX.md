@@ -191,3 +191,6 @@
 | databases | [mongodb-patterns](databases/mongodb-patterns/) | MongoDB — aggregation pipelines, indexing, schema design, replica sets, sharding, change streams, Atlas | tested |
 | frontend | [electron-apps](frontend/electron-apps/) | Electron desktop apps — IPC, preload scripts, security, packaging, auto-updater, Forge/builder | tested |
 | devops | [consul-service-discovery](devops/consul-service-discovery/) | Consul — service discovery, health checks, KV, Connect mesh, ACLs, multi-DC, consul-template | tested |
+| databases | prisma-orm | Prisma ORM schema modeling, Client CRUD, migrations, edge deployment, and testing patterns | created |
+| devops | aws-cdk | AWS CDK infrastructure as code with constructs, pipelines, testing, and deployment patterns | created |
+| frontend | rxjs-patterns | RxJS reactive programming operators, patterns, testing, and Angular integration | created |
