@@ -209,6 +209,6 @@
 | frontend | nuxt-framework | Nuxt 3 full-stack Vue framework — auto-imports, file-based routing, Nitro server, hybrid rendering | tested |
 | devops | chaos-engineering | Chaos engineering principles, tools, experiment design, fault injection, GameDay planning | tested |
 | python | python-typing | Python type hints — generics, protocols, TypedDict, mypy/pyright, runtime checking, Pydantic | tested |
-| frontend | angular-signals | Angular Signals — signal(), computed(), effect(), input/output/model signals, zoneless CD, NgRx SignalStore | enriched |
-| patterns | cqrs-event-sourcing | CQRS + Event Sourcing — aggregates, event store, projections, snapshots, sagas, event versioning | enriched |
-| frontend | sass-patterns | Sass/SCSS patterns — module system, mixins, functions, design tokens, BEM, responsive patterns | enriched |
+| frontend | angular-signals | Angular Signals — signal(), computed(), effect(), input/output/model signals, zoneless CD, NgRx SignalStore | tested |
+| patterns | cqrs-event-sourcing | CQRS + Event Sourcing — aggregates, event store, projections, snapshots, sagas, event versioning | tested |
+| frontend | sass-patterns | Sass/SCSS patterns — module system, mixins, functions, design tokens, BEM, responsive patterns | tested |

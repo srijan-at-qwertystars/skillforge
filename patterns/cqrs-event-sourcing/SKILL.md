@@ -421,3 +421,5 @@ def test_order_summary_projection():
 | `assets/projection-template.ts` | Read model projection handler with idempotent batch processing, checkpointing, rebuild support, example OrderSummaryProjection |
 | `assets/saga-template.ts` | Process manager/saga with full state machine: OrderConfirmed → ReserveInventory → ProcessPayment → ShipOrder, compensation paths, timeout handling |
 | `assets/docker-compose.yml` | EventStoreDB + PostgreSQL dev environment with health checks, auto-applied schema, persistent volumes |
+
+<!-- tested: pass -->

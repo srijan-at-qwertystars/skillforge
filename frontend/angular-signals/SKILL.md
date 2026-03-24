@@ -495,3 +495,5 @@ ng generate @angular/core:output-migration           # @Output → output()
 ## Full Example
 
 See [assets/signal-component.ts](assets/signal-component.ts) for a complete signal-based component using all signal APIs (inputs, outputs, model, queries, resource, computed, linkedSignal, effect with cleanup).
+
+<!-- tested: pass -->
