@@ -112,7 +112,6 @@ Always use `getUser()` for server-side verification — it validates the JWT aga
 ### Auth best practices:
 - Configure allowed redirect URLs in dashboard to prevent phishing
 - Use custom SMTP in production for email deliverability
-- Store auth-related config in environment variables, never in code
 - Implement proper session refresh handling in SPAs
 
 ## Row Level Security (RLS)
@@ -165,10 +164,9 @@ CREATE POLICY "Admins can do anything" ON public.posts
 
 ### RLS critical rules:
 - Enable RLS on ALL tables in the `public` schema
-- Index columns referenced in policies (`user_id`, `org_id`) — unindexed columns cause 100x slowdowns
+- Index columns referenced in policies (`user_id`, `org_id`)
 - Write separate policies per operation (SELECT, INSERT, UPDATE, DELETE)
 - Test from client SDK, not SQL editor (SQL editor bypasses RLS)
-- Never expose service role key to client code
 
 ## Database Queries via PostgREST
 
@@ -268,11 +266,9 @@ useEffect(() => {
 ```
 
 ### Realtime rules:
-- Use broadcast for high-frequency ephemeral events (cursors, typing indicators)
-- Use postgres_changes only for tables that need it — enable selectively
-- Use presence only for online/offline status, keep payloads small
-- Always unsubscribe on component unmount to prevent memory leaks
-- Use private channels for sensitive data
+- Use broadcast for high-frequency ephemeral events (cursors, typing)
+- Enable postgres_changes selectively — only on tables that need it
+- Always unsubscribe on component unmount to prevent leaks
 
 ## Storage
 
@@ -330,16 +326,6 @@ CREATE POLICY "User read" ON storage.objects
 Organize files as `{user_id}/{filename}` for clean per-user isolation.
 
 ## Edge Functions
-
-### Create and structure:
-```bash
-supabase functions new my-function
-# Creates supabase/functions/my-function/index.ts
-```
-
-Shared code goes in `supabase/functions/_shared/`. No cross-function imports.
-
-### Basic edge function:
 ```typescript
 // supabase/functions/hello/index.ts
 Deno.serve(async (req) => {
@@ -440,7 +426,7 @@ type PostUpdate = Database['public']['Tables']['posts']['Update']
 
 ## Self-Hosting
 
-Use Docker Compose from the official repo:
+Use Docker Compose — see [assets/docker-compose.yml](assets/docker-compose.yml) for a complete stack.
 ```bash
 git clone https://github.com/supabase/supabase
 cd supabase/docker
@@ -448,40 +434,30 @@ cp .env.example .env     # edit secrets, JWT, SMTP config
 docker compose up -d
 ```
 
-Critical self-hosting config:
-- Change default JWT secret, anon key, and service role key
-- Configure SMTP for auth emails
-- Set up proper PostgreSQL backups
-- Use a reverse proxy (nginx/Caddy) with TLS
-- Monitor with pg_stat_statements and Prometheus
+Critical: change default JWT secret, anon/service role keys. Configure SMTP, backups, TLS reverse proxy.
 
 ## Production Checklist
 
 ### Security:
 - RLS enabled on every public table with tested policies
 - Service role key never in client code or version control
-- HTTPS enforced on all redirect URLs
 - Custom SMTP configured for auth emails
 - Database connection pooling via Supavisor
 
 ### Performance:
 - Indexes on all RLS-referenced columns and common query filters
 - Realtime enabled only on tables that need it
-- Connection pooling mode set appropriately (transaction for serverless)
 - Use `.select('col1, col2')` instead of `.select('*')` for large tables
 
 ### Reliability:
-- Point-in-time recovery (PITR) enabled for production databases
+- Point-in-time recovery (PITR) enabled for production
 - Database migrations versioned in source control
 - Types regenerated in CI after migration changes
-- Edge functions are idempotent and short-lived
 - Error handling on every Supabase client call
 
 ### Monitoring:
 - Enable `pg_stat_statements` for query performance
-- Set up alerts for auth failures and RLS violations
-- Monitor realtime WebSocket connection counts
-- Track storage usage and set bucket size limits
+- Monitor realtime WebSocket connection counts and storage usage
 
 ## Common Pitfalls
 
@@ -492,3 +468,29 @@ Critical self-hosting config:
 - **Bare imports in Edge Functions**: Always use `npm:` or `jsr:` prefixes with pinned versions
 - **Not cleaning up subscriptions**: Causes memory leaks and excessive connections
 - **Mixing anon/service keys**: anon for client, service role for server admin only
+
+## References
+
+Deep-dive guides in `references/`:
+
+- **[rls-patterns.md](references/rls-patterns.md)** — Comprehensive RLS guide: policy types, USING vs WITH CHECK, auth functions, ownership/RBAC/multi-tenant patterns, performance tuning, testing strategies, common mistakes
+- **[auth-guide.md](references/auth-guide.md)** — Auth deep dive: email/password, OAuth, magic links, phone, MFA/TOTP, custom claims, JWT hooks, SSR auth, React/Next.js patterns, middleware, custom UI
+- **[troubleshooting.md](references/troubleshooting.md)** — Common issues and fixes: RLS blocking, auth tokens, realtime, storage, edge functions, migrations, types, connection pooling, rate limits, CORS, PostgREST gotchas
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+- **[setup-supabase-local.sh](scripts/setup-supabase-local.sh)** — Set up local dev environment (install CLI, init project, start services, create initial migration, generate types)
+- **[generate-types.sh](scripts/generate-types.sh)** — Generate TypeScript types from local or remote schema with diff support
+- **[rls-audit.sh](scripts/rls-audit.sh)** — Audit RLS policies: find tables without RLS, empty policies, permissive anti-patterns, missing indexes
+
+## Assets
+
+Templates and boilerplate in `assets/`:
+
+- **[supabase-client.ts](assets/supabase-client.ts)** — Type-safe client setup (browser, admin, SSR) with auth helpers and error handling
+- **[middleware.ts](assets/middleware.ts)** — Next.js App Router middleware for Supabase auth with cookie-based session refresh
+- **[migration-template.sql](assets/migration-template.sql)** — SQL migration template with RLS policies, indexes, and updated_at trigger
+- **[edge-function-template.ts](assets/edge-function-template.ts)** — Deno edge function with CORS, auth, method routing, and structured errors
+- **[docker-compose.yml](assets/docker-compose.yml)** — Self-hosted Supabase stack (Postgres, GoTrue, PostgREST, Realtime, Storage, Kong, Studio)

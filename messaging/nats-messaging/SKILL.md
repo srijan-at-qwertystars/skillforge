@@ -381,63 +381,10 @@ nats server ping              # cluster-wide latency check
 ```bash
 helm repo add nats https://nats-io.github.io/k8s/helm/charts/
 helm repo update
-```
-
-**Production `values.yaml`:**
-```yaml
-nats:
-  image: nats:2.10-alpine
-  jetstream:
-    enabled: true
-    fileStore:
-      pvc:
-        size: 50Gi
-        storageClassName: fast-ssd
-    memoryStore:
-      maxSize: 1Gi
-
-cluster:
-  enabled: true
-  replicas: 3
-
-auth:
-  enabled: true
-  resolver:
-    type: full
-    dir: /etc/nats-config/jwt
-
-tls:
-  secret:
-    name: nats-tls
-  ca: ca.crt
-  cert: tls.crt
-  key: tls.key
-
-exporter:
-  enabled: true
-  serviceMonitor:
-    enabled: true
-
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 2
-
-resources:
-  requests:
-    cpu: 500m
-    memory: 512Mi
-  limits:
-    cpu: "2"
-    memory: 2Gi
-
-affinity:
-  podAntiAffinity:
-    requiredDuringSchedulingIgnoredDuringExecution:
-      - topologyKey: kubernetes.io/hostname
-```
-```bash
 helm install nats nats/nats -f values.yaml -n messaging --create-namespace
 ```
+See [assets/k8s-nats-helm-values.yaml](assets/k8s-nats-helm-values.yaml) for a full
+production `values.yaml` with HA, TLS, JetStream PVCs, anti-affinity, and monitoring.
 
 ### Leaf Nodes (Multi-Cluster / Edge)
 Connect remote clusters or edge nodes to a central NATS cluster:
@@ -482,3 +429,35 @@ Use CAS updates (`kv.Update(key, value, lastRevision)`) to prevent write conflic
 ### Fan-Out with Filtered Consumers
 One stream captures `events.>`. Create per-service consumers with subject filters
 (`events.billing.>`, `events.shipping.>`) for targeted delivery without multiple streams.
+
+## References
+
+In-depth guides for advanced topics:
+
+| Document | Description |
+|----------|-------------|
+| [references/jetstream-patterns.md](references/jetstream-patterns.md) | Stream config, consumer types, exactly-once semantics, mirroring, sourcing, subject transforms, republishing |
+| [references/troubleshooting.md](references/troubleshooting.md) | Slow consumers, message loss, connection issues, split-brain, resource exhaustion, auth failures, monitoring |
+| [references/security-guide.md](references/security-guide.md) | TLS, NKeys, JWT auth, account isolation, user permissions, operator hierarchy, cert rotation, resolvers |
+
+## Scripts
+
+Executable helpers (`scripts/` directory):
+
+| Script | Description |
+|--------|-------------|
+| [scripts/setup-nats-cluster.sh](scripts/setup-nats-cluster.sh) | Stand up a 3-node NATS cluster locally with Docker. Supports `--clean` teardown. |
+| [scripts/nats-health-check.sh](scripts/nats-health-check.sh) | Check server health: connectivity, JetStream, streams, consumers, cluster state. Exit codes: 0/1/2. |
+| [scripts/benchmark-nats.sh](scripts/benchmark-nats.sh) | Benchmark pub/sub throughput, request/reply latency, JetStream rates. Supports `--quick`. |
+
+## Assets
+
+Templates, configs, and client examples (`assets/` directory):
+
+| Asset | Description |
+|-------|-------------|
+| [assets/nats-server.conf](assets/nats-server.conf) | Production NATS server config with JetStream, TLS, NKey auth, logging, limits |
+| [assets/docker-compose.yml](assets/docker-compose.yml) | 3-node NATS cluster + Surveyor + Prometheus + Grafana observability stack |
+| [assets/go-client-example.go](assets/go-client-example.go) | Go client: JetStream, reconnect handling, KV store, graceful shutdown |
+| [assets/python-client-example.py](assets/python-client-example.py) | Python async client: JetStream consumer, KV store, signal handling |
+| [assets/k8s-nats-helm-values.yaml](assets/k8s-nats-helm-values.yaml) | Helm values for production NATS on Kubernetes with HA, TLS, monitoring |

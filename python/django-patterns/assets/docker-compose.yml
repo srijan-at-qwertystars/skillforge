@@ -1,0 +1,97 @@
+# Django + PostgreSQL + Redis development stack
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose up web         # Start with logs
+#   docker compose exec web python manage.py migrate
+#   docker compose exec web python manage.py createsuperuser
+#   docker compose down -v        # Stop and remove volumes
+
+services:
+  web:
+    build:
+      context: .
+      target: base
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.development
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/app_db
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: app_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: Celery worker
+  # celery:
+  #   build:
+  #     context: .
+  #     target: base
+  #   env_file: .env
+  #   environment:
+  #     - DJANGO_SETTINGS_MODULE=config.settings.development
+  #     - DATABASE_URL=postgres://postgres:postgres@db:5432/app_db
+  #     - CELERY_BROKER_URL=redis://redis:6379/0
+  #   volumes:
+  #     - .:/app
+  #   depends_on:
+  #     - db
+  #     - redis
+  #   command: celery -A config worker -l info
+
+  # Optional: Celery Beat scheduler
+  # celery-beat:
+  #   build:
+  #     context: .
+  #     target: base
+  #   env_file: .env
+  #   environment:
+  #     - DJANGO_SETTINGS_MODULE=config.settings.development
+  #     - DATABASE_URL=postgres://postgres:postgres@db:5432/app_db
+  #     - CELERY_BROKER_URL=redis://redis:6379/0
+  #   volumes:
+  #     - .:/app
+  #   depends_on:
+  #     - db
+  #     - redis
+  #   command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+
+volumes:
+  postgres_data:
+  redis_data:

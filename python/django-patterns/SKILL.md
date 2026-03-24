@@ -467,3 +467,30 @@ class ProductAdmin(admin.ModelAdmin):
 - Never put secrets in source code — use environment variables.
 - Use `bulk_create`/`bulk_update` with `batch_size` for large datasets.
 - Run `check --deploy` in CI before every production deploy.
+
+## References
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Custom managers/querysets, database functions, window functions, CTEs, multi-database routing, custom model fields, abstract vs proxy models, GenericForeignKey, content types, custom template tags/filters, CBV mixins, middleware patterns, signals best practices, Django Channels/WebSockets.
+- **[troubleshooting.md](references/troubleshooting.md)** — N+1 detection and fixes, migration conflicts, circular imports, CORS, static files in production, connection pooling (PgBouncer), memory leaks, slow queries, Celery gotchas, CSRF with SPAs, timezone handling.
+- **[drf-guide.md](references/drf-guide.md)** — DRF deep dive: custom auth (JWT, API keys), throttling, django-filter, pagination strategies, nested serializers, writable nested serializers, ViewSet actions, custom permissions, API versioning, drf-spectacular schemas, API testing.
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+- **[setup-django-project.sh](scripts/setup-django-project.sh)** — Scaffold a production-ready project with split settings, venv, Docker, .env, and common dependencies. Usage: `./setup-django-project.sh myproject`
+- **[check-migrations.sh](scripts/check-migrations.sh)** — Detect missing migrations, conflicts, unapplied migrations, empty migrations, and auto-generated names. Usage: `./check-migrations.sh [manage.py]`
+- **[django-security-audit.sh](scripts/django-security-audit.sh)** — Audit security settings: DEBUG, ALLOWED_HOSTS, SECURE_* headers, hardcoded secrets, unsafe deserialization, dependency vulnerabilities. Usage: `./django-security-audit.sh [manage.py]`
+
+## Assets
+
+Reusable templates and configs in `assets/`:
+
+- **[settings/base.py](assets/settings/base.py)** — Production-ready base settings with django-environ, logging, DRF config, security defaults.
+- **[settings/development.py](assets/settings/development.py)** — Dev overrides: debug toolbar, relaxed auth, console email, CORS open.
+- **[settings/production.py](assets/settings/production.py)** — Full security hardening: HSTS, SSL redirect, secure cookies, WhiteNoise, Redis cache.
+- **[docker-compose.yml](assets/docker-compose.yml)** — Django + PostgreSQL + Redis dev stack with health checks.
+- **[Dockerfile](assets/Dockerfile)** — Multi-stage build: base → development → production. Non-root user, proper layer caching.
+- **[conftest.py](assets/conftest.py)** — pytest fixtures: UserFactory, AdminFactory, api_client, authenticated_client, sample_image, mailoutbox.

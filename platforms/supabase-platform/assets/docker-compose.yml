@@ -1,0 +1,362 @@
+# =============================================================================
+# docker-compose.yml — Self-Hosted Supabase Stack
+#
+# This Compose file provides a complete, self-hosted Supabase environment
+# suitable for development and (with hardened secrets) production deployments.
+#
+# Services included:
+#   - PostgreSQL 15          — Primary database with pgvector, pgjwt, etc.
+#   - GoTrue (Auth)          — Authentication & user management
+#   - PostgREST              — Auto-generated REST API from your schema
+#   - Realtime               — WebSocket-based real-time subscriptions
+#   - Storage                — S3-compatible file storage
+#   - Kong                   — API gateway (routes & rate limiting)
+#   - Supabase Studio        — Web-based dashboard for managing everything
+#   - Meta (pg-meta)         — PostgreSQL metadata API (used by Studio)
+#
+# Quick start:
+#   1. Copy .env.example to .env and update all CHANGE_ME values
+#   2. docker compose up -d
+#   3. Open http://localhost:3000 for Studio
+#
+# ⚠️  SECURITY WARNING:
+#   Change ALL default passwords, keys, and secrets before deploying to
+#   production. The values below are for local development ONLY.
+#
+# @see https://supabase.com/docs/guides/self-hosting/docker
+# =============================================================================
+
+version: "3.8"
+
+# =============================================================================
+# Volumes — persistent data across container restarts
+# =============================================================================
+volumes:
+  db-data:
+    driver: local
+  storage-data:
+    driver: local
+
+# =============================================================================
+# Networks — isolated internal communication between services
+# =============================================================================
+networks:
+  supabase-internal:
+    driver: bridge
+
+# =============================================================================
+# Services
+# =============================================================================
+services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL — Primary database
+  # ---------------------------------------------------------------------------
+  # Runs PostgreSQL 15 with Supabase-specific extensions pre-installed:
+  # pgvector, pgjwt, pg_graphql, pg_stat_statements, etc.
+  db:
+    image: supabase/postgres:15.6.1.143
+    container_name: supabase-db
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      # JWT secret — must match GoTrue and PostgREST configuration
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}
+      JWT_EXP: ${JWT_EXPIRY:-3600}
+    volumes:
+      # Persist database data across restarts
+      - db-data:/var/lib/postgresql/data
+      # Custom initialization scripts (run on first start only)
+      # Place .sql files in ./volumes/db/init/ to auto-execute on first boot
+      - ./volumes/db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ${POSTGRES_DB:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # GoTrue — Authentication & User Management
+  # ---------------------------------------------------------------------------
+  # Handles signup, login, OAuth, magic links, MFA, and JWT token issuance.
+  # API docs: https://supabase.com/docs/reference/auth
+  auth:
+    image: supabase/gotrue:v2.164.0
+    container_name: supabase-auth
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # API configuration
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: 9999
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
+
+      # Database connection
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: postgres://supabase_auth_admin:${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@db:5432/${POSTGRES_DB:-postgres}
+
+      # JWT — must match the DB and PostgREST JWT_SECRET
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}
+      GOTRUE_JWT_EXP: ${JWT_EXPIRY:-3600}
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+
+      # Email auth
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"  # Set false in production and configure SMTP
+
+      # Phone auth (disabled by default)
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+
+      # Rate limiting
+      GOTRUE_RATE_LIMIT_HEADER: X-Forwarded-For
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: "100"
+
+      # URI allowlist — add your production domains here
+      GOTRUE_URI_ALLOW_LIST: ${ADDITIONAL_REDIRECT_URLS:-}
+
+      # Disable signup if you want invite-only
+      GOTRUE_DISABLE_SIGNUP: "false"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # PostgREST — Auto-generated REST API
+  # ---------------------------------------------------------------------------
+  # Automatically creates RESTful endpoints from your PostgreSQL schema.
+  # Respects RLS policies — the anon/authenticated role is determined by JWT.
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    container_name: supabase-rest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database connection — uses the authenticator role which can switch to anon/authenticated
+      PGRST_DB_URI: postgres://authenticator:${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@db:5432/${POSTGRES_DB:-postgres}
+      PGRST_DB_SCHEMAS: public,storage,graphql_public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      # Reload schema cache when the DB schema changes
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}
+      PGRST_APP_SETTINGS_JWT_EXP: ${JWT_EXPIRY:-3600}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # Realtime — WebSocket Subscriptions
+  # ---------------------------------------------------------------------------
+  # Provides real-time listeners for INSERT, UPDATE, DELETE events on tables.
+  # Clients subscribe via the Supabase client SDK.
+  realtime:
+    image: supabase/realtime:v2.33.58
+    container_name: supabase-realtime
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: supabase_admin
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+      DB_NAME: ${POSTGRES_DB:-postgres}
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_ENC_KEY: supabaserealtime
+      API_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
+      ERL_AFLAGS: "-proto_dist inet_tcp"
+      DNS_NODES: "''"
+      RLIMIT_NOFILE: "10000"
+      APP_NAME: realtime
+      SEED_SELF_HOST: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/api/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # Storage — File Storage (S3-compatible API)
+  # ---------------------------------------------------------------------------
+  # Handles file uploads, downloads, and transformations.
+  # Files are stored on disk by default; can be configured for S3 backends.
+  storage:
+    image: supabase/storage-api:v1.11.13
+    container_name: supabase-storage
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    environment:
+      ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
+      SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters-long}
+      DATABASE_URL: postgres://supabase_storage_admin:${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@db:5432/${POSTGRES_DB:-postgres}
+      # File storage backend — "file" for local disk, "s3" for AWS S3
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      FILE_SIZE_LIMIT: 52428800  # 50 MB max file size
+      # Image transformation
+      ENABLE_IMAGE_TRANSFORMATION: "true"
+      IMGPROXY_URL: http://imgproxy:8080
+    volumes:
+      - storage-data:/var/lib/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # Kong — API Gateway
+  # ---------------------------------------------------------------------------
+  # Routes external requests to the appropriate internal service.
+  # Handles API key validation and rate limiting.
+  # This is the main entry point for all API requests.
+  kong:
+    image: kong:2.8.1
+    container_name: supabase-kong
+    restart: unless-stopped
+    ports:
+      # Main API endpoint — all Supabase client requests go through here
+      - "${API_PORT:-8000}:8000/tcp"
+      # Admin API (optional — disable in production)
+      - "${KONG_ADMIN_PORT:-8001}:8001/tcp"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+    volumes:
+      # Kong declarative config — defines routes to internal services
+      - ./volumes/api/kong.yml:/var/lib/kong/kong.yml:ro
+    depends_on:
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # pg-meta — PostgreSQL Metadata API
+  # ---------------------------------------------------------------------------
+  # Provides a REST API for managing PostgreSQL objects (tables, columns, etc.).
+  # Used by Supabase Studio's table editor.
+  meta:
+    image: supabase/postgres-meta:v0.84.2
+    container_name: supabase-meta
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: ${POSTGRES_DB:-postgres}
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # Supabase Studio — Web Dashboard
+  # ---------------------------------------------------------------------------
+  # The web-based UI for managing your Supabase project: table editor,
+  # SQL editor, auth users, storage buckets, etc.
+  studio:
+    image: supabase/studio:20241202-71e5240
+    container_name: supabase-studio
+    restart: unless-stopped
+    ports:
+      - "${STUDIO_PORT:-3000}:3000/tcp"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}
+
+      SUPABASE_URL: http://kong:8000
+      SUPABASE_PUBLIC_URL: ${API_EXTERNAL_URL:-http://localhost:8000}
+      SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
+
+      DEFAULT_ORGANIZATION_NAME: ${STUDIO_DEFAULT_ORGANIZATION:-Default Organization}
+      DEFAULT_PROJECT_NAME: ${STUDIO_DEFAULT_PROJECT:-Default Project}
+    depends_on:
+      kong:
+        condition: service_healthy
+      meta:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - supabase-internal
+
+  # ---------------------------------------------------------------------------
+  # ImgProxy — Image Transformation (Optional)
+  # ---------------------------------------------------------------------------
+  # Handles on-the-fly image resizing, cropping, and format conversion
+  # for files stored in Supabase Storage.
+  imgproxy:
+    image: darthsim/imgproxy:v3.8.0
+    container_name: supabase-imgproxy
+    restart: unless-stopped
+    environment:
+      IMGPROXY_BIND: ":8080"
+      IMGPROXY_LOCAL_FILESYSTEM_ROOT: /
+      IMGPROXY_USE_ETAG: "true"
+      IMGPROXY_ENABLE_WEBP_DETECTION: "true"
+    volumes:
+      - storage-data:/var/lib/storage:ro
+    healthcheck:
+      test: ["CMD", "imgproxy", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - supabase-internal

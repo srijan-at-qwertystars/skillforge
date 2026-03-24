@@ -1,0 +1,324 @@
+# =============================================================================
+# NATS Helm Values — Production Kubernetes Deployment
+#
+# Comprehensive values file for the official NATS Helm chart:
+#   https://github.com/nats-io/k8s/tree/main/helm/charts/nats
+#
+# Install:
+#   helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+#   helm install nats nats/nats -f k8s-nats-helm-values.yaml -n nats --create-namespace
+#
+# This file is heavily commented to explain each section, the trade-offs
+# involved, and how to tune for your workload.
+# =============================================================================
+
+# ─── Global ──────────────────────────────────────────────────────────────────
+global:
+  # labels applied to every resource created by this chart
+  labels:
+    app.kubernetes.io/part-of: nats-messaging
+
+# ─── Container Image ────────────────────────────────────────────────────────
+container:
+  image:
+    # Pin to a specific version for reproducible deployments.
+    # Check https://hub.docker.com/_/nats/tags for latest tags.
+    repository: nats
+    tag: "2.10-alpine"
+    pullPolicy: IfNotPresent
+
+  # ── Resource Requests & Limits ────────────────────────────────────────────
+  # Start conservative and tune based on observed usage.
+  # JetStream memory store draws from the container's memory; size limits
+  # accordingly to avoid OOMKill.
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2"
+      memory: "2Gi"
+
+  # ── Environment variables (optional) ──────────────────────────────────────
+  # env:
+  #   GOMEMLIMIT: "1750MiB"   # Go 1.19+ soft memory limit (helps GC)
+
+# ─── NATS Configuration ─────────────────────────────────────────────────────
+config:
+  # Cluster name — all nodes must share this value
+  cluster:
+    enabled: true
+    # Number of NATS server replicas.  Three is the minimum for HA; five
+    # provides better fault tolerance at the cost of higher write latency
+    # (quorum = 3 of 5 vs 2 of 3).
+    replicas: 3
+
+    # Cluster routes are auto-discovered by the chart via headless service.
+    # No manual route configuration is needed.
+
+  # ── JetStream ─────────────────────────────────────────────────────────────
+  jetstream:
+    enabled: true
+
+    # File store — backed by a PersistentVolumeClaim.
+    # Use a StorageClass backed by fast SSDs (e.g. gp3, pd-ssd) for
+    # production workloads.  Stream throughput is directly proportional
+    # to disk IOPS.
+    fileStore:
+      enabled: true
+      pvc:
+        enabled: true
+        size: 50Gi
+        # storageClassName: "fast-ssd"    # CHANGEME — your SSD StorageClass
+
+    # Memory store — in-process memory for low-latency streams.
+    # The limit here must be less than the container memory limit minus
+    # what NATS itself needs (~256–512 Mi overhead).
+    memoryStore:
+      enabled: true
+      maxSize: 1Gi
+
+    # Domain isolates JetStream when using super-clusters or leaf nodes.
+    # Leave empty for single-domain deployments.
+    # domain: "production"
+
+  # ── Client listen port ────────────────────────────────────────────────────
+  # Default is 4222; rarely needs changing.
+  # port: 4222
+
+  # ── Max payload ───────────────────────────────────────────────────────────
+  # Largest message body accepted.  8 MB is generous; most workloads are
+  # well below 1 MB.  Larger payloads increase memory pressure.
+  maxPayload: 8MB
+
+  # ── Monitoring / Metrics ──────────────────────────────────────────────────
+  monitor:
+    enabled: true
+    port: 8222     # /healthz, /varz, /connz, /jsz endpoints
+
+  # ── TLS ───────────────────────────────────────────────────────────────────
+  # Encrypt client ↔ server traffic.  The Kubernetes Secret must contain
+  # tls.crt, tls.key, and (optionally) ca.crt.
+  #
+  # For automatic cert management, pair with cert-manager and a
+  # Certificate resource.
+  tls:
+    enabled: false                    # CHANGEME — set to true in production
+    # secretName: "nats-tls"          # CHANGEME — name of the K8s TLS secret
+    # cert: tls.crt
+    # key: tls.key
+    # ca: ca.crt
+
+    # Verify client certificates (mTLS).  Enable when all clients present
+    # certs signed by the same CA.
+    # verify: true
+
+  # ── Authorization ─────────────────────────────────────────────────────────
+  # For production multi-tenant setups use the NATS account resolver
+  # (nsc + nats-account-server).  The resolver validates JWTs on
+  # connection and enables per-account limits, exports/imports, and
+  # signing keys.
+  #
+  # Simple static auth (token or user/pass) can be set here for
+  # single-tenant clusters:
+  #
+  # auth:
+  #   enabled: true
+  #   resolver:
+  #     type: full              # "full" bundles accounts; "url" uses external resolver
+  #     url: "nats://nats-account-server:9090"
+  #   # Static token (simpler alternative):
+  #   # token: "s3cr3t"         # CHANGEME
+
+  # ── Liveness & Readiness Probes ───────────────────────────────────────────
+  # The chart configures probes by default using the /healthz endpoint.
+  # Adjust timing to match your SLA requirements.
+  liveness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readiness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # ── Gateway ───────────────────────────────────────────────────────────────
+  # Gateways connect independent NATS clusters into a super-cluster.
+  # Traffic is routed based on account and subject interest.
+  #
+  # gateway:
+  #   enabled: true
+  #   name: "us-east"                  # Unique per cluster
+  #   port: 7222
+  #   # List remote gateway clusters:
+  #   gateways:
+  #     - name: "us-west"
+  #       urls:
+  #         - "nats://nats-us-west.example.com:7222"
+  #     - name: "eu-central"
+  #       urls:
+  #         - "nats://nats-eu.example.com:7222"
+  #   # TLS for gateway traffic:
+  #   # tls:
+  #   #   secretName: "nats-gateway-tls"
+
+  # ── Leaf Nodes ────────────────────────────────────────────────────────────
+  # Leaf nodes bridge edge locations to the hub cluster.  Enable leafnodes
+  # on the hub side; edge clusters connect as remotes.
+  #
+  # leafnodes:
+  #   enabled: true
+  #   port: 7422
+  #   # remotes:
+  #   #   - url: "nats-leaf://hub.example.com:7422"
+  #   #     credentials:
+  #   #       secret:
+  #   #         name: "nats-leaf-creds"
+  #   #         key: "leaf.creds"
+  #   # tls:
+  #   #   secretName: "nats-leafnode-tls"
+
+  # ── MQTT Support ──────────────────────────────────────────────────────────
+  # NATS can act as an MQTT 3.1.1 broker, bridging MQTT clients into the
+  # NATS subject space.  Useful for IoT workloads.
+  #
+  # mqtt:
+  #   enabled: true
+  #   port: 1883
+  #   # TLS for MQTT:
+  #   # tls:
+  #   #   secretName: "nats-mqtt-tls"
+  #   # Require MQTT clients to authenticate:
+  #   # noAuthUser: ""
+
+  # ── WebSocket Support ─────────────────────────────────────────────────────
+  # WebSocket allows browser-based clients to connect directly to NATS
+  # without a proxy.  Typically fronted by an Ingress with TLS termination.
+  #
+  # websocket:
+  #   enabled: true
+  #   port: 8080
+  #   # Set noTLS: true when TLS is terminated at the Ingress/LB.
+  #   noTLS: true
+  #   # tls:
+  #   #   secretName: "nats-ws-tls"
+
+# ─── Pod Template ────────────────────────────────────────────────────────────
+
+# ── Pod Anti-Affinity ───────────────────────────────────────────────────────
+# Spread NATS replicas across different nodes to survive node failures.
+# "hard" (requiredDuringScheduling) guarantees no two pods land on the
+# same node — but may block scheduling if there are fewer nodes than
+# replicas.  Use "soft" (preferred) if your cluster is small.
+podTemplate:
+  topologySpreadConstraints:
+    # Spread evenly across availability zones.
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: nats
+
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - nats
+          topologyKey: kubernetes.io/hostname
+
+# ─── Pod Disruption Budget ──────────────────────────────────────────────────
+# Prevents Kubernetes from voluntarily evicting too many NATS pods at once
+# during node drains, upgrades, or autoscaler scale-downs.
+#
+# With 3 replicas and maxUnavailable=1, at most one pod can be down at a
+# time, preserving quorum (2 of 3).  For 5 replicas use maxUnavailable=2.
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# ─── Service ─────────────────────────────────────────────────────────────────
+service:
+  enabled: true
+  # ClusterIP for in-cluster access; use LoadBalancer or NodePort for
+  # external access (not recommended without TLS + auth).
+  type: ClusterIP
+  ports:
+    nats:
+      enabled: true
+      port: 4222
+    monitor:
+      enabled: true
+      port: 8222
+
+# ─── Prometheus Exporter ─────────────────────────────────────────────────────
+# Sidecar that scrapes the NATS monitoring endpoint and exposes Prometheus
+# metrics on /metrics.
+exporter:
+  enabled: true
+  image:
+    repository: natsio/prometheus-nats-exporter
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+
+  # Exporter CLI flags — scrape varz, connz, jsz, etc.
+  args:
+    - "-varz"
+    - "-connz"
+    - "-jsz=all"
+    - "-routez"
+    - "-subz"
+
+  # ServiceMonitor for the Prometheus Operator.
+  # If you use kube-prometheus-stack this auto-discovers the exporter.
+  serviceMonitor:
+    enabled: true
+    labels:
+      release: prometheus       # CHANGEME — match your Prometheus selector
+    interval: 15s
+    scrapeTimeout: 10s
+
+# ─── NATS Box (debug container) ─────────────────────────────────────────────
+# Deploys a pod with the nats CLI and nsc tools for debugging.
+# Disable in production once the cluster is stable.
+natsBox:
+  enabled: true
+  image:
+    repository: natsio/nats-box
+    tag: latest
+
+# ─── Additional Volumes / Volume Mounts ─────────────────────────────────────
+# Attach extra volumes (e.g. for custom TLS certs, resolver config).
+# additionalVolumes: []
+# additionalVolumeMounts: []
+
+# ─── Annotations ─────────────────────────────────────────────────────────────
+# podAnnotations:
+#   prometheus.io/scrape: "true"
+#   prometheus.io/port: "7777"
+
+# ─── Security Context ───────────────────────────────────────────────────────
+# Run as a non-root user for defense-in-depth.
+# The official NATS image runs as UID 1000 by default.
+# securityContext:
+#   runAsNonRoot: true
+#   runAsUser: 1000
+#   runAsGroup: 1000
+#   fsGroup: 1000
