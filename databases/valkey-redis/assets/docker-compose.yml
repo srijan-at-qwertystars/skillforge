@@ -1,0 +1,482 @@
+# =============================================================================
+# Docker Compose: Valkey/Redis with Sentinel and Cluster Modes
+# =============================================================================
+# Usage:
+#   Development (standalone):  docker compose up valkey
+#   With Sentinel HA:          docker compose --profile sentinel up
+#   Cluster mode:              docker compose --profile cluster up
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # Standalone Valkey (default, always starts)
+  # ===========================================================================
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-standalone
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --aof-use-rdb-preamble yes
+      --save "900 1" --save "300 10" --save "60 10000"
+      --loglevel notice
+      --tcp-keepalive 60
+      --timeout 300
+      --lazyfree-lazy-eviction yes
+      --lazyfree-lazy-expire yes
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  # ===========================================================================
+  # Sentinel Mode (--profile sentinel)
+  # ===========================================================================
+  valkey-master:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-master
+    profiles: ["sentinel"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - valkey-master-data:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --aof-use-rdb-preamble yes
+      --min-replicas-to-write 1
+      --min-replicas-max-lag 10
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  valkey-replica-1:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-replica-1
+    profiles: ["sentinel"]
+    ports:
+      - "6381:6379"
+    volumes:
+      - valkey-replica1-data:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --replicaof valkey-master 6379
+      --replica-read-only yes
+      --appendonly yes
+    depends_on:
+      valkey-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  valkey-replica-2:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-replica-2
+    profiles: ["sentinel"]
+    ports:
+      - "6382:6379"
+    volumes:
+      - valkey-replica2-data:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --replicaof valkey-master 6379
+      --replica-read-only yes
+      --appendonly yes
+    depends_on:
+      valkey-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  sentinel-1:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-sentinel-1
+    profiles: ["sentinel"]
+    ports:
+      - "26379:26379"
+    command: >
+      sh -c '
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        sentinel monitor mymaster valkey-master 6379 2
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        sentinel resolve-hostnames yes
+      EOF
+        valkey-server /tmp/sentinel.conf --sentinel
+      '
+    depends_on:
+      valkey-master:
+        condition: service_healthy
+      valkey-replica-1:
+        condition: service_healthy
+      valkey-replica-2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  sentinel-2:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-sentinel-2
+    profiles: ["sentinel"]
+    ports:
+      - "26380:26379"
+    command: >
+      sh -c '
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        sentinel monitor mymaster valkey-master 6379 2
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        sentinel resolve-hostnames yes
+      EOF
+        valkey-server /tmp/sentinel.conf --sentinel
+      '
+    depends_on:
+      valkey-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  sentinel-3:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-sentinel-3
+    profiles: ["sentinel"]
+    ports:
+      - "26381:26379"
+    command: >
+      sh -c '
+        cat > /tmp/sentinel.conf <<EOF
+        port 26379
+        sentinel monitor mymaster valkey-master 6379 2
+        sentinel down-after-milliseconds mymaster 5000
+        sentinel failover-timeout mymaster 60000
+        sentinel parallel-syncs mymaster 1
+        sentinel resolve-hostnames yes
+      EOF
+        valkey-server /tmp/sentinel.conf --sentinel
+      '
+    depends_on:
+      valkey-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-p", "26379", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  # ===========================================================================
+  # Cluster Mode (--profile cluster)
+  # 3 masters + 3 replicas
+  # ===========================================================================
+  cluster-node-1:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-cluster-1
+    profiles: ["cluster"]
+    ports:
+      - "7001:6379"
+      - "17001:16379"
+    volumes:
+      - cluster-data-1:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7001
+      --cluster-announce-bus-port 17001
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  cluster-node-2:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-cluster-2
+    profiles: ["cluster"]
+    ports:
+      - "7002:6379"
+      - "17002:16379"
+    volumes:
+      - cluster-data-2:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7002
+      --cluster-announce-bus-port 17002
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  cluster-node-3:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-cluster-3
+    profiles: ["cluster"]
+    ports:
+      - "7003:6379"
+      - "17003:16379"
+    volumes:
+      - cluster-data-3:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7003
+      --cluster-announce-bus-port 17003
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  cluster-node-4:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-cluster-4
+    profiles: ["cluster"]
+    ports:
+      - "7004:6379"
+      - "17004:16379"
+    volumes:
+      - cluster-data-4:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7004
+      --cluster-announce-bus-port 17004
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  cluster-node-5:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-cluster-5
+    profiles: ["cluster"]
+    ports:
+      - "7005:6379"
+      - "17005:16379"
+    volumes:
+      - cluster-data-5:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7005
+      --cluster-announce-bus-port 17005
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  cluster-node-6:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-cluster-6
+    profiles: ["cluster"]
+    ports:
+      - "7006:6379"
+      - "17006:16379"
+    volumes:
+      - cluster-data-6:/data
+    command: >
+      valkey-server
+      --bind 0.0.0.0
+      --protected-mode no
+      --port 6379
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --cluster-announce-ip host.docker.internal
+      --cluster-announce-port 7006
+      --cluster-announce-bus-port 17006
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+  # Cluster initializer — runs once, creates the cluster, then exits
+  cluster-init:
+    image: valkey/valkey:8-alpine
+    container_name: valkey-cluster-init
+    profiles: ["cluster"]
+    depends_on:
+      cluster-node-1:
+        condition: service_healthy
+      cluster-node-2:
+        condition: service_healthy
+      cluster-node-3:
+        condition: service_healthy
+      cluster-node-4:
+        condition: service_healthy
+      cluster-node-5:
+        condition: service_healthy
+      cluster-node-6:
+        condition: service_healthy
+    command: >
+      sh -c '
+        echo "Creating cluster..."
+        valkey-cli --cluster create
+          host.docker.internal:7001
+          host.docker.internal:7002
+          host.docker.internal:7003
+          host.docker.internal:7004
+          host.docker.internal:7005
+          host.docker.internal:7006
+          --cluster-replicas 1 --cluster-yes &&
+        echo "Cluster created!" &&
+        valkey-cli -h host.docker.internal -p 7001 CLUSTER INFO
+      '
+    networks:
+      - valkey-net
+
+  # ===========================================================================
+  # Optional: Redis Exporter for Prometheus monitoring
+  # ===========================================================================
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    profiles: ["monitoring"]
+    ports:
+      - "9121:9121"
+    environment:
+      REDIS_ADDR: "redis://valkey:6379"
+    depends_on:
+      valkey:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - valkey-net
+
+# ===========================================================================
+# Volumes
+# ===========================================================================
+volumes:
+  valkey-data:
+  valkey-master-data:
+  valkey-replica1-data:
+  valkey-replica2-data:
+  cluster-data-1:
+  cluster-data-2:
+  cluster-data-3:
+  cluster-data-4:
+  cluster-data-5:
+  cluster-data-6:
+
+# ===========================================================================
+# Networks
+# ===========================================================================
+networks:
+  valkey-net:
+    driver: bridge

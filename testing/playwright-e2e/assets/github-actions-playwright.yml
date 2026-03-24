@@ -1,0 +1,163 @@
+# GitHub Actions workflow for Playwright E2E tests
+# Features: browser caching, sharding, artifact collection, merged reports
+#
+# Usage:
+#   Copy this file to .github/workflows/playwright.yml in your project.
+#   Adjust shardTotal in the matrix to match your desired parallelism.
+#
+# Config requirement (playwright.config.ts):
+#   reporter: process.env.CI
+#     ? [['blob'], ['github'], ['html', { open: 'never' }]]
+#     : [['list'], ['html', { open: 'on-failure' }]],
+
+name: Playwright Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+
+# Cancel in-progress runs for the same PR/branch
+concurrency:
+  group: playwright-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  NODE_VERSION: '20'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Run tests in parallel shards
+  # ---------------------------------------------------------------------------
+  test:
+    name: 'Tests (shard ${{ matrix.shardIndex }}/${{ matrix.shardTotal }})'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2, 3, 4]
+        shardTotal: [4]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run Playwright tests
+        run: npx playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+
+      - name: Upload blob report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: blob-report-${{ matrix.shardIndex }}
+          path: blob-report/
+          retention-days: 1
+
+      - name: Upload test results (screenshots, traces, videos)
+        uses: actions/upload-artifact@v4
+        if: ${{ failure() }}
+        with:
+          name: test-results-${{ matrix.shardIndex }}
+          path: test-results/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Merge sharded reports into a single HTML report
+  # ---------------------------------------------------------------------------
+  merge-reports:
+    name: Merge Reports
+    if: ${{ !cancelled() }}
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download all blob reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+
+      - name: Merge into HTML report
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Post a summary comment on the PR (optional)
+  # ---------------------------------------------------------------------------
+  # Uncomment if you want a PR comment with the report link:
+  #
+  # report-status:
+  #   name: Report Status
+  #   if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+  #   needs: [test, merge-reports]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Post comment
+  #       uses: actions/github-script@v7
+  #       with:
+  #         script: |
+  #           const { data: artifacts } = await github.rest.actions.listWorkflowRunArtifacts({
+  #             owner: context.repo.owner,
+  #             repo: context.repo.repo,
+  #             run_id: context.runId,
+  #           });
+  #           const report = artifacts.artifacts.find(a => a.name === 'playwright-report');
+  #           const url = report
+  #             ? `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}/artifacts/${report.id}`
+  #             : 'N/A';
+  #           await github.rest.issues.createComment({
+  #             owner: context.repo.owner,
+  #             repo: context.repo.repo,
+  #             issue_number: context.issue.number,
+  #             body: `🎭 **Playwright Report**: [Download](${url})`,
+  #           });

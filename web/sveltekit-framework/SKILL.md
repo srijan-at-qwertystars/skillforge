@@ -306,8 +306,10 @@ Caught by `handleError` hook. Never expose stack traces to users.
 
 ## Hooks (src/hooks.server.ts)
 
+Use `sequence()` to compose multiple hooks. See `assets/hooks.server.ts` for a production-ready template.
+
 ```ts
-import type { Handle, HandleFetch, HandleServerError } from '@sveltejs/kit';
+import type { Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 
 const auth: Handle = async ({ event, resolve }) => {
@@ -316,28 +318,7 @@ const auth: Handle = async ({ event, resolve }) => {
   return resolve(event);
 };
 
-const logger: Handle = async ({ event, resolve }) => {
-  const start = Date.now();
-  const response = await resolve(event);
-  console.log(`${event.request.method} ${event.url.pathname} ${Date.now() - start}ms`);
-  return response;
-};
-
-export const handle = sequence(auth, logger);
-
-export const handleFetch: HandleFetch = async ({ request, fetch }) => {
-  // Inject auth headers for internal API calls
-  if (request.url.startsWith('https://api.internal')) {
-    request.headers.set('Authorization', `Bearer ${API_KEY}`);
-  }
-  return fetch(request);
-};
-
-export const handleError: HandleServerError = async ({ error, event }) => {
-  const id = crypto.randomUUID();
-  console.error(`Error ${id}:`, error);
-  return { message: 'Internal error', id };
-};
+export const handle = sequence(auth);
 ```
 
 Declare `locals` types in `src/app.d.ts`:
@@ -426,29 +407,13 @@ export function createCounter(initial = 0) {
   };
 }
 ```
-
-```svelte
-<script>
-  import { createCounter } from '$lib/stores/counter.svelte';
-  const counter = createCounter(0);
-</script>
-<button onclick={counter.increment}>{counter.count}</button>
-```
-
 For app-wide state, use `setContext`/`getContext` in root layout or create module-level singletons.
 
 ## Authentication Pattern
 
-```ts
-// src/hooks.server.ts
-export const handle: Handle = async ({ event, resolve }) => {
-  const session = event.cookies.get('session');
-  if (session) {
-    event.locals.user = await getUserBySession(session);
-  }
-  return resolve(event);
-};
+Protect routes with a layout server load that checks `locals.user` (set by hooks):
 
+```ts
 // src/routes/(protected)/+layout.server.ts
 import { redirect } from '@sveltejs/kit';
 import type { LayoutServerLoad } from './$types';
@@ -497,3 +462,34 @@ Run: `npx playwright test`
 8. **`redirect()` outside load/action** — must be used in load, actions, or handlers only.
 9. **Adapter mismatch** — `adapter-static` cannot handle server routes. Use `adapter-node` for SSR.
 10. **`$effect` for derived state** — use `$derived`, not `$effect` with assignment.
+
+## References
+
+In-depth guides for advanced topics, troubleshooting, and migration:
+
+| File | Description |
+|------|-------------|
+| `references/advanced-patterns.md` | Svelte 5 runes deep dive (`$state.raw`, `$state.snapshot`, `$effect.pre`, `$effect.root`), snippets, component composition, streaming/parallel load patterns, invalidation, service workers, shallow routing, preloading, content negotiation, WebSocket/SSE integration |
+| `references/troubleshooting.md` | Hydration errors, SSR-only code issues, adapter-specific problems, Vite plugin conflicts, environment variable gotchas, module resolution, form action redirects, cookie edge cases, prerendering failures, deployment per adapter |
+| `references/migration-guide.md` | Svelte 4→5 migration (stores→runes, `createEventDispatcher`→callback props, slots→snippets), SvelteKit 1→2 migration, breaking changes, codemods (`npx sv migrate`) |
+
+## Scripts
+
+Automation scripts in `scripts/`. Run from the SvelteKit project root.
+
+| Script | Usage | Description |
+|--------|-------|-------------|
+| `scripts/setup-project.sh` | `./setup-project.sh my-app` | Bootstrap SvelteKit + Svelte 5 with Tailwind, TypeScript, Vitest, Playwright, ESLint, Prettier |
+| `scripts/create-route.sh` | `./create-route.sh blog/[slug] --full` | Generate route with `+page.svelte`, `+page.server.ts`, `+layout`, `+error` files |
+| `scripts/check-routes.sh` | `./check-routes.sh --verbose` | Analyze route tree, detect conflicts, list routes with params and file types |
+
+## Assets
+
+Production-ready templates and configs in `assets/`. Copy into your project and customize.
+
+| File | Description |
+|------|-------------|
+| `assets/svelte.config.js` | SvelteKit config with adapter-auto, path aliases, CSP, prerender options |
+| `assets/route-template.svelte` | Complete route with load data, form actions, error handling, SEO, streaming |
+| `assets/hooks.server.ts` | Production hooks: auth, rate limiting, request logging, security headers, error handling |
+| `assets/docker-compose.yml` | Docker Compose for dev: SvelteKit + PostgreSQL + Redis + Adminer + Mailpit |

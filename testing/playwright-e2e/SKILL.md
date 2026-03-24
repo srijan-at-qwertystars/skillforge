@@ -456,6 +456,27 @@ Browser (shared per worker)
             └─ context.close() (automatic)
 ```
 
+## Additional Resources
+
+### References (`references/`)
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Custom fixtures (scoped, auto, option), parameterization, data-driven tests, global setup/teardown, project dependencies, multi-page testing, iframes, shadow DOM, downloads/uploads, clipboard, web/service workers, a11y (axe-core), performance
+- **[troubleshooting.md](references/troubleshooting.md)** — Flaky test diagnosis, auto-waiting gaps, strict mode violations, timeout tuning, detached elements, navigation races, dialogs, iframe issues, CI problems (headless, Docker, GitHub Actions), screenshot diffs, trace analysis
+- **[ci-integration.md](references/ci-integration.md)** — GitHub Actions (caching, sharding, report merging), GitLab CI, Docker, parallel strategies, test splitting, retries, artifact collection, custom reporters, merge queue testing
+
+### Scripts (`scripts/`)
+
+- **[setup-project.sh](scripts/setup-project.sh)** — Initialize Playwright: install browsers, generate config, CI workflow, directory structure, example tests
+- **[generate-pom.sh](scripts/generate-pom.sh)** — Generate Page Object Model class from a URL by scraping interactive elements
+- **[run-tests.sh](scripts/run-tests.sh)** — Smart test runner with retry, sharding, tag filtering, headed/debug/UI mode, reporting
+
+### Assets (`assets/`)
+
+- **[playwright.config.ts](assets/playwright.config.ts)** — Production-ready config with projects, retries, reporters, webServer
+- **[page-object-template.ts](assets/page-object-template.ts)** — Base POM class with navigation, form, table, dialog helpers
+- **[auth-setup.ts](assets/auth-setup.ts)** — Auth setup fixture with storageState (UI, API, and OAuth patterns)
+- **[github-actions-playwright.yml](assets/github-actions-playwright.yml)** — CI workflow with browser caching, 4-way sharding, merged reports
+
 ## Example: Full Test File
 
 ```ts
@@ -463,28 +484,16 @@ Browser (shared per worker)
 import { test, expect } from '@playwright/test';
 
 test.describe('Checkout flow', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/products');
-  });
-
   test('add item and complete purchase', async ({ page }) => {
-    // Add to cart
+    await page.goto('/products');
     await page.getByRole('button', { name: 'Add to Cart' }).first().click();
     await expect(page.getByTestId('cart-count')).toHaveText('1');
-
-    // Go to checkout
     await page.getByRole('link', { name: 'Cart' }).click();
     await expect(page).toHaveURL(/\/cart/);
-
-    // Fill shipping
     await page.getByLabel('Address').fill('123 Main St');
     await page.getByLabel('City').fill('Springfield');
-    await page.getByLabel('State').selectOption('IL');
-
-    // Complete order
     await page.getByRole('button', { name: 'Place Order' }).click();
     await expect(page.getByRole('heading')).toHaveText('Order Confirmed');
-    await expect(page).toHaveURL(/\/confirmation/);
   });
 });
 ```

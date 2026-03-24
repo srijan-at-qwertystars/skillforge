@@ -1,0 +1,131 @@
+# docker-compose.yml — SvelteKit development environment with database
+# Copy to project root. Adjust services as needed.
+#
+# Usage:
+#   docker compose up -d          # start all services
+#   docker compose up app          # start app only
+#   docker compose logs -f app     # follow app logs
+#   docker compose down            # stop all services
+#   docker compose down -v         # stop + remove volumes (data loss!)
+
+services:
+  # --- SvelteKit Application ---
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"   # dev server
+      - "3000:3000"   # production (adapter-node)
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://app:app_password@postgres:5432/app_db
+      - REDIS_URL=redis://redis:6379
+      - PUBLIC_API_URL=http://localhost:3000
+      - ORIGIN=http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npm run dev -- --host 0.0.0.0
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5173"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # --- PostgreSQL Database ---
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: app_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- Redis (sessions, caching) ---
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- Adminer (DB management UI) ---
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+    profiles:
+      - tools
+
+  # --- Mailpit (local email testing) ---
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    profiles:
+      - tools
+
+volumes:
+  node_modules:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# Usage notes:
+#
+# Start core services:
+#   docker compose up -d
+#
+# Start with optional tools (Adminer, Mailpit):
+#   docker compose --profile tools up -d
+#
+# Run database migrations:
+#   docker compose exec app npx prisma migrate dev
+#   docker compose exec app npx drizzle-kit push
+#
+# Access database directly:
+#   docker compose exec postgres psql -U app -d app_db
+#
+# Rebuild after Dockerfile changes:
+#   docker compose build --no-cache app
+#
+# Production build and run:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Dockerfile (create separately):
+# ─────────────────────────────────
+# FROM node:20-alpine
+# WORKDIR /app
+# COPY package*.json ./
+# RUN npm ci
+# COPY . .
+# EXPOSE 5173 3000
+# CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -476,3 +476,24 @@ Fastest restart + minimal data loss. Use this for production deployments.
 8. **Single-threaded bottleneck** — Pipeline commands, use cluster mode, or Valkey 8+ multi-threading.
 9. **Fork latency on large datasets** — RDB saves fork the process. Monitor `latest_fork_usec`. Use `aof-use-rdb-preamble yes`.
 10. **No connection pooling** — Creates connection per request. Always pool. Size pool to `num_threads * 2`.
+
+## Additional Resources
+
+### References (references/)
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Sorted set leaderboards, time-series with streams, HyperLogLog, geospatial queries, bloom filters, graph patterns, RediSearch, RedisJSON, streams vs Pub/Sub, request deduplication, distributed state machines.
+- **[troubleshooting.md](references/troubleshooting.md)** — Memory diagnostics, SLOWLOG, network timeouts, cluster slot migration, Sentinel split-brain, replication lag, AOF/RDB issues, client limits, RESP errors, Lua debugging.
+- **[production-guide.md](references/production-guide.md)** — Sizing, monitoring (INFO, Prometheus), backups, upgrades, Redis→Valkey migration, security (ACLs, TLS), performance tuning, Docker/Kubernetes patterns.
+
+### Scripts (scripts/)
+
+- **[setup-cluster.sh](scripts/setup-cluster.sh)** — Local 6-node cluster (3 masters + 3 replicas). Auto-detects Valkey/Redis.
+- **[health-check.sh](scripts/health-check.sh)** — Health check: memory, clients, replication, persistence, slow queries, cluster. Exit codes: 0=healthy, 1=warning, 2=critical.
+- **[migrate-redis-valkey.sh](scripts/migrate-redis-valkey.sh)** — Redis→Valkey migration: check, prepare, swap, verify, rollback.
+
+### Assets (assets/)
+
+- **[redis.conf](assets/redis.conf)** — Production-ready annotated config for Valkey and Redis.
+- **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose: standalone, Sentinel (`--profile sentinel`), cluster (`--profile cluster`), monitoring.
+- **[connection-template.ts](assets/connection-template.ts)** — TypeScript/ioredis: standalone, Sentinel, cluster, Pub/Sub with retry and graceful shutdown.
+- **[rate-limiter.lua](assets/rate-limiter.lua)** — Sliding window rate limiter (Lua) returning allowed/denied, remaining, retry-after.
