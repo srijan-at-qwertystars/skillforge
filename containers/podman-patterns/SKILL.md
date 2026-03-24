@@ -375,6 +375,45 @@ podman run --memory 512m --cpus 1.5 --pids-limit 100 myapp
 podman inspect --format '{{.EffectiveCaps}}' <container>
 ```
 
+## References
+
+Deep-dive guides in `references/`:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Quadlet deep dive (`.container`,
+  `.volume`, `.network`, `.kube`, `.image`, `.pod` units), podman farm multi-arch, pasta
+  networking, HyperV/Apple Hypervisor, machine customization, health checks, pod resource
+  limits, init/infra containers.
+
+- **[Troubleshooting](references/troubleshooting.md)** — Rootless networking (slirp4netns vs
+  pasta), SELinux denials (`:Z`/`:z`), cgroup v2, storage drivers (overlay vs fuse-overlayfs),
+  machine disk/memory, Docker migration, permission errors, DNS resolution.
+
+- **[Buildah & Skopeo Guide](references/buildah-skopeo-guide.md)** — Buildah (multi-stage,
+  scratch, mount/copy/run), Skopeo (copy, inspect, sync, login), image signing (sigstore, GPG),
+  registry mirroring, CI/CD integration (GitHub Actions, GitLab CI, Jenkins, Tekton).
+
+## Scripts
+
+Ready-to-use scripts in `scripts/` (all `chmod +x`):
+
+- **[migrate-from-docker.sh](scripts/migrate-from-docker.sh)** — Migrate Docker images, volumes,
+  containers to Podman. Flags: `--all`, `--images`, `--volumes`, `--containers`, `--dry-run`.
+- **[setup-quadlet.sh](scripts/setup-quadlet.sh)** — Generate Quadlet units from running
+  containers. Flags: `--all`, `--with-volumes`, `--with-networks`, `--rootful`, `--dry-run`.
+- **[podman-health-check.sh](scripts/podman-health-check.sh)** — Check Podman installation,
+  storage, networking, cgroups, SELinux health. Flags: `--full`, `--quick`, `--fix`, `--json`.
+
+## Assets
+
+Templates in `assets/`:
+
+- **`quadlet-templates/`** — `.container`, `.volume`, `.network`, `.pod` Quadlet templates
+- **[podman-compose-template.yml](assets/podman-compose-template.yml)** — Production compose
+  with health checks, resource limits, SELinux labels, secrets
+- **[registries.conf](assets/registries.conf)** — Registry mirrors, search, aliases, blocking
+- **[storage.conf](assets/storage.conf)** — Storage driver config (overlay, fuse-overlayfs)
+- **[containers.conf](assets/containers.conf)** — Global Podman config (engine, network, machine)
+
 ## Quick Reference: Common Patterns
 
 | Task | Command |
@@ -444,27 +483,16 @@ buildah commit --squash $ctr myapp:latest
 buildah push myapp:latest docker://ghcr.io/org/myapp:latest
 ```
 
-### Example 4: Skopeo registry mirror
+### Example 4: Skopeo mirror + Secrets injection
 
-**User input**: "Mirror nginx images from Docker Hub to our private registry"
-
-**Output**:
 ```bash
-skopeo copy --all \
-  docker://docker.io/library/nginx:alpine \
+# Mirror all architectures to private registry
+skopeo copy --all docker://docker.io/library/nginx:alpine \
   docker://registry.internal:5000/library/nginx:alpine
-# --all copies all architectures in the manifest list
-```
 
-### Example 5: Secrets with environment injection
-
-**User input**: "Pass a database password securely to a Podman container"
-
-**Output**:
-```bash
+# Pass secrets securely via podman secret
 printf '%s' "$DB_PASSWORD" | podman secret create db_pass -
 podman run -d --name mydb \
   --secret db_pass,type=env,target=POSTGRES_PASSWORD \
   postgres:16-alpine
-# Password is injected as POSTGRES_PASSWORD env var, never visible in image or inspect
 ```

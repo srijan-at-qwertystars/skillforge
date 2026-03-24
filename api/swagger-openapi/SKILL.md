@@ -284,14 +284,13 @@ openapi-generator-cli generate -i openapi.yaml -g spring -o ./generated/spring-s
   --additional-properties=useSpringBoot3=true
 ```
 
-50+ generators available (`openapi-generator-cli list`). For legacy projects: `swagger-codegen generate -i openapi.yaml -l python -o ./output`
+50+ generators available (`openapi-generator-cli list`).
 
 ## Documentation Tools
 
 ### Swagger UI
 ```html
 <script src="https://unpkg.com/swagger-ui-dist/swagger-ui-bundle.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist/swagger-ui.css" />
 <div id="swagger-ui"></div>
 <script>SwaggerUIBundle({ url: "/openapi.yaml", dom_id: '#swagger-ui' });</script>
 ```
@@ -301,8 +300,8 @@ docker run -p 8080:8080 -e SWAGGER_JSON=/spec/openapi.yaml -v $(pwd):/spec swagg
 
 ### Redoc
 ```html
-<script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 <redoc spec-url="/openapi.yaml"></redoc>
+<script src="https://cdn.redoc.ly/redoc/latest/bundles/redoc.standalone.js"></script>
 ```
 ```bash
 npx @redocly/cli build-docs openapi.yaml -o docs.html
@@ -314,27 +313,20 @@ npx @redocly/cli build-docs openapi.yaml -o docs.html
 
 ```bash
 npm install -g @stoplight/spectral-cli
-
-# Lint with default OpenAPI ruleset
 spectral lint openapi.yaml
-
-# Custom ruleset (.spectral.yaml)
 ```
 
 ```yaml
 # .spectral.yaml
 extends: ["spectral:oas"]
 rules:
-  operation-operationId: error            # require operationId
-  operation-description: warn             # warn if no description
-  oas3-schema: error                      # validate against OAS3 schema
-  info-contact: off                       # disable contact requirement
+  operation-operationId: error
+  operation-description: warn
+  oas3-schema: error
+  info-contact: off
   custom-path-casing:
     given: "$.paths[*]~"
-    then:
-      function: pattern
-      functionOptions:
-        match: "^/[a-z][a-z0-9-/{}]*$"   # enforce kebab-case paths
+    then: { function: pattern, functionOptions: { match: "^/[a-z][a-z0-9-/{}]*$" } }
     severity: error
     message: "Paths must be kebab-case"
 ```
@@ -352,17 +344,11 @@ npx @redocly/cli split openapi.yaml --outDir ./specs    # split into files
 | Aspect | Design-First | Code-First |
 |--------|-------------|------------|
 | Flow | Write spec → generate code | Write code → generate spec |
-| Spec tool | Swagger Editor, Stoplight Studio | Annotations/decorators in code |
-| Pros | Contract agreed before coding; parallel frontend/backend work | Spec always matches implementation |
-| Cons | Spec can drift from code | Spec quality depends on annotations |
+| Pros | Contract agreed before coding; parallel work | Spec always matches implementation |
 | Best for | Public APIs, multi-team | Internal APIs, rapid prototyping |
 
-**Design-first tools:** Swagger Editor, Stoplight Studio, Redocly VS Code extension
-**Code-first frameworks:**
-- **Java:** springdoc-openapi (Spring Boot → OAS3 at `/v3/api-docs`)
-- **Python:** FastAPI (auto-generates at `/openapi.json`), drf-spectacular (Django REST)
-- **Node.js:** tsoa, express-openapi-validator, nestjs/swagger
-- **.NET:** Swashbuckle, NSwag
+**Design-first:** Swagger Editor, Stoplight Studio, Redocly VS Code
+**Code-first:** springdoc-openapi (Java), FastAPI (Python), tsoa/nestjs-swagger (Node), Swashbuckle (C#)
 
 ## Examples
 
@@ -473,11 +459,41 @@ openapi-generator-cli generate -i bundled.yaml \
 cd ./src/api-client && npm install                            # 4. Install
 ```
 
-## Quick Reference: Common Patterns
+## Quick Reference
 
-- **Pagination:** Use `query` params `page`/`pageSize` or `cursor`; return `Link` header or `nextCursor` in body
-- **Error responses:** Reuse `components/responses` with RFC 7807 Problem Details schema
-- **File upload:** `requestBody.content.multipart/form-data` with `type: string, contentMediaType: application/octet-stream`
-- **Versioning:** Use `servers[].url` path prefix (`/v1`) or `header` parameter
-- **Polymorphism:** Prefer `oneOf` + `discriminator` over untyped objects
-- **Spec splitting:** Use `$ref: './schemas/User.yaml'` for large specs; bundle before publishing
+- **Pagination:** `page`/`pageSize` or `cursor`; return `Link` header or `nextCursor`
+- **Errors:** Reuse `components/responses` with RFC 7807 Problem Details
+- **File upload:** `multipart/form-data` with `type: string, format: binary`
+- **Versioning:** `servers[].url` path prefix (`/v1`) or header param
+- **Polymorphism:** `oneOf` + `discriminator` over untyped objects
+- **Splitting:** `$ref: './schemas/User.yaml'`; bundle before publishing
+
+## References
+
+Detailed guides in `references/`:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Schema composition (discriminator, polymorphism, if/then/else), content negotiation, multipart uploads, pagination patterns, API versioning, x-extensions, OAS Overlays, Arazzo workflows, reusable components organization.
+- **[Troubleshooting](references/troubleshooting.md)** — Common spec errors (circular `$ref`, invalid schemas, 3.0↔3.1 issues), validator differences (Spectral vs Redocly vs swagger-parser), code generator quirks (Java/TS/Python), Swagger UI issues, CORS, breaking change detection.
+- **[Code Generation Guide](references/code-generation-guide.md)** — openapi-generator deep dive (50+ generators, config, templates), client/server generation per language, model-only generation, custom generators, alternatives (swagger-codegen, autorest, openapi-typescript, orval, hey-api, kiota).
+
+## Scripts
+
+Scripts in `scripts/` (all `chmod +x`):
+
+| Script | Purpose |
+|--------|---------|
+| [`validate-spec.sh`](scripts/validate-spec.sh) | Validate with Spectral, Redocly, swagger-cli. `--strict`, `--format json` |
+| [`generate-client.sh`](scripts/generate-client.sh) | Generate client SDK. `-g` generator, `--models-only`, `--dry-run` |
+| [`diff-specs.sh`](scripts/diff-specs.sh) | Breaking change detection via oasdiff. `--breaking-only`, `--format markdown` |
+
+## Assets
+
+Ready-to-use templates in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [`openapi-template.yaml`](assets/openapi-template.yaml) | OAS 3.1 spec template: CRUD, pagination, auth, webhooks, file upload, RFC 7807 errors |
+| [`spectral-ruleset.yaml`](assets/spectral-ruleset.yaml) | Custom Spectral rules: kebab-case paths, camelCase props, operationId, error responses |
+| [`redocly-config.yaml`](assets/redocly-config.yaml) | Redocly CLI config with recommended rules and theme customization |
+| [`github-actions-openapi.yml`](assets/github-actions-openapi.yml) | CI/CD: validate → breaking changes → generate SDK → build/publish docs |
+| [`openapi-generator-config.json`](assets/openapi-generator-config.json) | openapi-generator config for TypeScript Axios client |

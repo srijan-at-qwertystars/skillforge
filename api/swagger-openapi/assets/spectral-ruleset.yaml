@@ -1,0 +1,200 @@
+# =============================================================================
+# Spectral Ruleset — Custom API style guide enforcement
+#
+# Usage:
+#   spectral lint openapi.yaml --ruleset spectral-ruleset.yaml
+#
+# Or save as .spectral.yaml in project root for auto-detection.
+# =============================================================================
+extends:
+  - "spectral:oas"
+
+# Override built-in rule severities
+rules:
+  # ── Require operationId on all operations ──
+  operation-operationId:
+    severity: error
+    message: "Every operation must have a unique operationId"
+
+  # ── Require descriptions on operations ──
+  operation-description:
+    severity: warn
+    message: "Operations should have a description"
+
+  # ── Require tags on operations ──
+  operation-tags:
+    severity: warn
+    message: "Operations should have at least one tag"
+
+  # ── Disable info-contact requirement (optional for internal APIs) ──
+  info-contact: off
+
+  # ── OAS 3 schema validation ──
+  oas3-schema:
+    severity: error
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Custom Rules
+  # ─────────────────────────────────────────────────────────────────────────
+
+  # ── Enforce kebab-case paths ──
+  path-must-be-kebab-case:
+    description: API paths must use kebab-case
+    given: "$.paths[*]~"
+    severity: error
+    message: "Path '{{value}}' must be kebab-case (lowercase, hyphens, no underscores)"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^(/[a-z][a-z0-9-]*|/\\{[a-zA-Z][a-zA-Z0-9]*\\})*$"
+
+  # ── No trailing slashes in paths ──
+  path-no-trailing-slash:
+    description: Paths must not end with a trailing slash
+    given: "$.paths[*]~"
+    severity: error
+    message: "Path '{{value}}' must not end with a trailing slash"
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "/$"
+
+  # ── Require summary on operations ──
+  operation-must-have-summary:
+    description: All operations must have a summary
+    given: "$.paths[*][get,post,put,patch,delete,options,head,trace]"
+    severity: warn
+    message: "Operation must have a summary"
+    then:
+      field: summary
+      function: truthy
+
+  # ── Responses must have descriptions ──
+  response-must-have-description:
+    description: All responses must have a description
+    given: "$.paths[*][*].responses[*]"
+    severity: error
+    message: "Response must have a description"
+    then:
+      field: description
+      function: truthy
+
+  # ── No request body on GET/DELETE ──
+  no-body-on-get:
+    description: GET operations must not have a request body
+    given: "$.paths[*].get"
+    severity: error
+    message: "GET operations must not have a requestBody"
+    then:
+      field: requestBody
+      function: falsy
+
+  no-body-on-delete:
+    description: DELETE operations should not have a request body
+    given: "$.paths[*].delete"
+    severity: warn
+    message: "DELETE operations should not have a requestBody"
+    then:
+      field: requestBody
+      function: falsy
+
+  # ── Require error response schemas ──
+  must-define-error-responses:
+    description: Operations should define 4xx/5xx error responses
+    given: "$.paths[*][get,post,put,patch,delete].responses"
+    severity: warn
+    message: "Operations should define at least one 4xx or 5xx error response"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: ["400"]
+            - required: ["401"]
+            - required: ["403"]
+            - required: ["404"]
+            - required: ["422"]
+            - required: ["500"]
+            - required: ["default"]
+
+  # ── Schema property naming: camelCase ──
+  schema-properties-camelcase:
+    description: Schema properties should use camelCase
+    given: "$.components.schemas[*].properties[*]~"
+    severity: warn
+    message: "Property '{{value}}' should be camelCase"
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+
+  # ── Require schema type ──
+  schema-must-have-type:
+    description: Schemas should define a type
+    given: "$.components.schemas[*]"
+    severity: warn
+    message: "Schema should define a type (object, array, string, etc.)"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: ["type"]
+            - required: ["$ref"]
+            - required: ["oneOf"]
+            - required: ["anyOf"]
+            - required: ["allOf"]
+
+  # ── Require examples on request bodies ──
+  request-body-should-have-example:
+    description: Request bodies should include examples
+    given: "$.paths[*][post,put,patch].requestBody.content[*]"
+    severity: info
+    message: "Request body should include an example or examples"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: ["example"]
+            - required: ["examples"]
+
+  # ── Server URL must not have trailing slash ──
+  server-url-no-trailing-slash:
+    description: Server URLs must not end with a trailing slash
+    given: "$.servers[*].url"
+    severity: error
+    message: "Server URL '{{value}}' must not end with a trailing slash"
+    then:
+      function: pattern
+      functionOptions:
+        notMatch: "/$"
+
+  # ── Pagination parameters for list endpoints ──
+  list-endpoints-should-paginate:
+    description: GET endpoints returning arrays should support pagination
+    given: "$.paths[*].get.responses['200'].content['application/json'].schema"
+    severity: info
+    message: "List endpoints should support pagination parameters"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          not:
+            properties:
+              type:
+                const: array
+
+  # ── Enforce security on non-public endpoints ──
+  operation-security-defined:
+    description: Operations should have security defined (globally or per-operation)
+    given: "$.paths[*][get,post,put,patch,delete]"
+    severity: info
+    message: "Operation should have security defined or explicitly set to [] for public endpoints"
+    then:
+      function: schema
+      functionOptions:
+        schema:
+          anyOf:
+            - required: ["security"]
+            - {}

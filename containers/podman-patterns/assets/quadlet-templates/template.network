@@ -1,0 +1,45 @@
+# Quadlet Network Unit Template
+# Place in: ~/.config/containers/systemd/ (rootless)
+#       or: /etc/containers/systemd/ (root)
+# Filename must end in .network
+# Referenced from .container files: Network=mynetwork.network
+# Docs: man quadlet(5)
+
+[Unit]
+Description=Application network
+
+[Network]
+# Network name (defaults to filename without .network suffix)
+# NetworkName=myapp-net
+
+# Network driver
+Driver=bridge
+
+# --- IPv4 subnet ---
+Subnet=10.89.1.0/24
+Gateway=10.89.1.1
+
+# --- IPv6 (optional) ---
+# IPv6=true
+# Subnet=fd00:dead:beef::/64
+# Gateway=fd00:dead:beef::1
+
+# --- DNS ---
+# Enable DNS resolution by container name (Aardvark-DNS)
+DNSEnabled=true
+# Custom DNS server for the network
+# DNS=10.89.1.1
+
+# --- Isolation ---
+# Internal network (no outbound connectivity)
+Internal=false
+
+# --- Options ---
+# Custom MTU
+# Options=mtu=9000
+# Isolate from other networks
+# Options=isolate=true
+
+# --- Labels ---
+Label=env=production
+Label=app=myapp

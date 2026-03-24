@@ -449,3 +449,37 @@ coroutineScope {
 }
 // Output: counter == 1000 (guaranteed)
 ```
+
+## References
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Coroutine internals (CPS transformation, state machines), custom coroutine builders, CoroutineContext elements (custom elements, MDC propagation), undispatched coroutines, DebugProbes API, performance optimization (dispatcher selection, pool sizing, avoiding unnecessary suspensions), Flow backpressure (`buffer`, `conflate`, `collectLatest`), advanced Flow operators (`combine`, `zip`, `flatMapMerge/Concat/Latest`), SharedFlow configuration (`replay`, `extraBufferCapacity`, `onBufferOverflow`).
+
+- **[troubleshooting.md](references/troubleshooting.md)** — Debugging leaking coroutines, cancellation not propagating (swallowed `CancellationException`, non-cooperative cancellation, broken Job hierarchy), blocking in suspend functions (detection, common offenders, proper wrapping), `GlobalScope` misuse and migration strategies, IntelliJ coroutine debugger and `DebugProbes`, deadlocks with `Dispatchers.Main`, structured concurrency violations, Flow collection pitfalls, memory leaks with `StateFlow` and `WhileSubscribed`.
+
+- **[android-patterns.md](references/android-patterns.md)** — `viewModelScope`, `lifecycleScope`, `repeatOnLifecycle`, `flowWithLifecycle`, Room coroutine integration (suspend DAOs, Flow queries, transactions), Retrofit suspend methods and error handling, WorkManager `CoroutineWorker`, Jetpack Compose + Flow (`collectAsState`, `collectAsStateWithLifecycle`, `LaunchedEffect`, `rememberCoroutineScope`, `produceState`, `snapshotFlow`), testing Android coroutines (Main dispatcher rule, Turbine, ViewModel/Repository tests).
+
+## Scripts
+
+Executable tools in `scripts/`:
+
+- **[coroutine-benchmark.kt](scripts/coroutine-benchmark.kt)** — Benchmarks coroutine vs thread performance across creation overhead, context switching, memory usage, and throughput. Run: `kotlinc -script coroutine-benchmark.kt`
+
+- **[flow-visualizer.kt](scripts/flow-visualizer.kt)** — Visualizes Flow operator chains (`buffer`, `conflate`, `collectLatest`, `debounce`, `combine` vs `zip`, `flatMap*`, `flowOn`) with ASCII timelines showing emission/collection timing. Run: `kotlinc -script flow-visualizer.kt`
+
+- **[lint-coroutines.sh](scripts/lint-coroutines.sh)** — Checks Kotlin source for common coroutine anti-patterns: `GlobalScope`, `runBlocking` in prod, `Thread.sleep`, `launch(Job())`, deprecated `launchWhenStarted`, `Dispatchers.Unconfined`, and more. Run: `./lint-coroutines.sh src/`
+
+## Assets
+
+Reusable templates and references in `assets/`:
+
+- **[coroutine-test-template.kt](assets/coroutine-test-template.kt)** — Complete test template with `TestCoroutineScheduler`, `runTest`, Main dispatcher rule (JUnit 4/5), Turbine Flow testing, fakes, and example tests for ViewModels and Flows.
+
+- **[flow-patterns.kt](assets/flow-patterns.kt)** — 10 production Flow patterns: debounce search, retry with exponential backoff, offset/cursor pagination, polling, resource-guarded Flow, multi-source combine, error recovery with fallback, throttle first/latest, batch/chunk emissions, per-element timeout.
+
+- **[ktor-coroutine-patterns.kt](assets/ktor-coroutine-patterns.kt)** — Ktor server patterns: coroutine routing, WebSocket chat rooms, SSE streaming, concurrent request aggregation, database integration, error handling middleware, rate limiting, background jobs, streaming responses, and testing.
+
+- **[gradle-coroutines.kts](assets/gradle-coroutines.kts)** — Gradle build config with all coroutine dependencies: core, Android, test, debug, reactive interop (RxJava3, JDK9), Ktor client/server, Room, Retrofit, WorkManager, Turbine, and serialization.
+
+- **[coroutine-cheatsheet.md](assets/coroutine-cheatsheet.md)** — Quick reference card: builders, dispatchers, scopes, Job operations, Flow operators (creation, transformation, filtering, combining, error handling, terminal), StateFlow vs SharedFlow, cancellation, exception handling, testing, Android lifecycle collection, and common anti-patterns.

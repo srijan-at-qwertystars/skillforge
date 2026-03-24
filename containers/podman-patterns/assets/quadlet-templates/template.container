@@ -1,0 +1,97 @@
+# Quadlet Container Unit Template
+# Place in: ~/.config/containers/systemd/ (rootless)
+#       or: /etc/containers/systemd/ (root)
+# Filename must end in .container
+# Docs: man quadlet(5), man podman-systemd.unit(5)
+
+[Unit]
+Description=My Application Container
+# Start after network is available
+After=network-online.target
+# Depend on volume and network units (auto-generated from Volume=/Network= below)
+# Requires=myapp-data.volume myapp.network
+
+[Container]
+# --- Image ---
+Image=docker.io/library/nginx:1.27-alpine
+# Pull policy: always | missing | newer | never
+Pull=newer
+ContainerName=myapp
+
+# --- Networking ---
+# Publish ports (host:container[/protocol])
+PublishPort=8080:80
+# PublishPort=8443:443/tcp
+# Custom network (reference a .network file)
+# Network=myapp.network
+# Hostname
+# HostName=myapp.example.com
+# Custom DNS
+# DNS=8.8.8.8
+# Static IP (requires custom network with subnet)
+# IP=10.89.1.10
+# Extra hosts
+# AddHost=dbhost:10.89.1.5
+
+# --- Volumes ---
+# Named volume (reference a .volume file)
+# Volume=myapp-data.volume:/data:Z
+# Bind mount (%h = user home dir)
+# Volume=%h/myapp/config:/etc/myapp:ro,Z
+# tmpfs mount
+# Mount=type=tmpfs,destination=/tmp,tmpfs-size=128M
+
+# --- Environment ---
+# Inline environment variables
+# Environment=APP_ENV=production
+# Environment=LOG_LEVEL=info
+# Environment file
+# EnvironmentFile=%h/.config/myapp/env
+
+# --- Secrets (created with `podman secret create`) ---
+# As environment variable
+# Secret=db_pass,type=env,target=DB_PASSWORD
+# As mounted file
+# Secret=tls_cert,type=mount,target=/certs/server.crt
+
+# --- Security ---
+# Drop all caps, add only needed
+# DropCapability=ALL
+# AddCapability=NET_BIND_SERVICE
+# Read-only root filesystem
+# ReadOnly=true
+# No privilege escalation
+# NoNewPrivileges=true
+# Run as non-root user
+# User=1000
+# Group=1000
+
+# --- Health Check ---
+# HealthCmd=/bin/sh -c "curl -f http://localhost/ || exit 1"
+# HealthInterval=30s
+# HealthRetries=3
+# HealthStartPeriod=10s
+# HealthTimeout=5s
+# HealthOnFailure=restart
+
+# --- Auto-update ---
+AutoUpdate=registry
+
+# --- Resource Limits (via PodmanArgs) ---
+# PodmanArgs=--memory=512m --cpus=1.5 --pids-limit=200
+
+# --- Exec ---
+# Entrypoint=/docker-entrypoint.sh
+# Exec=nginx -g "daemon off;"
+
+# --- Logging ---
+LogDriver=journald
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

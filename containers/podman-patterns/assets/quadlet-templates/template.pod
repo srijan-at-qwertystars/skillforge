@@ -1,0 +1,39 @@
+# Quadlet Pod Unit Template
+# Place in: ~/.config/containers/systemd/ (rootless)
+#       or: /etc/containers/systemd/ (root)
+# Filename must end in .pod
+# Referenced from .container files: Pod=mypod.pod
+# Docs: man quadlet(5)
+#
+# Pods group containers sharing network/IPC namespaces.
+# Containers within a pod communicate via localhost.
+# Port mappings are defined at the pod level.
+
+[Unit]
+Description=Application pod
+
+[Pod]
+# Pod name (defaults to filename without .pod suffix)
+PodName=myapp-pod
+
+# --- Port publishing (applies to all containers in pod) ---
+PublishPort=8080:80
+# PublishPort=5432:5432
+# PublishPort=6379:6379
+
+# --- Network ---
+# Network=myapp.network
+
+# --- DNS ---
+# DNS=8.8.8.8
+# DNSSearch=example.com
+
+# --- Infra container ---
+# Custom pause/infra image
+# InfraImage=registry.k8s.io/pause:3.9
+
+# --- Resource limits (pod-wide) ---
+# PodmanArgs=--cpus=4 --memory=4g --pids-limit=1000
+
+[Install]
+WantedBy=default.target

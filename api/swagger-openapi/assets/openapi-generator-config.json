@@ -1,0 +1,40 @@
+{
+  "$schema": "https://raw.githubusercontent.com/OpenAPITools/openapi-generator/master/modules/openapi-generator-cli/src/main/resources/schema.json",
+  "generatorName": "typescript-axios",
+  "inputSpec": "./openapi.yaml",
+  "outputDir": "./generated-client",
+  "additionalProperties": {
+    "supportsES6": true,
+    "npmName": "@myorg/api-client",
+    "npmVersion": "1.0.0",
+    "withInterfaces": true,
+    "useSingleRequestParameter": true,
+    "enumPropertyNaming": "UPPERCASE",
+    "modelPropertyNaming": "camelCase",
+    "paramNaming": "camelCase",
+    "withSeparateModelsAndApi": true,
+    "apiPackage": "api",
+    "modelPackage": "models",
+    "withNodeImports": true
+  },
+  "typeMappings": {
+    "DateTime": "string",
+    "date": "string",
+    "File": "Blob",
+    "binary": "Blob"
+  },
+  "modelNameMappings": {
+    "Error": "ApiError"
+  },
+  "reservedWordsMappings": {
+    "class": "classField",
+    "default": "defaultValue"
+  },
+  "globalProperties": {
+    "modelDocs": "false",
+    "apiDocs": "false",
+    "modelTests": "false",
+    "apiTests": "false"
+  },
+  "importMappings": {}
+}

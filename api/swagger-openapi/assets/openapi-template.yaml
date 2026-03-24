@@ -1,0 +1,665 @@
+# =============================================================================
+# OpenAPI 3.1 Template — Complete reference with all common patterns
+# Copy and customize for your API. Remove sections you don't need.
+# =============================================================================
+openapi: "3.1.0"
+
+info:
+  title: My API
+  version: "1.0.0"
+  description: >
+    Complete API for managing resources.
+    Supports CRUD operations, pagination, filtering, and webhooks.
+  termsOfService: https://example.com/terms
+  contact:
+    name: API Support
+    email: api-support@example.com
+    url: https://example.com/support
+  license:
+    name: Apache 2.0
+    identifier: Apache-2.0
+
+# JSON Schema dialect (optional, 3.1+)
+jsonSchemaDialect: "https://json-schema.org/draft/2020-12/schema"
+
+servers:
+  - url: https://api.example.com/v1
+    description: Production
+  - url: https://staging-api.example.com/v1
+    description: Staging
+  - url: http://localhost:3000/v1
+    description: Local development
+
+# ─── Tags ────────────────────────────────────────────────────────────────────
+tags:
+  - name: Users
+    description: User management operations
+  - name: Items
+    description: Item CRUD operations
+  - name: Auth
+    description: Authentication and authorization
+  - name: Health
+    description: Service health checks
+
+# ─── Security (global) ──────────────────────────────────────────────────────
+security:
+  - BearerAuth: []
+
+# ─── Paths ───────────────────────────────────────────────────────────────────
+paths:
+  # ── Health ──
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      tags: [Health]
+      security: []   # override: no auth required
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded]
+                  version:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  # ── Users ──
+  /users:
+    get:
+      operationId: listUsers
+      summary: List users with pagination
+      tags: [Users]
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/PageSizeParam'
+        - $ref: '#/components/parameters/SortParam'
+        - name: search
+          in: query
+          description: Search by name or email
+          schema:
+            type: string
+        - name: role
+          in: query
+          description: Filter by role
+          schema:
+            $ref: '#/components/schemas/UserRole'
+      responses:
+        '200':
+          description: Paginated list of users
+          headers:
+            X-Total-Count:
+              schema: { type: integer }
+              description: Total number of results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedUsers'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      operationId: createUser
+      summary: Create a new user
+      tags: [Users]
+      security:
+        - BearerAuth: []
+        - OAuth2: [write:users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+            examples:
+              basicUser:
+                summary: Basic user creation
+                value:
+                  email: john@example.com
+                  name: John Doe
+                  role: viewer
+      responses:
+        '201':
+          description: User created
+          headers:
+            Location:
+              schema: { type: string, format: uri }
+              description: URL of the created user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: User with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /users/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/UserIdParam'
+    get:
+      operationId: getUserById
+      summary: Get a user by ID
+      tags: [Users]
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: updateUser
+      summary: Update a user
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteUser
+      summary: Delete a user
+      tags: [Users]
+      responses:
+        '204':
+          description: User deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{userId}/avatar:
+    parameters:
+      - $ref: '#/components/parameters/UserIdParam'
+    put:
+      operationId: uploadAvatar
+      summary: Upload user avatar
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (PNG, JPEG, max 5MB)
+            encoding:
+              file:
+                contentType: image/png, image/jpeg
+      responses:
+        '200':
+          description: Avatar uploaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  avatarUrl:
+                    type: string
+                    format: uri
+        '413':
+          description: File too large
+
+  # ── Items ──
+  /items:
+    get:
+      operationId: listItems
+      summary: List items with cursor pagination
+      tags: [Items]
+      parameters:
+        - name: cursor
+          in: query
+          description: Cursor from previous response
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, archived, draft]
+      responses:
+        '200':
+          description: List of items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CursorPaginatedItems'
+    post:
+      operationId: createItem
+      summary: Create a new item
+      tags: [Items]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCreate'
+      responses:
+        '201':
+          description: Item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Item'
+
+  # ── Auth ──
+  /auth/login:
+    post:
+      operationId: login
+      summary: Authenticate and get access token
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  format: password
+                  writeOnly: true
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken: { type: string }
+                  refreshToken: { type: string }
+                  expiresIn: { type: integer, description: "Seconds until expiry" }
+                  tokenType: { type: string, enum: [Bearer] }
+        '401':
+          description: Invalid credentials
+
+# ─── Webhooks (3.1+) ────────────────────────────────────────────────────────
+webhooks:
+  userCreated:
+    post:
+      operationId: onUserCreated
+      summary: Fires when a new user is created
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEvent'
+      responses:
+        '200':
+          description: Webhook received
+
+  itemUpdated:
+    post:
+      operationId: onItemUpdated
+      summary: Fires when an item is updated
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEvent'
+      responses:
+        '200':
+          description: Webhook received
+
+# ─── Components ──────────────────────────────────────────────────────────────
+components:
+
+  # ── Schemas ──
+  schemas:
+    User:
+      type: object
+      required: [id, email, role, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+        name:
+          type: ["string", "null"]
+        role:
+          $ref: '#/components/schemas/UserRole'
+        avatarUrl:
+          type: ["string", "null"]
+          format: uri
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    UserCreate:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        role:
+          $ref: '#/components/schemas/UserRole'
+        password:
+          type: string
+          format: password
+          minLength: 8
+          writeOnly: true
+
+    UserUpdate:
+      type: object
+      properties:
+        name:
+          type: ["string", "null"]
+          maxLength: 255
+        role:
+          $ref: '#/components/schemas/UserRole'
+
+    UserRole:
+      type: string
+      enum: [admin, editor, viewer]
+      default: viewer
+
+    Item:
+      type: object
+      required: [id, title, status, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [active, archived, draft]
+          default: draft
+        tags:
+          type: array
+          items: { type: string }
+          default: []
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+          readOnly: true
+        updatedAt:
+          type: string
+          format: date-time
+          readOnly: true
+
+    ItemCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 500
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, draft]
+          default: draft
+        tags:
+          type: array
+          items: { type: string }
+
+    # ── Pagination ──
+    PaginatedUsers:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        pagination:
+          $ref: '#/components/schemas/OffsetPagination'
+
+    OffsetPagination:
+      type: object
+      required: [page, pageSize, totalItems, totalPages]
+      properties:
+        page: { type: integer, minimum: 1 }
+        pageSize: { type: integer, minimum: 1 }
+        totalItems: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+        hasNext: { type: boolean }
+        hasPrev: { type: boolean }
+
+    CursorPaginatedItems:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Item'
+        nextCursor:
+          type: ["string", "null"]
+          description: Null when no more results
+        hasMore:
+          type: boolean
+
+    # ── Error handling (RFC 7807) ──
+    Error:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: URI reference identifying the problem type
+        title:
+          type: string
+          description: Short human-readable summary
+        status:
+          type: integer
+          description: HTTP status code
+        detail:
+          type: string
+          description: Detailed human-readable explanation
+        instance:
+          type: string
+          format: uri
+          description: URI reference for this specific occurrence
+        errors:
+          type: array
+          description: Validation errors
+          items:
+            type: object
+            properties:
+              field: { type: string }
+              message: { type: string }
+              code: { type: string }
+
+    # ── Webhooks ──
+    WebhookEvent:
+      type: object
+      required: [id, type, timestamp, data]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum:
+            - user.created
+            - user.updated
+            - user.deleted
+            - item.created
+            - item.updated
+            - item.deleted
+        timestamp:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true
+
+  # ── Parameters ──
+  parameters:
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      description: User UUID
+      schema:
+        type: string
+        format: uuid
+
+    PageParam:
+      name: page
+      in: query
+      description: Page number
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    PageSizeParam:
+      name: pageSize
+      in: query
+      description: Items per page
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    SortParam:
+      name: sort
+      in: query
+      description: "Sort field and direction (e.g., createdAt:desc)"
+      schema:
+        type: string
+        pattern: '^[a-zA-Z]+:(asc|desc)$'
+        default: "createdAt:desc"
+
+  # ── Responses ──
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: https://api.example.com/errors/not-found
+            title: Not Found
+            status: 404
+            detail: The requested resource was not found
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: https://api.example.com/errors/unauthorized
+            title: Unauthorized
+            status: 401
+            detail: A valid authentication token is required
+
+    ValidationError:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            type: https://api.example.com/errors/validation
+            title: Validation Error
+            status: 400
+            detail: One or more fields failed validation
+            errors:
+              - field: email
+                message: Must be a valid email address
+                code: invalid_format
+
+  # ── Security Schemes ──
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT access token
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for service-to-service calls
+
+    OAuth2:
+      type: oauth2
+      description: OAuth 2.0 authorization
+      flows:
+        authorizationCode:
+          authorizationUrl: https://auth.example.com/authorize
+          tokenUrl: https://auth.example.com/token
+          refreshUrl: https://auth.example.com/refresh
+          scopes:
+            read:users: Read user data
+            write:users: Create and modify users
+            read:items: Read items
+            write:items: Create and modify items
+            admin: Full administrative access
+
+externalDocs:
+  description: Full API documentation
+  url: https://docs.example.com

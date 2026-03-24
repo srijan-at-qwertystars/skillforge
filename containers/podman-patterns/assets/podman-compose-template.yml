@@ -1,0 +1,201 @@
+# Podman Compose Production Template
+# Compatible with: podman compose, podman-compose, docker-compose
+# Usage: podman compose -f podman-compose-template.yml up -d
+#
+# Best Practices Applied:
+#   - Explicit image tags (never :latest in production)
+#   - Health checks on all services
+#   - Resource limits
+#   - Named volumes for persistence
+#   - Custom network for DNS resolution
+#   - SELinux volume labels (:Z)
+#   - Non-root users where possible
+#   - Secrets management
+#   - Restart policies
+#   - Logging configuration
+
+version: "3.9"  # Podman compose supports v3 syntax
+
+services:
+  # --- Web / Reverse Proxy ---
+  web:
+    image: docker.io/library/nginx:1.27-alpine
+    container_name: web
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro,Z
+      - ./nginx/certs:/etc/nginx/certs:ro,Z
+      - web-cache:/var/cache/nginx:Z
+    networks:
+      - frontend
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+
+  # --- Application API ---
+  api:
+    image: docker.io/myorg/myapi:1.0.0
+    container_name: api
+    # build:
+    #   context: .
+    #   dockerfile: Containerfile
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=info
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_NAME=myapp
+      - REDIS_URL=redis://cache:6379/0
+    # Environment file for secrets (not committed to git)
+    env_file:
+      - .env.production
+    volumes:
+      - app-data:/app/data:Z
+      - ./config:/app/config:ro,Z
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+
+  # --- Database ---
+  db:
+    image: docker.io/library/postgres:16-alpine
+    container_name: db
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER=appuser
+      # Use secrets or env_file for passwords in production
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    volumes:
+      - db-data:/var/lib/postgresql/data:Z
+      - ./db/init:/docker-entrypoint-initdb.d:ro,Z
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d myapp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    # secrets:
+    #   - db_password
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+    shm_size: 256M
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+
+  # --- Cache ---
+  cache:
+    image: docker.io/library/redis:7-alpine
+    container_name: cache
+    command: >
+      redis-server
+      --maxmemory 128mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --requirepass ${REDIS_PASSWORD:-changeme}
+    volumes:
+      - cache-data:/data:Z
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    user: "999:999"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+
+# --- Named volumes (persistent storage) ---
+volumes:
+  db-data:
+    name: myapp-db-data
+  app-data:
+    name: myapp-app-data
+  cache-data:
+    name: myapp-cache-data
+  web-cache:
+    name: myapp-web-cache
+
+# --- Custom networks ---
+networks:
+  frontend:
+    name: myapp-frontend
+    driver: bridge
+    # Enable DNS resolution
+    driver_opts:
+      dns_enabled: "true"
+  backend:
+    name: myapp-backend
+    driver: bridge
+    internal: true  # No outbound access for backend services
+    driver_opts:
+      dns_enabled: "true"
+
+# --- Secrets (Podman secrets integration) ---
+# secrets:
+#   db_password:
+#     external: true  # Created with: podman secret create db_password ./secret.txt

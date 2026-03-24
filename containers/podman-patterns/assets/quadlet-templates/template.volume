@@ -1,0 +1,45 @@
+# Quadlet Volume Unit Template
+# Place in: ~/.config/containers/systemd/ (rootless)
+#       or: /etc/containers/systemd/ (root)
+# Filename must end in .volume
+# Referenced from .container files: Volume=myvolume.volume:/mount/path:Z
+# Docs: man quadlet(5)
+
+[Unit]
+Description=Application data volume
+
+[Volume]
+# Volume name (defaults to filename without .volume suffix)
+# VolumeName=myapp-data
+
+# Volume driver (default: local)
+Driver=local
+
+# Volume labels
+Label=app=myapp
+Label=env=production
+
+# File ownership (UID:GID inside the volume)
+# User=1000
+# Group=1000
+
+# Copy data from container image on first use
+# (copies content from the image's mount point into the volume)
+Copy=true
+
+# --- Driver options for special volume types ---
+
+# NFS volume:
+# Options=type=nfs,o=addr=192.168.1.100,rw,nfsvers=4,async
+# Device=:/exports/data
+
+# CIFS/SMB volume:
+# Options=type=cifs,o=username=user,password=pass,domain=WORKGROUP
+# Device=//server/share
+
+# tmpfs volume:
+# Options=type=tmpfs,o=size=256m,noexec
+
+# Block device:
+# Device=/dev/sdb1
+# Type=ext4

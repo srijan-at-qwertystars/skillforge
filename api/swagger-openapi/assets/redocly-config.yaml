@@ -1,0 +1,151 @@
+# =============================================================================
+# Redocly CLI Configuration Template
+#
+# Place as redocly.yaml in your project root.
+#
+# Usage:
+#   npx @redocly/cli lint openapi.yaml
+#   npx @redocly/cli bundle openapi.yaml -o bundled.yaml
+#   npx @redocly/cli build-docs openapi.yaml -o docs.html
+#   npx @redocly/cli preview-docs openapi.yaml
+# =============================================================================
+
+# ── API definitions ──────────────────────────────────────────────────────────
+# Define named APIs for multi-spec projects
+apis:
+  main:
+    root: openapi.yaml
+  # Add more APIs here for multi-spec projects:
+  # admin:
+  #   root: admin-openapi.yaml
+
+# ── Rule set ─────────────────────────────────────────────────────────────────
+extends:
+  - recommended       # Redocly's recommended ruleset
+  # - minimal          # Bare minimum structural validation only
+  # - recommended-strict  # Stricter version of recommended
+
+# ── Rules ────────────────────────────────────────────────────────────────────
+rules:
+  # ── Naming conventions ──
+  path-segment-plural: warn                    # /users not /user
+  no-path-trailing-slash: error                # /users not /users/
+  paths-kebab-case: error                      # /user-profiles not /userProfiles
+  path-http-verbs-order:                       # enforce verb ordering in spec
+    severity: info
+
+  # ── Operation requirements ──
+  operation-operationId: error                 # every operation needs an operationId
+  operation-operationId-unique: error          # operationIds must be unique
+  operation-summary: warn                      # operations should have a summary
+  operation-description: warn                  # operations should have a description
+  tag-description: warn                        # tags should have descriptions
+  operation-operationId-url-safe: error        # operationId must be URL-safe
+
+  # ── Schema rules ──
+  no-enum-type-mismatch: error                 # enum values must match schema type
+  no-invalid-schema-examples: warn             # examples must match schema
+  no-invalid-media-type-examples:              # media type examples must match
+    severity: warn
+
+  # ── Reference rules ──
+  no-unresolved-refs: error                    # all $refs must resolve
+  no-unused-components: warn                   # warn on unused components
+
+  # ── Security ──
+  security-defined: warn                       # operations should have security
+  operation-4xx-response: warn                 # operations should define 4xx responses
+
+  # ── Structural ──
+  no-ambiguous-paths: error                    # paths must not be ambiguous
+  no-identical-paths: error                    # no duplicate paths
+  spec-components-invalid-map-name: error      # component names must be valid
+
+  # ── Spec-specific ──
+  spec:
+    oas3-0:
+      no-invalid-media-type-examples: warn
+    oas3-1:
+      no-invalid-media-type-examples: warn
+
+# ── Theme (for build-docs and preview-docs) ──────────────────────────────────
+theme:
+  openapi:
+    # Sidebar and navigation
+    showExtensions: true
+    generateTagGroups: true
+    sortEnumValuesAlphabetically: true
+    sortOperationsAlphabetically: false
+    sortTagsAlphabetically: true
+
+    # Schema display
+    schemaExpansionLevel: 2
+    showObjectSchemaExamples: true
+    expandDefaultServerVariables: true
+
+    # Code samples
+    showConsole: true
+    hideTryItPanel: false
+
+    # Layout
+    hideDownloadButton: false
+    hideSchemaPattern: false
+    hideHostname: false
+
+    # JSON Schema
+    jsonSamplesExpandLevel: 2
+    enumSkipQuotes: false
+
+    # Theme colors (customize for your brand)
+    theme:
+      colors:
+        primary:
+          main: "#1a73e8"
+        success:
+          main: "#34a853"
+        error:
+          main: "#ea4335"
+        warning:
+          main: "#fbbc04"
+        text:
+          primary: "#333333"
+      typography:
+        fontSize: "15px"
+        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif'
+        headings:
+          fontFamily: '"Inter", sans-serif'
+        code:
+          fontSize: "13px"
+          fontFamily: '"JetBrains Mono", "Fira Code", monospace'
+      sidebar:
+        width: "280px"
+        backgroundColor: "#fafafa"
+      rightPanel:
+        backgroundColor: "#263238"
+
+# ── Lint configuration ───────────────────────────────────────────────────────
+lint:
+  # Output format for CI
+  # format: stylish    # default
+  # format: json       # machine-readable
+
+  # Ignore specific files from linting
+  ignore:
+    - "generated/**"
+    - "vendor/**"
+
+# ── Decorators (preprocessing) ──────────────────────────────────────────────
+# decorators:
+#   info-override:
+#     severity: error
+#   operation-description-override:
+#     severity: warn
+
+# ── Resolve configuration ───────────────────────────────────────────────────
+resolve:
+  http:
+    # Allow resolving $ref from external URLs
+    headers:
+      - matches: https://api.example.com/**
+        name: Authorization
+        envVariable: API_AUTH_TOKEN
