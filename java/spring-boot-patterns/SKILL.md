@@ -1,500 +1,469 @@
 ---
 name: spring-boot-patterns
-description: |
-  Use when user builds Spring Boot applications, asks about @RestController, Spring Data JPA/R2DBC, Spring Security configuration, dependency injection, exception handling with @ControllerAdvice, or Spring Boot testing (@SpringBootTest, @WebMvcTest, @DataJpaTest).
-  Do NOT use for legacy Spring XML config, Spring Framework without Boot, or Java EE/Jakarta EE patterns unrelated to Spring Boot.
+description: >
+  Spring Boot 3.x application patterns and best practices. Use when working with
+  Spring Boot, Spring MVC, Spring Data JPA, Spring Security, @RestController,
+  @Autowired, @Service, @Repository, @Component, application.yml,
+  application.properties, Spring Actuator, Spring Boot Starter dependencies,
+  @SpringBootApplication, @ConfigurationProperties, @EnableWebSecurity,
+  SecurityFilterChain, OAuth2, JWT authentication, @SpringBootTest, @WebMvcTest,
+  @DataJpaTest, Spring profiles, auto-configuration, or Spring Boot DevTools.
+  NOT for Micronaut, Quarkus, Jakarta EE without Spring, general Java without
+  Spring context, or Spring Framework 4.x/legacy XML-based configuration.
 ---
 
-# Spring Boot Patterns and Best Practices
+# Spring Boot 3.x Patterns
 
-Spring Boot 3.x / Spring Framework 6.x on Java 17+.
+## Project Setup
 
-## 1. Project Structure and Layered Architecture
+### Spring Initializr (start.spring.io)
 
-Organize by feature, not by technical layer. Each feature package contains its controller, service, repository, and DTOs. Keep controllers thin — delegate to services. Services hold business logic. Repositories handle persistence. Use Java records for DTOs:
+Generate projects via CLI:
 
-```java
-public record OrderDTO(Long id, String status, BigDecimal total) {}
+```bash
+curl https://start.spring.io/starter.zip \
+  -d type=gradle-project \
+  -d language=java \
+  -d bootVersion=3.4.1 \
+  -d baseDir=myapp \
+  -d groupId=com.example \
+  -d artifactId=myapp \
+  -d dependencies=web,data-jpa,security,actuator,validation,postgresql \
+  -o myapp.zip && unzip myapp.zip
 ```
 
----
+### Gradle (build.gradle.kts)
 
-## 2. REST Controllers
+```kotlin
+plugins {
+    java
+    id("org.springframework.boot") version "3.4.1"
+    id("io.spring.dependency-management") version "1.1.7"
+    id("org.graalvm.buildtools.native") version "0.10.4"  // for native images
+}
+java { sourceCompatibility = JavaVersion.VERSION_21 }
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("org.postgresql:postgresql")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.security:spring-security-test")
+}
+```
+
+Maven: use `spring-boot-starter-parent` 3.4.1 as `<parent>`.
+
+## Auto-Configuration
+
+Spring Boot auto-configures beans based on classpath dependencies. Override by defining your own `@Bean` of the same type. Debug with `--debug` flag or `debug=true` in `application.properties` to see the conditions evaluation report.
+
+Exclude specific auto-configurations:
+
+```java
+@SpringBootApplication(exclude = { DataSourceAutoConfiguration.class })
+public class MyApp { }
+```
+
+## REST Controllers
 
 ```java
 @RestController
-@RequestMapping("/api/v1/orders")
-@RequiredArgsConstructor
-public class OrderController {
-    private final OrderService orderService;
+@RequestMapping("/api/v1/users")
+@Validated
+public class UserController {
+    private final UserService userService;
+    public UserController(UserService userService) { this.userService = userService; }
 
     @GetMapping
-    public Page<OrderDTO> list(Pageable pageable) { return orderService.findAll(pageable); }
+    public Page<UserDto> list(@RequestParam(defaultValue = "0") int page,
+                              @RequestParam(defaultValue = "20") int size) {
+        return userService.findAll(PageRequest.of(page, size));
+    }
 
     @GetMapping("/{id}")
-    public OrderDTO get(@PathVariable Long id) { return orderService.findById(id); }
+    public UserDto get(@PathVariable Long id) { return userService.findById(id); }
 
     @PostMapping
-    public ResponseEntity<OrderDTO> create(@Valid @RequestBody CreateOrderRequest req) {
-        OrderDTO created = orderService.create(req);
-        return ResponseEntity.created(URI.create("/api/v1/orders/" + created.id())).body(created);
+    @ResponseStatus(HttpStatus.CREATED)
+    public UserDto create(@Valid @RequestBody CreateUserRequest req) {
+        return userService.create(req);
     }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) { userService.delete(id); }
 }
 ```
 
-### Validation with Jakarta Bean Validation
-
-```java
-public record CreateOrderRequest(
-    @NotBlank String customerName,
-    @NotEmpty List<@Valid OrderItemRequest> items
-) {}
-public record OrderItemRequest(@NotNull Long productId, @Min(1) int quantity) {}
-```
-
-Spring Boot auto-negotiates JSON by default. Add XML with `jackson-dataformat-xml` on classpath.
-
----
-
-## 3. Exception Handling — @ControllerAdvice and ProblemDetail (RFC 7807)
-
-Enable RFC 7807 responses: `spring.mvc.problemdetails.enabled=true`
-
-```java
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-
-    @ExceptionHandler(ResourceNotFoundException.class)
-    public ProblemDetail handleNotFound(ResourceNotFoundException ex, HttpServletRequest req) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.NOT_FOUND);
-        problem.setTitle("Resource Not Found");
-        problem.setDetail(ex.getMessage());
-        problem.setInstance(URI.create(req.getRequestURI()));
-        problem.setProperty("timestamp", Instant.now());
-        return problem;
-    }
-
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
-        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        problem.setTitle("Validation Failed");
-        var errors = ex.getBindingResult().getFieldErrors().stream()
-            .collect(Collectors.toMap(FieldError::getField,
-                fe -> fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "invalid",
-                (a, b) -> a));
-        problem.setProperty("fieldErrors", errors);
-        return problem;
-    }
+**Input:** `GET /api/v1/users?page=0&size=2`
+**Output:**
+```json
+{
+  "content": [{"id":1,"name":"Alice"},{"id":2,"name":"Bob"}],
+  "totalElements": 50,
+  "totalPages": 25,
+  "number": 0
 }
 ```
 
----
+## Spring Data JPA
 
-## 4. Dependency Injection Patterns
-
-Use constructor injection with `final` fields. With a single constructor, `@Autowired` is optional. Use Lombok `@RequiredArgsConstructor` to eliminate boilerplate:
+### Entity
 
 ```java
-@Service
-@RequiredArgsConstructor
-public class OrderService {
-    private final OrderRepository orderRepository;
-    private final PaymentGateway paymentGateway;
+@Entity
+@Table(name = "users")
+public class User {
+    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    @Column(nullable = false, unique = true)
+    private String email;
+    @Column(nullable = false)
+    private String name;
+    @CreatedDate
+    private Instant createdAt;
 }
 ```
 
-### Profiles and Conditional Beans
+### Repository with custom queries and pagination
 
 ```java
-@Configuration
-public class PaymentConfig {
-    @Bean
-    @Profile("production")
-    public PaymentGateway stripeGateway(StripeProperties props) {
-        return new StripePaymentGateway(props);
+public interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByEmail(String email);
+    @Query("SELECT u FROM User u WHERE u.name LIKE %:name%")
+    Page<User> searchByName(@Param("name") String name, Pageable pageable);
+    @Query(value = "SELECT * FROM users WHERE created_at > :since", nativeQuery = true)
+    List<User> findRecentUsers(@Param("since") Instant since);
+    boolean existsByEmail(String email);
+}
+```
+
+### Specifications for dynamic queries
+
+```java
+public class UserSpecs {
+    public static Specification<User> hasName(String name) {
+        return (root, query, cb) -> cb.like(root.get("name"), "%" + name + "%");
     }
-
-    @Bean
-    @Profile("!production")
-    public PaymentGateway fakeGateway() { return new FakePaymentGateway(); }
-}
-```
-
-Use `@ConditionalOnProperty(name = "app.cache.enabled", havingValue = "true")` for feature flags.
-
----
-
-## 5. Spring Data JPA
-
-### Repository Basics
-
-```java
-public interface OrderRepository extends JpaRepository<Order, Long> {
-    List<Order> findByStatus(OrderStatus status);
-
-    @Query("SELECT o FROM Order o WHERE o.customer.email = :email")
-    Page<Order> findByCustomerEmail(@Param("email") String email, Pageable pageable);
-}
-```
-
-### Specifications for Dynamic Queries
-
-```java
-public interface OrderRepository extends JpaRepository<Order, Long>,
-        JpaSpecificationExecutor<Order> {}
-
-public class OrderSpecs {
-    public static Specification<Order> hasStatus(OrderStatus status) {
-        return (root, query, cb) -> cb.equal(root.get("status"), status);
-    }
-    public static Specification<Order> createdAfter(LocalDate date) {
+    public static Specification<User> createdAfter(Instant date) {
         return (root, query, cb) -> cb.greaterThan(root.get("createdAt"), date);
     }
 }
-// Usage: repo.findAll(hasStatus(PENDING).and(createdAfter(cutoff)), PageRequest.of(0, 20));
+// Usage: userRepo.findAll(hasName("Alice").and(createdAfter(yesterday)), pageable);
 ```
 
-### Projections
+## Spring Security (Spring Security 6.x)
 
-Use interface projections to fetch only needed columns:
-
-```java
-public interface OrderSummary {
-    Long getId();
-    String getStatus();
-}
-List<OrderSummary> findByCustomerId(Long customerId);
-```
-
-Or DTO projections via JPQL:
-
-```java
-@Query("SELECT new com.example.app.order.OrderDTO(o.id, o.status, o.total) FROM Order o")
-List<OrderDTO> findAllProjected();
-```
-
-### Avoiding N+1 Queries
-
-Use `@EntityGraph` or `JOIN FETCH`:
-
-```java
-@EntityGraph(attributePaths = {"items", "customer"})
-List<Order> findByStatus(OrderStatus status);
-
-@Query("SELECT o FROM Order o JOIN FETCH o.items WHERE o.id = :id")
-Optional<Order> findByIdWithItems(@Param("id") Long id);
-```
-
-Set `spring.jpa.properties.hibernate.default_batch_fetch_size=50` as a global fallback.
-
-### Pagination
-
-Accept `Pageable` in controller methods. Spring resolves from `?page=0&size=20&sort=createdAt,desc`.
-
----
-
-## 6. Spring Security
-
-### SecurityFilterChain Configuration
-
-`WebSecurityConfigurerAdapter` is removed. Use `SecurityFilterChain` beans:
+`WebSecurityConfigurerAdapter` is removed. Use `SecurityFilterChain` beans.
 
 ```java
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity
 public class SecurityConfig {
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
-            .sessionManagement(sm -> sm.sessionCreationPolicy(STATELESS))
+            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/public/**", "/actuator/health").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
-                .anyRequest().authenticated())
+                .anyRequest().authenticated()
+            )
             .oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
         return http.build();
     }
+
+    @Bean
+    public JwtDecoder jwtDecoder() {
+        return JwtDecoders.fromIssuerLocation("https://auth.example.com");
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
 }
 ```
 
-### OAuth2 Resource Server (JWT)
+Key changes in Spring Security 6.x / Boot 3.x:
+- `antMatchers()` → `requestMatchers()`
+- Lambda DSL is standard (no chaining `.and()`)
+- Use `@EnableMethodSecurity` instead of `@EnableGlobalMethodSecurity`
+- `@PreAuthorize("hasRole('ADMIN')")` on methods for fine-grained control
+
+## Configuration
+
+### application.yml with profiles
 
 ```yaml
 spring:
-  security:
-    oauth2:
-      resourceserver:
-        jwt:
-          issuer-uri: https://auth.example.com/issuer
-```
-
-Map custom claims to authorities with `JwtAuthenticationConverter`:
-
-```java
-@Bean
-public JwtAuthenticationConverter jwtAuthenticationConverter() {
-    var grantedAuthorities = new JwtGrantedAuthoritiesConverter();
-    grantedAuthorities.setAuthoritiesClaimName("roles");
-    grantedAuthorities.setAuthorityPrefix("ROLE_");
-    var converter = new JwtAuthenticationConverter();
-    converter.setJwtGrantedAuthoritiesConverter(grantedAuthorities);
-    return converter;
-}
-```
-
-### Method Security
-
-```java
-@PreAuthorize("hasRole('ADMIN')")
-public void deleteOrder(Long id) { ... }
-
-@PreAuthorize("#order.customerId == authentication.principal.claims['sub']")
-public void updateOrder(Order order) { ... }
-```
-
----
-
-## 7. Configuration
-
-### application.yml with Profiles
-
-```yaml
-spring:
+  application.name: myapp
   datasource:
-    url: jdbc:postgresql://localhost:5432/app
-    username: ${DB_USERNAME}
+    url: jdbc:postgresql://localhost:5432/mydb
+    username: ${DB_USER}
     password: ${DB_PASSWORD}
   jpa:
-    open-in-view: false
     hibernate.ddl-auto: validate
-    properties.hibernate.default_batch_fetch_size: 50
+    open-in-view: false
   profiles.active: ${SPRING_PROFILES_ACTIVE:dev}
+server.port: 8080
 ---
-spring:
-  config.activate.on-profile: dev
-  datasource.url: jdbc:h2:mem:devdb
+spring.config.activate.on-profile: dev
+spring.jpa:
+  hibernate.ddl-auto: update
+  show-sql: true
+---
+spring.config.activate.on-profile: prod
+spring.datasource.hikari.maximum-pool-size: 20
 ```
 
-Always set `spring.jpa.open-in-view=false` to prevent lazy loading outside transactions.
-
-### @ConfigurationProperties
+### Type-safe configuration with @ConfigurationProperties
 
 ```java
-@ConfigurationProperties(prefix = "app.payment")
-public record PaymentProperties(String apiKey, String webhookSecret, Duration timeout) {}
+@ConfigurationProperties(prefix = "app.mail")
+@Validated
+public record MailProperties(
+    @NotBlank String from, @NotBlank String host,
+    @Min(1) @Max(65535) int port, boolean tlsEnabled) {}
 ```
 
-Enable with `@EnableConfigurationProperties(PaymentProperties.class)` or `@ConfigurationPropertiesScan`.
+Enable with `@EnableConfigurationProperties(MailProperties.class)` or `@ConfigurationPropertiesScan`. Properties bind from `app.mail.from`, `app.mail.host`, etc. in application.yml. Kebab-case `tls-enabled` maps to `tlsEnabled`.
 
----
+## Dependency Injection
 
-## 8. Testing Pyramid
+Prefer constructor injection (auto-injects with single constructor, no `@Autowired` needed). Use `@Qualifier` to disambiguate, `@Primary` to set default bean.
 
-### Unit Tests — No Spring Context
+## Testing
+
+### Integration test
 
 ```java
-class OrderServiceTest {
-    private final OrderRepository repo = mock(OrderRepository.class);
-    private final OrderService service = new OrderService(repo, mock(PaymentGateway.class));
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+class UserControllerIT {
+
+    @Autowired
+    private TestRestTemplate restTemplate;
 
     @Test
-    void create_validRequest_returnsOrder() {
-        when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        OrderDTO result = service.create(new CreateOrderRequest("Alice", List.of()));
-        assertThat(result.status()).isEqualTo("PENDING");
+    void shouldCreateUser() {
+        var req = new CreateUserRequest("Alice", "alice@test.com");
+        var resp = restTemplate.postForEntity("/api/v1/users", req, UserDto.class);
+        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(resp.getBody().name()).isEqualTo("Alice");
     }
 }
 ```
 
-### @WebMvcTest — Controller Slice
+### Slice tests
 
 ```java
-@WebMvcTest(OrderController.class)
-class OrderControllerTest {
-    @Autowired MockMvc mockMvc;
-    @MockBean OrderService orderService;
+// Controller layer only — no server, mock MVC
+@WebMvcTest(UserController.class)
+class UserControllerTest {
+    @Autowired private MockMvc mockMvc;
+    @MockitoBean private UserService userService;
 
     @Test
-    void get_existingOrder_returns200() throws Exception {
-        when(orderService.findById(1L)).thenReturn(new OrderDTO(1L, "PENDING", BigDecimal.TEN));
-        mockMvc.perform(get("/api/v1/orders/1"))
+    void shouldReturnUser() throws Exception {
+        when(userService.findById(1L)).thenReturn(new UserDto(1L, "Alice"));
+        mockMvc.perform(get("/api/v1/users/1"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.status").value("PENDING"));
+            .andExpect(jsonPath("$.name").value("Alice"));
     }
+}
+
+// JPA layer only — uses embedded H2 by default
+@DataJpaTest
+class UserRepositoryTest {
+    @Autowired private UserRepository userRepo;
+    @Autowired private TestEntityManager em;
 
     @Test
-    void create_invalidRequest_returns400() throws Exception {
-        mockMvc.perform(post("/api/v1/orders")
-                .contentType(APPLICATION_JSON).content("{}"))
-            .andExpect(status().isBadRequest());
+    void shouldFindByEmail() {
+        em.persist(new User(null, "alice@test.com", "Alice", null));
+        var found = userRepo.findByEmail("alice@test.com");
+        assertThat(found).isPresent();
     }
 }
 ```
 
-### @DataJpaTest — Repository Slice with Testcontainers
+Note: In Spring Boot 3.4+, use `@MockitoBean` / `@MockitoSpyBean` instead of `@MockBean` / `@SpyBean`.
+
+### Testcontainers integration
 
 ```java
-@DataJpaTest
+@SpringBootTest
 @Testcontainers
-@AutoConfigureTestDatabase(replace = NONE)
-class OrderRepositoryTest {
+class UserServiceIT {
     @Container
+    @ServiceConnection
     static PostgreSQLContainer<?> pg = new PostgreSQLContainer<>("postgres:16");
 
-    @DynamicPropertySource
-    static void dbProps(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", pg::getJdbcUrl);
-        registry.add("spring.datasource.username", pg::getUsername);
-        registry.add("spring.datasource.password", pg::getPassword);
-    }
-
-    @Autowired OrderRepository repository;
-
-    @Test
-    void findByStatus_returnsPendingOrders() {
-        repository.save(new Order("Alice", OrderStatus.PENDING));
-        assertThat(repository.findByStatus(OrderStatus.PENDING)).hasSize(1);
-    }
+    // @ServiceConnection auto-configures datasource — no @DynamicPropertySource needed
 }
 ```
 
-Reserve `@SpringBootTest` for end-to-end flows. Use `webEnvironment = RANDOM_PORT` with `TestRestTemplate` or `WebTestClient`. Combine with Testcontainers for realistic external dependencies.
+## Actuator
 
----
-
-## 9. Actuator and Production Readiness
+Add `spring-boot-starter-actuator`. Key endpoints: `/actuator/health` (probes), `/actuator/info`, `/actuator/metrics`, `/actuator/env`, `/actuator/beans`.
 
 ```yaml
 management:
   endpoints.web.exposure.include: health,info,metrics,prometheus
   endpoint.health:
-    show-details: when_authorized
-    probes.enabled: true
+    show-details: when-authorized
+    probes.enabled: true  # /actuator/health/liveness and /readiness
 ```
 
-### Custom Health Indicator
+Custom health indicator:
 
 ```java
 @Component
-@RequiredArgsConstructor
-public class PaymentGatewayHealthIndicator implements HealthIndicator {
-    private final PaymentGateway gateway;
-
+public class DatabaseHealthIndicator implements HealthIndicator {
     @Override
     public Health health() {
-        try {
-            gateway.ping();
-            return Health.up().withDetail("provider", "stripe").build();
-        } catch (Exception e) {
-            return Health.down(e).build();
-        }
+        return Health.up().withDetail("db", "reachable").build();
     }
 }
 ```
 
-### Custom Actuator Endpoint
+## Error Handling
+
+Use `@RestControllerAdvice` with RFC 7807 `ProblemDetail` (Boot 3.x default):
 
 ```java
-@Endpoint(id = "appinfo")
-@Component
-public class AppInfoEndpoint {
-    @ReadOperation
-    public Map<String, Object> info() {
-        return Map.of("version", "2.1.0", "startedAt", Instant.now());
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+    @ExceptionHandler(ResourceNotFoundException.class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    public ProblemDetail handleNotFound(ResourceNotFoundException ex) {
+        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+        pd.setTitle("Resource Not Found");
+        return pd;
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ProblemDetail handleValidation(MethodArgumentNotValidException ex) {
+        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        pd.setTitle("Validation Failed");
+        pd.setProperty("fieldErrors", ex.getBindingResult().getFieldErrors().stream()
+            .collect(Collectors.toMap(FieldError::getField, FieldError::getDefaultMessage)));
+        return pd;
     }
 }
 ```
 
----
+**Input:** `POST /api/v1/users` with `{"name": ""}` → **Output (400):**
+```json
+{"type":"about:blank","title":"Validation Failed","status":400,"fieldErrors":{"name":"must not be blank"}}
+```
 
-## 10. Logging
+Enable with `spring.mvc.problemdetails.enabled=true`.
 
-### SLF4J and Structured Logging (Spring Boot 3.4+)
+## Validation
+
+Use `spring-boot-starter-validation` (Jakarta Bean Validation 3.0):
 
 ```java
-@Service
-@Slf4j  // Lombok
-public class OrderService {
-    public OrderDTO findById(Long id) {
-        log.debug("Fetching order id={}", id);
-        // ...
-    }
-}
+public record CreateUserRequest(
+    @NotBlank @Size(min = 2, max = 100) String name,
+    @NotBlank @Email String email,
+    @NotNull @Min(18) Integer age) {}
 ```
 
-Enable structured JSON output (ECS or GELF) in `application.yml`:
+Custom constraint: annotate with `@Constraint(validatedBy = MyValidator.class)` on a custom annotation.
+
+## Caching
+
+Enable with `@EnableCaching`. Use `@Cacheable("products")`, `@CacheEvict("products")`, `@CachePut`.
 
 ```yaml
-logging:
-  structured:
-    format:
-      console: ecs
-    ecs:
-      service:
-        name: order-service
-        environment: production
+spring.cache:
+  type: caffeine
+  caffeine.spec: maximumSize=1000,expireAfterWrite=10m
 ```
 
-### MDC for Request Correlation
+## Scheduling
+
+Enable with `@EnableScheduling`:
 
 ```java
 @Component
-public class CorrelationFilter implements Filter {
-    @Override
-    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
-            throws IOException, ServletException {
-        String correlationId = Optional.ofNullable(
-                ((HttpServletRequest) req).getHeader("X-Correlation-ID"))
-            .orElse(UUID.randomUUID().toString());
-        MDC.put("correlationId", correlationId);
-        try { chain.doFilter(req, res); } finally { MDC.clear(); }
-    }
+public class ReportJob {
+    @Scheduled(cron = "0 0 2 * * *")  // daily at 2 AM
+    public void generateDailyReport() { /* ... */ }
+    @Scheduled(fixedRate = 60_000)     // every 60s
+    public void pollExternalApi() { /* ... */ }
 }
 ```
 
-With Micrometer Tracing, trace IDs propagate to MDC automatically.
+## Spring Boot 3.x / GraalVM Native Images
 
-## 11. Common Anti-Patterns
+### Build native image
 
-| Anti-Pattern | Fix |
+```bash
+# Maven
+./mvnw -Pnative native:compile
+
+# Gradle
+./gradlew nativeCompile
+
+# Container image with Buildpacks
+./mvnw -Pnative spring-boot:build-image
+```
+
+### Key considerations
+- Spring AOT processes beans at build time — all beans must be deterministic
+- Reflection requires hints: use `@RegisterReflectionForBinding(MyDto.class)`
+- Conditional beans (`@ConditionalOnProperty`) are evaluated at build time
+- Test with `@SpringBootTest` in native mode using `-PnativeTest`
+- Startup time drops from seconds to milliseconds; memory footprint shrinks significantly
+
+### Runtime hints for custom reflection
+
+```java
+public class MyRuntimeHints implements RuntimeHintsRegistrar {
+    @Override
+    public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
+        hints.reflection().registerType(MyDto.class, MemberCategory.values());
+        hints.resources().registerPattern("data/*.json");
+    }
+}
+
+@ImportRuntimeHints(MyRuntimeHints.class)
+@SpringBootApplication
+public class MyApp { }
+```
+
+## Virtual Threads (Spring Boot 3.2+)
+
+Enable virtual threads for massive concurrency with minimal config:
+
+```yaml
+spring:
+  threads:
+    virtual:
+      enabled: true
+```
+
+This configures Tomcat, async task executors, and scheduling to use virtual threads automatically.
+
+## Quick Reference
+
+| Annotation | Purpose |
 |---|---|
-| **Field injection** (`@Autowired` on fields) | Use constructor injection with `final` fields |
-| **Business logic in controllers** | Move to `@Service` classes |
-| **N+1 queries** | Use `JOIN FETCH`, `@EntityGraph`, or batch fetch size |
-| **`spring.jpa.open-in-view=true`** | Set to `false`; fetch eagerly in service layer |
-| **Catching `Exception` broadly** | Catch specific exceptions in `@ControllerAdvice` |
-| **Returning entities from controllers** | Map to DTOs (records) before returning |
-| **`@Transactional` without `readOnly`** | Add `@Transactional(readOnly = true)` for queries |
-| **Manual `EntityManager`** | Use repository methods, `@Query`, or Specifications |
-| **Blocking calls in reactive pipelines** | Offload to `Schedulers.boundedElastic()` |
-| **Hardcoded config** | Externalize with `@ConfigurationProperties` or env vars |
-
-## 12. Migration Notes — Spring Boot 3.x / Spring 6.x
-
-- Java 17+ required. Java 21 recommended for virtual threads.
-- Upgrade to Spring Boot 2.7.x first, then jump to 3.x.
-
-### Breaking Changes
-
-| Area | Change |
-|---|---|
-| **Namespace** | `javax.*` → `jakarta.*` (all imports) |
-| **Security** | `WebSecurityConfigurerAdapter` removed → `SecurityFilterChain` beans |
-| **Security** | `@EnableGlobalMethodSecurity` → `@EnableMethodSecurity` |
-| **Properties** | Use `spring-boot-properties-migrator` for renamed/removed props |
-| **Hibernate** | Upgraded to 6.x — review HQL/JPQL changes, ID generation |
-| **Trailing slash** | Trailing slash matching disabled by default |
-| **Observability** | Spring Cloud Sleuth → Micrometer Tracing |
-
-### New Capabilities in 3.x
-
-- **GraalVM native images** via AOT processing.
-- **Virtual threads** (Java 21): `spring.threads.virtual.enabled=true`.
-- **`@HttpExchange`** declarative HTTP clients replace `RestTemplate`/`WebClient` wiring.
-- **`RestClient`**: synchronous replacement for `RestTemplate`.
-- **Structured logging** (3.4+): native ECS/GELF JSON output.
-- **`@ServiceConnection`** (3.1+): auto-configure Testcontainers connections.
-
-<!-- tested: pass -->
+| `@SpringBootApplication` | Entry point (combines `@Configuration`, `@EnableAutoConfiguration`, `@ComponentScan`) |
+| `@RestController` | REST API controller (combines `@Controller` + `@ResponseBody`) |
+| `@Service` | Business logic bean |
+| `@Repository` | Data access bean (enables exception translation) |
+| `@ConfigurationProperties` | Type-safe external config binding |
+| `@Transactional` | Declarative transaction management |
+| `@EnableMethodSecurity` | Method-level `@PreAuthorize` / `@PostAuthorize` |
+| `@MockitoBean` | Replace bean with Mockito mock in tests (Boot 3.4+) |
+| `@ServiceConnection` | Auto-configure Testcontainers connection (Boot 3.1+) |

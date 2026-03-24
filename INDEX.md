@@ -185,3 +185,6 @@
 | languages | [kotlin-coroutines](languages/kotlin-coroutines/) | Kotlin coroutines — suspend functions, Flow, StateFlow, channels, structured concurrency, testing | tested |
 | api | [swagger-openapi](api/swagger-openapi/) | OpenAPI/Swagger — spec authoring, schemas, code generation, validation, Swagger UI, design-first workflows | tested |
 | containers | [podman-patterns](containers/podman-patterns/) | Podman daemonless containers — rootless, pods, Quadlet, Buildah, Skopeo, systemd integration | tested |
+| java | [spring-boot-patterns](java/spring-boot-patterns/) | Spring Boot 3.x — REST controllers, Spring Data JPA, Security, testing, Actuator, GraalVM native | created |
+| javascript | [deno-runtime](javascript/deno-runtime/) | Deno 2.x runtime — permissions, Deno.serve, KV, Deploy, Fresh, JSR, npm compat, compile | created |
+| devops | [nginx-advanced](devops/nginx-advanced/) | Nginx advanced — reverse proxy, load balancing, SSL/TLS, caching, rate limiting, HTTP/2-3, stream | created |
