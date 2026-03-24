@@ -492,3 +492,5 @@ function UserMenu() {
 - **[skip-navigation.tsx](assets/skip-navigation.tsx)** — Skip navigation with visible-on-focus styling, single or multiple targets.
 - **[axe-test-setup.ts](assets/axe-test-setup.ts)** — Jest/Vitest + axe-core setup: custom matchers, `checkA11y`, `checkWCAG22`, `describeA11y` helpers.
 - **[eslint-a11y-config.json](assets/eslint-a11y-config.json)** — Strict eslint-plugin-jsx-a11y config with component mappings and test overrides.
+
+<!-- tested: pass -->

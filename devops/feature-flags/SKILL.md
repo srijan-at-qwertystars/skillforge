@@ -497,3 +497,5 @@ Copy-paste-ready templates in `assets/`:
 | React integration | Copy `assets/react-feature-flag.tsx`, wrap app |
 | Server middleware | Copy `assets/flag-middleware.ts` for Express/Fastify |
 | CI flag hygiene | Copy `assets/github-actions.yml` into `.github/workflows/` |
+
+<!-- tested: needs-fix -->
