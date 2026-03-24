@@ -498,3 +498,5 @@ Not all futures are cancellation-safe. `tokio::sync::mpsc::Receiver::recv` is sa
 | `assets/main.rs` | Production main: tracing init, DB pool, graceful shutdown, axum server |
 | `assets/error.rs` | Unified `AppError` with `IntoResponse`, thiserror variants, anyhow integration |
 | `assets/middleware.rs` | Tower middleware: request ID, logging, JWT auth, rate limiting |
+
+<!-- tested: pass -->

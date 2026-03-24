@@ -494,3 +494,5 @@ Templates and configs in `assets/`:
 | `assets/provisioning/datasources.yml` | Prometheus + Loki + Tempo with exemplars, derived fields, trace-to-logs |
 | `assets/provisioning/dashboards.yml` | File-based dashboard provisioning config |
 | `assets/alert-rule-template.json` | Unified alerting: 3 alert rules, contact point, notification policy, mute timing |
+
+<!-- tested: pass -->
