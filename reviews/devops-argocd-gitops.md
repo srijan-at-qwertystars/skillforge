@@ -1,112 +1,121 @@
-# QA Review: devops/argocd-gitops
+# Review: argocd-gitops
 
-**Reviewer**: Copilot CLI (automated)
-**Date**: 2025-07-17
-**Skill path**: `devops/argocd-gitops/`
+Accuracy: 5/5
+Completeness: 4/5
+Actionability: 5/5
+Trigger quality: 4/5
+Overall: 4.5/5
+Issues: [minor, listed below]
 
 ---
 
-## a. Structure Check
+## a. Structure Check — PASS
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
-| YAML frontmatter `name` | ✅ Pass | `argocd-gitops` |
-| YAML frontmatter `description` | ✅ Pass | Comprehensive, multi-line |
-| Positive triggers | ✅ Pass | 15+ specific use cases (Application, ApplicationSet, AppProject, sync policies, hooks, RBAC, SSO, notifications, multi-cluster, Helm/Kustomize, health checks, secrets, CLI, HA, DR) |
-| Negative triggers | ✅ Pass | Explicitly excludes Argo Workflows, Argo Events, Argo Rollouts, Flux CD, generic K8s manifests, CI tools, container builds |
-| Body under 500 lines | ✅ Pass | 480 lines |
-| Imperative voice, no filler | ✅ Pass | Terse, direct language throughout |
-| Examples with input/output | ✅ Pass | 3 input/output examples at end (OCI Helm chart, ApplicationSet cluster generator, PreSync migration Job) |
-| `references/` linked | ✅ Pass | Table links 3 guides: advanced-patterns.md, troubleshooting.md, security-guide.md |
-| `scripts/` linked | ✅ Pass | Table links 3 scripts: install-argocd.sh, backup-restore.sh, app-health-check.sh |
-| `assets/` linked | ✅ Pass | Table links 4 templates: application.yaml, applicationset.yaml, project.yaml, argocd-values.yaml |
+| YAML frontmatter (name+description) | ✅ | Lines 1-12: `name: argocd-gitops`, multi-line `description` |
+| Positive triggers | ✅ | ArgoCD, Argo CD, GitOps, ArgoCD Application, ApplicationSet, ArgoCD sync, argocd app create, GitOps deployment |
+| Negative triggers | ✅ | FluxCD, Jenkins CD, Spinnaker, manual kubectl apply, Helm-only deployments without GitOps |
+| Under 500 lines (SKILL.md) | ✅ | 465 lines |
+| Imperative voice | ✅ | "Install ArgoCD", "Register and label external clusters", "Configure argocd-notifications-cm" |
+| Examples | ✅ | 3 full input→output examples (Helm Application, cluster ApplicationSet, PreSync hook) at lines 377-445 |
+| Links to references/scripts | ✅ | Lines 447-465 describe all 3 references, 5 scripts, 4 asset templates |
 
----
+**Supporting files verified present:**
+- `references/` — 3 files (advanced-patterns.md: 1310 lines, troubleshooting.md: 1122 lines, security-guide.md: 1448 lines). All have TOCs and comprehensive subsections.
+- `scripts/` — 5 executable shell scripts (install, bootstrap, sync-check, health-check, backup-restore). All use `set -euo pipefail`, have usage headers, `--help`, `--dry-run`, proper argument parsing.
+- `assets/` — 4 YAML templates (Application, ApplicationSet, AppProject, Helm values). All have inline comments with `CHANGEME` markers and docs links.
 
-## b. Content Check (verified via web search)
+## b. Content Check — PASS (minor gaps)
 
-### CRD Accuracy
-- ✅ `apiVersion: argoproj.io/v1alpha1` for Application, ApplicationSet, AppProject — correct per current stable
-- ✅ Application spec fields (`project`, `source`, `destination`, `syncPolicy`, `ignoreDifferences`, `revisionHistoryLimit`) — all accurate
-- ✅ ApplicationSet `goTemplate: true` + `goTemplateOptions: ["missingkey=error"]` in assets — correct, recommended best practice
-- ✅ AppProject spec fields (`sourceRepos`, `destinations`, `clusterResourceWhitelist`, `namespaceResourceBlacklist`, `roles`, `syncWindows`, `orphanedResources`, `signatureKeys`, `destinationServiceAccounts`) — all accurate
-- ⚠️ **Minor**: SKILL.md health check key `certmanager.io_Certificate` (line 255) should be `cert-manager.io_Certificate` (missing hyphen). The argocd-values.yaml asset has it correct.
+### Verified Correct via Web Search & Official Docs
 
-### CLI Command Accuracy
-- ✅ `argocd login`, `argocd app create/sync/get/diff/history/rollback/delete/wait` — all correct
-- ✅ `argocd repo list/add` — correct
-- ✅ `argocd cluster add/list/rm` — correct
-- ✅ `argocd proj create` — correct
+| Item | Status | Notes |
+|------|--------|-------|
+| Application CRD `apiVersion: argoproj.io/v1alpha1` | ✅ | Correct |
+| `spec.source` fields (repoURL, path, targetRevision, helm, kustomize) | ✅ | All valid |
+| `spec.destination` fields (server, namespace) | ✅ | Correct |
+| `syncPolicy.automated.prune` / `selfHeal` | ✅ | Verified against official docs |
+| `syncOptions` (CreateNamespace, ApplyOutOfSyncOnly, ServerSideApply, PrunePropagationPolicy, PruneLast, RespectIgnoreDifferences, Replace, FailOnSharedResource) | ✅ | All valid options |
+| `syncPolicy.retry` with backoff | ✅ | Correct fields: limit, duration, factor, maxDuration |
+| Hook phases: PreSync, Sync, PostSync, SyncFail, Skip | ✅ | Confirmed in official docs |
+| Hook phases: PreDelete (v3.3+), PostDelete (v2.10+) | ✅ | Correct — newer additions, properly listed |
+| Hook delete policies: HookSucceeded, HookFailed, BeforeHookCreation | ✅ | All three confirmed |
+| Sync wave annotation `argocd.argoproj.io/sync-wave` | ✅ | Correct |
+| Sync ordering: Phase → Wave → Kind → Name | ✅ | Correct |
+| CLI: `argocd app sync --resource apps:Deployment:name` | ✅ | GROUP:KIND:NAME syntax verified |
+| CLI: `argocd app create` flags | ✅ | --repo, --path, --dest-server, --dest-namespace, --sync-policy, --auto-prune, --self-heal all valid |
+| CLI: `argocd cluster add`, `argocd cluster set --label` | ✅ | Correct |
+| Multi-source Application (sources + ref) | ✅ | Correct syntax using `$values` ref |
+| ApplicationSet generators (list, git directory, git file, cluster, matrix, merge) | ✅ | All verified |
+| RBAC policy format `p, subject, resource, action, object, effect` | ✅ | Casbin syntax correct |
+| OIDC config in argocd-cm | ✅ | Correct placement and field names |
+| Notification annotations format | ✅ | `notifications.argoproj.io/subscribe.<trigger>.<service>` correct |
+| Image Updater annotations | ✅ | Correct annotation keys and strategies |
+| `ignoreDifferences` with jsonPointers and jqPathExpressions | ✅ | Both methods correct |
+| Resource tracking methods (label, annotation, annotation+label) | ✅ | Correct |
 
-### Sync Strategies & Policies
-- ✅ Manual / Auto / Self-heal / Prune / Selective — all accurately described
-- ✅ `retry` with `backoff` fields (duration, factor, maxDuration) — correct
-- ✅ `syncOptions` list values (CreateNamespace, PrunePropagationPolicy, PruneLast, ServerSideApply, ApplyOutOfSyncOnly, RespectIgnoreDifferences, Replace, FailOnSharedResource) — all valid
+### Minor Gaps (not errors)
 
-### ApplicationSet Generator Syntax
-- ✅ Git Directory/File, List, Cluster, Matrix, Merge, Pull Request generators — all syntactically correct
-- ✅ Template variables (`path.basename`, `path.path`, `name`, `server`, `number`, `head_sha`) — correct
-- ⚠️ **Minor**: SKILL.md examples use old template syntax `{{path.basename}}` (non-Go-template). Assets correctly use `{{ .path.basename }}` with `goTemplate: true`. Both syntaxes are valid but Go templates are now recommended.
-- ✅ `templatePatch` (v2.8+) documented in assets — correct
-- ✅ `strategy` field with RollingSync documented in assets — correct
+1. **`automated.allowEmpty` not mentioned** — Prevents accidental deletion of all resources when Git source is temporarily empty. Useful safety guardrail.
+2. **`automated.enabled` field not mentioned** — Newer explicit toggle (2024+). Omitting is fine since presence of `automated:` block implies enabled, but worth noting for completeness.
+3. **Hooks don't execute on selective syncs** — Known gotcha that could surprise users. Not mentioned in SKILL.md main body.
+4. **`Validate=false` syncOption** — Useful when deploying CRDs where schema validation isn't yet available. Not listed in the syncOptions examples.
+5. **Sync windows** — Mentioned in the DO list but not explained in the SKILL.md main body. Covered in references/assets which is acceptable.
 
-### RBAC Policy Format
-- ✅ Casbin `p, <subject>, <resource>, <action>, <object>, <effect>` — correct
-- ✅ Group mapping `g, <group>, <role>` — correct
-- ✅ Resources list (applications, clusters, repositories, certificates, accounts, gpgkeys, logs, exec) — correct
-- ✅ Project-scoped roles format `proj:<project>:<role>` — correct
-- ✅ JWT token generation with `argocd proj role create-token` — correct
+### Gotchas Coverage
 
-### SSO/OIDC Configuration
-- ✅ `oidc.config` in `argocd-cm` — correct
-- ✅ `requestedScopes` and `requestedIDTokenClaims` — correct
-- ✅ Secret reference with `$oidc.okta.clientSecret` pattern — correct
-- ✅ Dex connector config — correct
-- ✅ Azure AD and Okta examples in security-guide.md — accurate
+The "Patterns and Anti-Patterns" section (lines 372-375) is solid. Covers:
+- ✅ Separate config repos from app source
+- ✅ Don't store secrets in plain Git (lists alternatives)
+- ✅ Don't use Replace=true
+- ✅ Don't put Application CRDs with workloads (circular sync)
+- ✅ Don't disable pruning in prod
+- ✅ Don't rely solely on polling
+- ✅ Use ServerSideApply for large CRDs
+- ✅ Use RespectIgnoreDifferences
+- ✅ Pin targetRevision
 
-### Missing Gotchas
-- ⚠️ Helm pre-install/pre-upgrade hooks run on every Argo CD sync (not just first install). This is a common surprise not mentioned in the skill.
-- ⚠️ `PostDelete` hook phase (v2.10+) is covered in advanced-patterns.md but not in SKILL.md main hook phases list. Acceptable since referenced.
-- ⚠️ Multi-source apps (`sources`) are only in the asset template comment, not in SKILL.md body. Minor gap since it's a common feature (v2.6+).
+## c. Trigger Check — PASS (minor risk)
 
----
+### Would it trigger for ArgoCD queries?
 
-## c. Trigger Check
+| Query | Would Trigger? | Why |
+|-------|---------------|-----|
+| "Create an ArgoCD Application for my Helm chart" | ✅ Yes | Matches "ArgoCD Application", "ArgoCD" |
+| "How do I set up ApplicationSet for multiple clusters?" | ✅ Yes | Matches "ApplicationSet" |
+| "argocd app sync failing" | ✅ Yes | Matches "ArgoCD sync", "argocd app" |
+| "GitOps deployment pipeline with ArgoCD" | ✅ Yes | Matches "GitOps deployment", "ArgoCD" |
+| "Argo CD RBAC configuration" | ✅ Yes | Matches "Argo CD" |
+| "How to configure ArgoCD notifications" | ✅ Yes | Matches "ArgoCD" |
 
-| Question | Assessment |
-|----------|------------|
-| Is the description pushy enough? | ✅ Yes — 15+ positive trigger scenarios explicitly listed |
-| Would it falsely trigger for Argo Workflows? | ✅ No — explicitly excluded: "DO NOT use for Argo Workflows, Argo Events, Argo Rollouts" |
-| Would it falsely trigger for Flux CD? | ✅ No — explicitly excluded |
-| Would it falsely trigger for generic K8s? | ✅ No — requires "Argo CD context" |
-| Would it falsely trigger for CI/CD? | ✅ No — Jenkins, GitHub Actions excluded |
+### Would it false-trigger for non-ArgoCD?
 
-The negative triggers are precise and cover all likely confusion points with sibling Argo projects.
+| Query | Would Trigger? | Risk |
+|-------|---------------|------|
+| "Set up FluxCD for GitOps" | ❌ No | Negative trigger: "FluxCD" |
+| "Jenkins CD pipeline" | ❌ No | Negative trigger: "Jenkins CD" |
+| "Spinnaker deployment" | ❌ No | Negative trigger: "Spinnaker" |
+| "Deploy with Helm without GitOps" | ❌ No | Negative trigger: "Helm-only deployments without GitOps" |
+| "How to set up GitOps" (no ArgoCD mention) | ⚠️ Possible | "GitOps" alone is a positive trigger. Low risk — description scopes GitOps to ArgoCD context. |
+| "Argo Workflows" | ⚠️ Possible | "Argo" prefix could match. Low risk — description is specific to "ArgoCD" not "Argo Workflows". |
 
----
+**Recommendation:** Consider adding "Argo Workflows" and "Argo Events" to negative triggers to prevent false matches on other Argo projects.
 
-## d. Scores
+## d. Score Justification
 
-| Dimension | Score | Rationale |
+| Dimension | Score | Reasoning |
 |-----------|-------|-----------|
-| **Accuracy** | 4 | One typo (`certmanager.io` → `cert-manager.io`). Old-style ApplicationSet template syntax in SKILL.md (valid but not best practice). All other content verified correct against official docs. |
-| **Completeness** | 5 | Exceptionally thorough. Covers CRDs, sync policies, hooks, generators, RBAC, SSO/OIDC, secrets (4 methods), multi-cluster, health checks, notifications, DR, CLI, network policies, audit logging, supply chain security, CMP plugins, repo structures. 3 reference guides, 3 scripts, 4 asset templates. |
-| **Actionability** | 5 | Every section has copy-paste YAML/bash. Scripts have proper arg parsing, dry-run, error handling. Asset templates are heavily commented. Helm values file covers production deployment end-to-end. Input/output examples included. |
-| **Trigger quality** | 5 | Specific positive triggers, explicit negative triggers for all related products. No false-positive risk. |
+| **Accuracy** | 5/5 | Every CRD field, CLI command, annotation, sync option, and hook phase verified correct against official ArgoCD docs. No errors found. |
+| **Completeness** | 4/5 | Excellent breadth — covers Application, ApplicationSet (6 generators), sync strategies, hooks, multi-cluster, SSO/RBAC, notifications, App of Apps, Helm/Kustomize, diff customization, CI/CD, Image Updater. 3 deep-dive references (~3,880 lines combined), 5 operational scripts, 4 production templates. Minor gaps: `allowEmpty`, hooks-on-selective-sync gotcha, `Validate=false`. |
+| **Actionability** | 5/5 | Copy-paste-ready YAML for every concept. Real CLI commands with correct flags. Operational scripts with `--dry-run`, `--help`, error handling. Asset templates with `CHANGEME` markers. Clear DO/DON'T list. |
+| **Trigger quality** | 4/5 | Good positive triggers covering key terms. Explicit negative triggers for FluxCD/Jenkins/Spinnaker. Minor risk: bare "GitOps" or "Argo" could match unrelated queries. Missing negative triggers for Argo Workflows/Events. |
 
-### **Overall: 4.75 / 5 — PASS**
+## e. Issue Filing Decision
 
----
+- Overall: 4.5/5 — **≥ 4.0, no issue needed**
+- No dimension ≤ 2 — **no issue needed**
 
-## e. GitHub Issues
+## f. SKILL.md Annotation
 
-No issues filed. Overall ≥ 4.0 and no dimension ≤ 2.
-
----
-
-## f. Recommended Fixes (non-blocking)
-
-1. **Fix health check key typo** in SKILL.md line 255: `certmanager.io_Certificate` → `cert-manager.io_Certificate`
-2. **Consider updating** SKILL.md ApplicationSet examples to use Go template syntax (`{{ .path.basename }}` with `goTemplate: true`) since this is now recommended.
-3. **Consider adding** a note that Helm pre-install/pre-upgrade hooks run on every Argo CD sync.
-4. **Consider mentioning** multi-source apps (`sources` field, v2.6+) in the SKILL.md body.
+Appended `<!-- tested: pass -->` to SKILL.md.

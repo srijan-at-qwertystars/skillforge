@@ -477,3 +477,5 @@ Production-ready templates — copy and customize:
 | [`assets/docker-compose.yaml`](assets/docker-compose.yaml) | Full Docker Compose with Traefik, Let's Encrypt, secured dashboard, Prometheus metrics, Docker socket proxy option, and example services (whoami, webapp, API). |
 | [`assets/traefik.yaml`](assets/traefik.yaml) | Static configuration template with entrypoints (HTTP→HTTPS redirect), Docker + File providers, ACME (HTTP + DNS challenge), structured logging, Prometheus metrics, OpenTelemetry tracing, and connection pool tuning. |
 | [`assets/dynamic-config.yaml`](assets/dynamic-config.yaml) | Dynamic configuration with example routers (app, API, WebSocket, legacy), services (load balancer, canary weighted, mirroring), full middleware set (security headers, rate limiting, CORS, compression, circuit breaker, auth, path manipulation), and TLS options (modern, intermediate, mTLS). |
+
+<!-- tested: pass -->

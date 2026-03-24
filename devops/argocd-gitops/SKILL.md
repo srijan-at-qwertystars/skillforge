@@ -463,3 +463,5 @@ Production-ready templates in `assets/`:
 - **`assets/applicationset.yaml`** — ApplicationSet template with git directory generator, commented examples for list/cluster/matrix/PR generators, rolling sync strategy, templatePatch.
 - **`assets/project.yaml`** — AppProject template with RBAC roles (developer/lead/CI/viewer), sync windows, orphaned resource monitoring, resource blacklists, destination service accounts.
 - **`assets/argocd-values.yaml`** — Production Helm values: HA, OIDC/Dex SSO, RBAC, notifications, Redis HA, resource limits, metrics/ServiceMonitor.
+
+<!-- tested: pass -->

@@ -490,3 +490,5 @@ Ready-to-use templates in `assets/`:
 | `assets/pyproject.toml` | Production Ruff config with recommended rules for web projects. Heavily commented — every rule category explained. |
 | `assets/pre-commit-config.yaml` | Pre-commit config with Ruff hooks + general file hygiene hooks. Optional mypy and detect-secrets hooks commented out. |
 | `assets/github-actions.yml` | GitHub Actions workflow for Ruff linting and formatting. Uses official `astral-sh/ruff-action`. Includes optional auto-fix job. |
+
+<!-- tested: pass -->
