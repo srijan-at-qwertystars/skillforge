@@ -443,50 +443,47 @@ Both APIs coexist. Migrate incrementally. Extract mixins to composables first.
 
 ## Common Gotchas
 
-### Reactivity loss on destructuring
-
 ```ts
-const state = reactive({ count: 0 })
-const { count } = state              // ❌ NOT reactive
-const { count } = toRefs(state)      // ✅ Ref<number>
+// ❌ Destructuring reactive → loses reactivity
+const { count } = reactive({ count: 0 })  // plain number
+const { count } = toRefs(state)           // ✅ Ref<number>
+const { name } = storeToRefs(store)       // ✅ for Pinia stores
 
-const store = useMyStore()
-const { name } = store               // ❌ loses reactivity
-const { name } = storeToRefs(store)  // ✅ reactive ref
+// ❌ Reassigning reactive → old proxy lost
+state = reactive({ items: ['new'] })
+Object.assign(state, { items: ['new'] })  // ✅ mutate in place
+
+// ❌ Hooks after await → never fire
+await fetchData(); onMounted(() => {})     // ❌
+onMounted(() => {}); await fetchData()     // ✅ hooks before await
 ```
 
-### Replacing reactive objects
+See [troubleshooting.md](references/troubleshooting.md) for full coverage of reactivity pitfalls, watch timing, memory leaks, SSR mismatches, and more.
 
-```ts
-let state = reactive({ items: [] })
-state = reactive({ items: ['new'] })         // ❌ old proxy reference lost
-Object.assign(state, { items: ['new'] })     // ✅ preserves proxy
-```
+## Extended Resources
 
-### Ref unwrapping
+### references/
 
-Refs auto-unwrap in templates and `reactive()`, but NOT in arrays/Maps/Sets:
+In-depth reference docs for specific topics. Use when the sections above need more detail.
 
-```ts
-const list = reactive([ref(1)])
-console.log(list[0].value)  // need .value — no auto-unwrap in arrays
-```
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Renderless components, headless UI, state machines, optimistic updates, virtual scrolling, WebSocket composable, vee-validate integration, debounced/throttled computed, `effectScope` for library authors, dependency injection patterns.
+- **[troubleshooting.md](references/troubleshooting.md)** — Reactivity pitfalls (destructuring, ref vs reactive), watch timing, computed side effects, memory leaks, template ref timing with `v-if`, async setup gotchas, SSR hydration mismatches, Pinia store reactivity loss, TypeScript generic component issues.
+- **[testing-guide.md](references/testing-guide.md)** — Vitest + `@vue/test-utils` setup, testing composables in isolation, mocking composables, testing provide/inject, async setup testing, snapshot testing, Pinia store testing, router-dependent components.
 
-### Stale closures in async callbacks
+### scripts/
 
-```ts
-watchEffect(() => {
-  setTimeout(() => console.log(count.value), 1000)  // ❌ may be stale
-})
-watchEffect(() => {
-  const current = count.value                         // ✅ capture value
-  setTimeout(() => console.log(current), 1000)
-})
-```
+Executable helpers (bash). Run with `./scripts/<name>.sh`.
 
-### Async and lifecycle hooks
+- **[init-vue-project.sh](scripts/init-vue-project.sh)** — Scaffold Vue 3 + TS + Vite project with Pinia, VueUse, Vue Router, strict TS, example composable, and test setup.
+- **[generate-composable.sh](scripts/generate-composable.sh)** — Generate a new `useX` composable with types, lifecycle, cleanup, test file, and barrel export.
+- **[migrate-options-to-composition.sh](scripts/migrate-options-to-composition.sh)** — Analyze an Options API `.vue` file, print migration mapping, generate Composition API template.
 
-```ts
-await fetchData(); onMounted(() => {})   // ❌ hook after await — won't fire
-onMounted(() => {}); await fetchData()   // ✅ register hooks before any await
-```
+### assets/
+
+Copy-paste-ready TypeScript templates. Grab and customize.
+
+- **[composable-template.ts](assets/composable-template.ts)** — Standard composable with options pattern, SSR safety, AbortController cleanup, debounce, and TypeScript generics.
+- **[pinia-store-template.ts](assets/pinia-store-template.ts)** — Setup store with state, getters, actions, optimistic updates, `$reset`, persistence plugin config, and HMR support.
+- **[form-composable.ts](assets/form-composable.ts)** — Form handling: field validation rules, dirty/touched tracking, submit with loading/error, reset, and common validators.
+- **[fetch-composable.ts](assets/fetch-composable.ts)** — Data fetching: loading/error states, in-memory caching, AbortController, retry with backoff, pagination (offset + cursor).
+- **[vitest-setup.ts](assets/vitest-setup.ts)** — Test setup file: global config, browser API mocks, `mountWithPinia`, `mountAsync`, `withSetup` for composables, `mockFetch` factory.

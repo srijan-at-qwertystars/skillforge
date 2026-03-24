@@ -1,0 +1,52 @@
+# Docker Compose for Clean Architecture development environment.
+#
+# Provides PostgreSQL database for repository implementations.
+#
+# Usage:
+#   docker compose up -d        # Start services
+#   docker compose down         # Stop services
+#   docker compose down -v      # Stop and remove volumes (reset data)
+#
+# Connect:
+#   psql postgresql://app_user:app_password@localhost:5432/app_db
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clean-arch-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: app_db
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d app_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: pgAdmin for database management UI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: clean-arch-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+    driver: local

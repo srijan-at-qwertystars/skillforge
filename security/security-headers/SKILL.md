@@ -455,3 +455,35 @@ curl -sI https://yoursite.com | grep -iE '(content-security|strict-transport|x-c
 # Full scan
 # Submit URL to https://securityheaders.com and https://observatory.mozilla.org
 ```
+
+## Reference Documentation
+
+Deep-dive guides in `references/`:
+
+| File | Description |
+|---|---|
+| [csp-deep-dive.md](references/csp-deep-dive.md) | Complete CSP reference: all directives, nonce patterns (SSR + SPA), hash generation, strict-dynamic with Trusted Types, report-only migration, violation report analysis, Web Workers/Service Workers, eval alternatives, bypass prevention checklist |
+| [troubleshooting.md](references/troubleshooting.md) | Common issues: CSP breaking inline code, Google Analytics/GTM with CSP, third-party widget conflicts, CORS vs CORP confusion, HSTS dev issues, mixed content, frame-ancestors precedence, local vs production testing |
+| [framework-configs.md](references/framework-configs.md) | Copy-paste configs for Express/Helmet, Next.js, Nuxt.js, Django, Spring Boot, ASP.NET Core, Rails, Nginx, Apache, Caddy, Cloudflare Workers, Vercel, Netlify |
+
+## Scripts
+
+Executable tools in `scripts/`:
+
+| Script | Usage |
+|---|---|
+| [audit-headers.sh](scripts/audit-headers.sh) | `./audit-headers.sh <url>` — Audit security headers for a URL, score A-F, report missing headers with fix suggestions. Use `-v` for verbose output. |
+| [generate-csp.sh](scripts/generate-csp.sh) | `./generate-csp.sh` — Interactive CSP generator. Also supports `--strict` and `--permissive` quick modes. |
+| [test-csp-report.sh](scripts/test-csp-report.sh) | `./test-csp-report.sh [--port PORT]` — Start a local CSP violation report collector server for testing report-only mode. |
+
+## Assets
+
+Copy-paste ready templates in `assets/`:
+
+| File | Description |
+|---|---|
+| [helmet-config.ts](assets/helmet-config.ts) | Complete Helmet.js configuration with nonce middleware, all security headers, Permissions-Policy, and typed options |
+| [nginx-security.conf](assets/nginx-security.conf) | Nginx security headers snippet — include in server blocks |
+| [nextjs-headers.ts](assets/nextjs-headers.ts) | Next.js security headers (next.config.ts + CSP middleware with nonce) |
+| [csp-report-handler.ts](assets/csp-report-handler.ts) | Express router for receiving, normalizing, and aggregating CSP violation reports with stats endpoint |
+| [security-headers-test.ts](assets/security-headers-test.ts) | Vitest/Jest test suite verifying all security headers on API responses |

@@ -332,42 +332,17 @@ export class InMemoryOrderRepository implements IOrderRepository {
 Presenters transform use case output into view-specific formats. Separate the
 "what" (use case decides what data) from the "how" (presenter decides format).
 
-```typescript
-export class OrderPresenter {
-  static toJson(res: CreateOrderResponse): object {
-    return { order_id: res.orderId, total: `$${res.total.toFixed(2)}` };
-  }
-  static toCsv(res: CreateOrderResponse): string {
-    return `${res.orderId},${res.total}`;
-  }
-}
-```
-
 ## CQRS Integration
 
 Separate command (write) and query (read) paths within Clean Architecture.
-
-```
-application/
-├── commands/
-│   ├── create-order/
-│   │   ├── CreateOrderCommand.ts      # { items: OrderItemDTO[] }
-│   │   └── CreateOrderHandler.ts      # Mutates state via repos
-│   └── cancel-order/
-├── queries/
-│   ├── get-order/
-│   │   ├── GetOrderQuery.ts           # { orderId: string }
-│   │   └── GetOrderHandler.ts         # Reads via read-optimized repo
-│   └── list-orders/
-```
+See [advanced-patterns.md](references/advanced-patterns.md) for full CQRS with
+event sourcing implementation.
 
 Rules:
 - Commands return void or a minimal result (ID). They mutate state.
 - Queries return data. They never mutate state.
 - Query handlers may bypass domain entities and read directly from optimized views
-- Use a command/query bus for dispatch if you have >15 handlers
 - Commands validate input, enforce invariants, emit domain events
-- Queries can use denormalized read models for performance
 
 ## Error Handling Strategy
 
@@ -442,25 +417,17 @@ describe("CreateOrderUseCase", () => {
 
 ## Common Mistakes
 
-1. **Over-engineering**: Adding all four layers to a 200-line CRUD app. Start with
-   simpler patterns; refactor into Clean Architecture when complexity justifies it.
-2. **Anemic domain models**: Entities that are just data bags with getters/setters.
-   Push behavior INTO entities—validation, calculations, state transitions.
-3. **Leaky abstractions**: Repository interfaces exposing query builder methods,
-   ORM-specific types, or SQL fragments. Keep interfaces domain-pure.
-4. **Shared ORM models across layers**: Using the same class as entity AND persistence
-   model. Create separate models and map between them.
-5. **Business logic in controllers**: Controllers should only map input → call use
-   case → map output. Zero conditionals on business rules.
-6. **Skipping the presenter**: Formatting response data inside use cases couples
-   business logic to presentation format.
-7. **God use cases**: A single use case doing too much. Split into focused, single-
-   purpose interactors.
-8. **Circular dependencies**: Usually caused by entities importing from use case
-   layer. Fix by extracting shared interfaces.
-9. **Injecting concrete classes**: Always inject interfaces, never implementations.
-10. **No composition root**: Scattering DI wiring across multiple files instead of
-    centralizing in main/bootstrap.
+1. **Over-engineering**: Adding all four layers to a 200-line CRUD app.
+2. **Anemic domain models**: Entities as data bags. Push behavior INTO entities.
+3. **Leaky abstractions**: Repository interfaces exposing ORM or SQL types.
+4. **Shared ORM models across layers**: Create separate models and map between them.
+5. **Business logic in controllers**: Controllers map input → call use case → map output only.
+6. **God use cases**: Split into focused, single-purpose interactors.
+7. **Circular dependencies**: Entities importing from use case layer. Extract shared interfaces.
+8. **Injecting concrete classes**: Always inject interfaces, never implementations.
+9. **No composition root**: Centralize DI wiring in main/bootstrap.
+
+See [troubleshooting.md](references/troubleshooting.md) for detailed diagnosis and fixes.
 
 ## When to Use Clean Architecture
 
@@ -478,6 +445,34 @@ describe("CreateOrderUseCase", () => {
   layer divisions. Prefer when you want flexibility.
 - **Vertical Slices**: Feature-centric organization. Better when features are
   independent and cross-cutting domain logic is minimal.
+
+## Additional Resources
+
+### Reference Documentation (`references/`)
+
+| Document | Description |
+|----------|-------------|
+| [advanced-patterns.md](references/advanced-patterns.md) | CQRS with event sourcing, domain events, aggregate roots, value objects, specification pattern, unit of work, bounded contexts, anti-corruption layer, hexagonal & vertical slice comparisons, modular monolith |
+| [troubleshooting.md](references/troubleshooting.md) | Over-abstraction symptoms, mapping fatigue, circular dependency detection, testing pyramid imbalance, DI complexity, performance overhead, when to pragmatically break the rules |
+| [implementation-guide.md](references/implementation-guide.md) | Step-by-step full project implementations for TypeScript/Express, Python/FastAPI, and Go/stdlib — folder layout, DI setup, repository impls (Postgres + in-memory), use case orchestration, error propagation, controller wiring |
+
+### Scripts (`scripts/`)
+
+| Script | Usage |
+|--------|-------|
+| `init-clean-project.sh` | `./scripts/init-clean-project.sh <typescript\|python\|go> <project-name>` — Scaffolds a complete project with folders, base classes, example entity/use-case/repo, and Makefile |
+| `check-dependencies.sh` | `./scripts/check-dependencies.sh [src-dir]` — Scans imports to verify inner layers don't depend on outer layers. Reports violations with file and line number |
+| `generate-use-case.sh` | `./scripts/generate-use-case.sh <lang> <Entity> <create\|read\|update\|delete>` — Generates use case, DTOs, repository interface, and controller stub |
+
+### Asset Templates (`assets/`)
+
+Copy-paste-ready TypeScript base classes in `assets/typescript-project/`:
+- `entity.ts` — BaseEntity + AggregateRoot with ID, timestamps, equality, domain events
+- `use-case.ts` — IUseCase, ICommandHandler, IQueryHandler interfaces + BaseUseCase abstract class
+- `repository.ts` — Generic IRepository with CRUD, pagination, and UnitOfWork
+- `error-types.ts` — Full error hierarchy: NotFound, Validation, Authorization, Conflict, BusinessRule, Infrastructure + type guards
+
+Dev environment: `assets/docker-compose.yml` — PostgreSQL 16 with health checks, optional pgAdmin
 
 ## Example: Applying the Skill
 
