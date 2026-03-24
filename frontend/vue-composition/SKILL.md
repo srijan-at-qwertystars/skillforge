@@ -487,3 +487,5 @@ Copy-paste-ready TypeScript templates. Grab and customize.
 - **[form-composable.ts](assets/form-composable.ts)** — Form handling: field validation rules, dirty/touched tracking, submit with loading/error, reset, and common validators.
 - **[fetch-composable.ts](assets/fetch-composable.ts)** — Data fetching: loading/error states, in-memory caching, AbortController, retry with backoff, pagination (offset + cursor).
 - **[vitest-setup.ts](assets/vitest-setup.ts)** — Test setup file: global config, browser API mocks, `mountWithPinia`, `mountAsync`, `withSetup` for composables, `mockFetch` factory.
+
+<!-- tested: pass -->

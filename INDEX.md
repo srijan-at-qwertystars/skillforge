@@ -203,6 +203,6 @@
 | backend | websocket-patterns | WebSocket protocol, Socket.IO, scaling, authentication, and real-time messaging patterns | tested |
 | frontend | i18n-patterns | Internationalization with Intl API, react-intl/i18next, ICU MessageFormat, RTL, and SEO | tested |
 | testing | load-testing | Load testing with k6, Locust, Artillery, test types, CI/CD integration, and reporting | tested |
-| patterns | clean-architecture | Clean Architecture with dependency rule, layers, CQRS, repository pattern in TypeScript/Python/Go | enriched |
-| security | security-headers | HTTP security headers with CSP, HSTS, CORS, cookie security, and implementation patterns | enriched |
-| frontend | vue-composition | Vue 3 Composition API with reactivity, composables, Pinia, VueUse, and TypeScript integration | enriched |
+| patterns | clean-architecture | Clean Architecture with dependency rule, layers, CQRS, repository pattern in TypeScript/Python/Go | tested |
+| security | security-headers | HTTP security headers with CSP, HSTS, CORS, cookie security, and implementation patterns | tested |
+| frontend | vue-composition | Vue 3 Composition API with reactivity, composables, Pinia, VueUse, and TypeScript integration | tested |

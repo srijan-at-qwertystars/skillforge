@@ -487,3 +487,5 @@ Copy-paste ready templates in `assets/`:
 | [nextjs-headers.ts](assets/nextjs-headers.ts) | Next.js security headers (next.config.ts + CSP middleware with nonce) |
 | [csp-report-handler.ts](assets/csp-report-handler.ts) | Express router for receiving, normalizing, and aggregating CSP violation reports with stats endpoint |
 | [security-headers-test.ts](assets/security-headers-test.ts) | Vitest/Jest test suite verifying all security headers on API responses |
+
+<!-- tested: pass -->

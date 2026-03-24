@@ -492,3 +492,4 @@ wired to Express routes. Set up composition root in `main.ts`. Add
 use cases in `application/use_cases/`. Wrap SQLAlchemy queries in repository
 implementations. Slim route handlers to: parse → call use case → format. Create
 `main.py` composition root. Add use case tests with in-memory repos.
+<!-- tested: pass -->
