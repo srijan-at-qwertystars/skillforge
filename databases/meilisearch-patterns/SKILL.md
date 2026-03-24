@@ -497,3 +497,5 @@ Ready-to-use configuration and client files in `assets/`:
 | [search-client.py](assets/search-client.py) | Python client class with index management, bulk import, geo/hybrid search, task monitoring, CLI interface |
 | [nginx-proxy.conf](assets/nginx-proxy.conf) | Nginx reverse proxy with TLS, rate limiting, CORS, security headers |
 | [index-settings.json](assets/index-settings.json) | E-commerce example: ranked searchable attributes, synonyms, typo tolerance, faceting, embedder config |
+
+<!-- tested: pass -->

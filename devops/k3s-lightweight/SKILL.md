@@ -495,3 +495,5 @@ Configuration templates in `assets/`:
 | [traefik-values.yaml](assets/traefik-values.yaml) | Custom Traefik Helm values: TLS, HTTP→HTTPS redirect, access logs, metrics, pod anti-affinity, PDB. |
 | [helmchart-example.yaml](assets/helmchart-example.yaml) | HelmChart CRD examples: repo charts, OCI charts, authenticated repos, HelmChartConfig overrides. |
 | [system-upgrade-plan.yaml](assets/system-upgrade-plan.yaml) | System upgrade controller plans for automated rolling upgrades (servers first, then agents). |
+
+<!-- tested: pass -->

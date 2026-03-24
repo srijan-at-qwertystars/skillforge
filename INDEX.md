@@ -170,6 +170,6 @@
 | databases | [cockroachdb-patterns](databases/cockroachdb-patterns/) | CockroachDB distributed SQL — multi-region, serializable isolation, changefeeds | tested |
 | networking | [istio-service-mesh](networking/istio-service-mesh/) | Istio service mesh — traffic management, mTLS, observability, Envoy sidecar | tested |
 | mobile | [flutter-dart](mobile/flutter-dart/) | Flutter/Dart — widgets, state management, platform channels, multi-platform | tested |
-| databases | [meilisearch-patterns](databases/meilisearch-patterns/) | Meilisearch search engine — instant search, facets, filters, hybrid search, multi-tenancy | enriched |
-| api | [graphql-federation](api/graphql-federation/) | GraphQL Federation — Apollo supergraph, subgraphs, router, entity resolution | enriched |
-| devops | [k3s-lightweight](devops/k3s-lightweight/) | K3s lightweight Kubernetes — edge deployment, HA, HelmChart CRD, air-gap | enriched |
+| databases | [meilisearch-patterns](databases/meilisearch-patterns/) | Meilisearch search engine — instant search, facets, filters, hybrid search, multi-tenancy | tested |
+| api | [graphql-federation](api/graphql-federation/) | GraphQL Federation — Apollo supergraph, subgraphs, router, entity resolution | tested |
+| devops | [k3s-lightweight](devops/k3s-lightweight/) | K3s lightweight Kubernetes — edge deployment, HA, HelmChart CRD, air-gap | tested |

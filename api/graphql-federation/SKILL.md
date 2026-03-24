@@ -478,3 +478,5 @@ Ready-to-use configuration and code in `assets/`:
 | [subgraph-reviews.ts](assets/subgraph-reviews.ts) | Reviews subgraph with @requires, @provides, @external, and contributing fields |
 | [docker-compose.yml](assets/docker-compose.yml) | Full federation stack (router + 2 subgraphs) with health checks |
 | [supergraph.graphql](assets/supergraph.graphql) | Example composed supergraph schema |
+
+<!-- tested: pass -->
