@@ -176,3 +176,6 @@
 | languages | [vapor-swift](languages/vapor-swift/) | Vapor Swift server-side framework — routing, Fluent ORM, auth, WebSockets, deployment | tested |
 | python | [ray-distributed](python/ray-distributed/) | Ray distributed computing — tasks, actors, Serve, Tune, Data, KubeRay | tested |
 | databases | [litestream-replication](databases/litestream-replication/) | Litestream SQLite replication — WAL streaming, S3/GCS backup, restore, sidecar | tested |
+| devops | [terraform-modules](devops/terraform-modules/) | Terraform module authoring, composition, versioning, testing, registry publishing | created |
+| networking | [webrtc-patterns](networking/webrtc-patterns/) | WebRTC peer connections, signaling, ICE/STUN/TURN, media tracks, data channels, SFU architectures | created |
+| security | [oauth2-flows](security/oauth2-flows/) | OAuth 2.0/OIDC flows — authorization code + PKCE, client credentials, device code, token exchange, DPoP | created |
