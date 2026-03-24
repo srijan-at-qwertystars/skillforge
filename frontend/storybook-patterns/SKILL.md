@@ -470,13 +470,30 @@ jobs:
       - uses: actions/deploy-pages@v4
 ```
 
-### Nginx
+## Additional Resources
 
-```nginx
-server {
-  listen 80;
-  root /var/www/storybook;
-  location / { try_files $uri $uri/ /index.html; }
-  location ~* \.(js|css|png|svg|woff2?)$ { expires 1y; add_header Cache-Control "public, immutable"; }
-}
-```
+### Reference Docs (`references/`)
+
+| File | Description |
+|------|-------------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Portable stories, story composition, play function chaining, custom render, loaders, decorators with context, story indexers, builder API, Webpack/Vite config overrides |
+| [troubleshooting.md](references/troubleshooting.md) | HMR fixes, addon conflicts, CSS modules, monorepo setup, TypeScript errors, framework-specific build failures, CI memory issues, startup optimization, React/Vue/Angular/Svelte gotchas |
+| [testing-guide.md](references/testing-guide.md) | Interaction testing, Chromatic visual regression, a11y testing, test runner setup, coverage reporting, portable stories in Jest/Vitest, snapshot strategies, CI/CD pipelines |
+
+### Scripts (`scripts/`)
+
+| Script | Usage |
+|--------|-------|
+| [init-storybook.sh](scripts/init-storybook.sh) | `./init-storybook.sh [--framework react\|vue\|angular\|svelte]` — auto-detect framework, init Storybook, install addons, create example stories |
+| [generate-story.sh](scripts/generate-story.sh) | `./generate-story.sh src/components/Button.tsx` — generate CSF3 story with auto-detected props, playground story, and interaction test template |
+| [ci-visual-test.sh](scripts/ci-visual-test.sh) | `./ci-visual-test.sh [--chromatic] [--shards N]` — build Storybook, run test-runner, optionally publish to Chromatic |
+
+### Assets — Copy-Paste Templates (`assets/`)
+
+| Template | Description |
+|----------|-------------|
+| [story-template.tsx](assets/story-template.tsx) | CSF3 story template with Meta, StoryObj, args, argTypes, decorators, play function, docs |
+| [preview-config.ts](assets/preview-config.ts) | Production preview.ts with global decorators, parameters, loaders, viewport/background/a11y config, theme toolbar |
+| [msw-handlers.ts](assets/msw-handlers.ts) | MSW mock handlers for REST CRUD, authentication, pagination (offset + cursor), error states (500, 401, 422, 429, timeout) |
+| [addon-template.tsx](assets/addon-template.tsx) | Custom addon with panel, toolbar button, parameter integration, manager↔preview channel communication |
+| [chromatic-config.yml](assets/chromatic-config.yml) | GitHub Actions workflow for Chromatic with TurboSnap, PR comments, caching, monorepo support |

@@ -1,0 +1,232 @@
+# GitHub Actions CI/CD for Cloudflare Workers
+# Deploys to staging on push to main, production on release.
+#
+# Required secrets:
+#   CLOUDFLARE_API_TOKEN — API token with Workers edit permission
+#   CLOUDFLARE_ACCOUNT_ID — Your Cloudflare account ID
+#
+# Optional secrets:
+#   STAGING_URL — Override staging smoke test URL
+#   PRODUCTION_URL — Override production smoke test URL
+
+name: Workers CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "test/**"
+      - "wrangler.toml"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/workers.yml"
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deploy environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  deployments: write
+
+env:
+  NODE_VERSION: "20"
+  WRANGLER_VERSION: "3"
+
+jobs:
+  # ===== Lint & Type Check =====
+  check:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npx eslint src/ --quiet
+        continue-on-error: true  # Don't block if ESLint not configured
+
+  # ===== Test =====
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Run tests
+        run: npx vitest run --reporter=verbose --coverage
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # ===== Deploy to Staging =====
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Deploy to staging
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --env staging
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+
+      - name: Smoke test
+        if: success()
+        run: |
+          URL="${{ secrets.STAGING_URL || steps.deploy.outputs.url }}"
+          if [ -n "$URL" ]; then
+            echo "Testing ${URL}/health..."
+            for i in 1 2 3; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}/health" || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "✅ Health check passed (HTTP $STATUS)"
+                exit 0
+              fi
+              echo "Attempt $i: HTTP $STATUS, retrying in 5s..."
+              sleep 5
+            done
+            echo "⚠️ Health check failed after 3 attempts"
+            exit 1
+          else
+            echo "⏭️ No URL available for smoke test"
+          fi
+
+  # ===== Deploy to Production =====
+  deploy-production:
+    name: Deploy to Production
+    needs: [check, test]
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Deploy to production
+        id: deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+
+      - name: Smoke test
+        if: success()
+        run: |
+          URL="${{ secrets.PRODUCTION_URL || steps.deploy.outputs.url }}"
+          if [ -n "$URL" ]; then
+            echo "Testing ${URL}/health..."
+            for i in 1 2 3 4 5; do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "${URL}/health" || echo "000")
+              if [ "$STATUS" = "200" ]; then
+                echo "✅ Production health check passed (HTTP $STATUS)"
+                exit 0
+              fi
+              echo "Attempt $i: HTTP $STATUS, retrying in 10s..."
+              sleep 10
+            done
+            echo "❌ Production health check failed!"
+            echo "::error::Production smoke test failed. Consider rollback."
+            exit 1
+          else
+            echo "⏭️ No URL available for smoke test"
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::warning::Production deployment may have issues. Check logs and consider rollback."
+          echo "Rollback command: npx wrangler rollback"
+
+  # ===== PR Preview =====
+  preview:
+    name: PR Preview Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Dry-run deploy
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy --dry-run --outdir dist
+          wranglerVersion: ${{ env.WRANGLER_VERSION }}
+
+      - name: Report bundle size
+        run: |
+          if [ -d dist ]; then
+            SIZE=$(du -sh dist/ | cut -f1)
+            echo "### 📦 Bundle Size: ${SIZE}" >> $GITHUB_STEP_SUMMARY
+            ls -lh dist/ >> $GITHUB_STEP_SUMMARY
+          fi

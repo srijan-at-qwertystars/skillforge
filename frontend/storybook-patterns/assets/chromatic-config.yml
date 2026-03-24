@@ -1,0 +1,211 @@
+# chromatic-config.yml — GitHub Actions Workflow for Chromatic Visual Testing
+#
+# Copy to .github/workflows/chromatic.yml
+#
+# Features:
+#   - TurboSnap (only tests changed stories)
+#   - Caches node_modules and Storybook build
+#   - Runs on PRs and pushes to main
+#   - Posts PR comment with Chromatic build URL
+#   - Supports monorepo with multiple Storybook projects
+#
+# Required secrets:
+#   CHROMATIC_PROJECT_TOKEN — from https://www.chromatic.com/
+#
+# Optional configuration:
+#   Set STORYBOOK_BUILD_SCRIPT to customize the build command
+
+name: Chromatic Visual Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+concurrency:
+  group: chromatic-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  NODE_OPTIONS: '--max-old-space-size=8192'
+
+jobs:
+  chromatic:
+    name: Visual Regression Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ---- Setup ----
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for TurboSnap to detect changes
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ---- Build Storybook ----
+
+      - name: Cache Storybook build
+        uses: actions/cache@v4
+        with:
+          path: storybook-static
+          key: storybook-${{ hashFiles('src/**', '.storybook/**', 'package-lock.json') }}
+          restore-keys: |
+            storybook-
+
+      - name: Build Storybook
+        run: npx storybook build --quiet
+        env:
+          # Add any env vars your stories need
+          STORYBOOK_API_URL: https://mock-api.example.com
+
+      # ---- Run Chromatic ----
+
+      - name: Run Chromatic
+        id: chromatic
+        uses: chromaui/action@latest
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          storybookBuildDir: storybook-static
+
+          # TurboSnap — only snapshot changed components
+          onlyChanged: true
+
+          # External files that should trigger full re-test when changed
+          externals: |
+            public/**
+            src/styles/**
+            .storybook/**
+
+          # Don't fail the build on visual changes (review in Chromatic UI)
+          exitZeroOnChanges: true
+
+          # Exit after upload (don't wait for build to process)
+          exitOnceUploaded: true
+
+          # Auto-accept changes on main branch
+          autoAcceptChanges: main
+
+          # Skip Chromatic on certain conditions
+          skip: ${{ github.event.pull_request.draft }}
+
+          # Debugging (remove in production)
+          # debug: true
+          # diagnosticsFile: true
+
+      # ---- Report Results ----
+
+      - name: Comment PR with Chromatic results
+        if: github.event_name == 'pull_request' && steps.chromatic.outcome == 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const chromaticUrl = '${{ steps.chromatic.outputs.buildUrl }}';
+            const storybookUrl = '${{ steps.chromatic.outputs.storybookUrl }}';
+            const changeCount = '${{ steps.chromatic.outputs.changeCount }}';
+            const componentCount = '${{ steps.chromatic.outputs.componentCount }}';
+            const specCount = '${{ steps.chromatic.outputs.specCount }}';
+
+            const statusEmoji = changeCount === '0' ? '✅' : '⚠️';
+            const body = [
+              `## ${statusEmoji} Chromatic Visual Tests`,
+              '',
+              `| Metric | Value |`,
+              `|--------|-------|`,
+              `| Components | ${componentCount} |`,
+              `| Stories | ${specCount} |`,
+              `| Visual Changes | ${changeCount} |`,
+              '',
+              `🔗 [Chromatic Build](${chromaticUrl})`,
+              storybookUrl ? `📖 [Published Storybook](${storybookUrl})` : '',
+              '',
+              changeCount !== '0' ? '> Review visual changes in the Chromatic UI before merging.' : '',
+            ].filter(Boolean).join('\n');
+
+            // Find existing comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existingComment = comments.find(
+              (c) => c.body.includes('Chromatic Visual Tests')
+            );
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      # ---- Upload artifacts on failure ----
+
+      - name: Upload Storybook build
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-build
+          path: storybook-static/
+          retention-days: 7
+
+# ============================================================
+# Monorepo variant — uncomment and adapt if needed
+# ============================================================
+
+#   chromatic-packages:
+#     name: Visual Tests (${{ matrix.package }})
+#     runs-on: ubuntu-latest
+#     strategy:
+#       fail-fast: false
+#       matrix:
+#         package: [ui, forms, charts]
+#     steps:
+#       - uses: actions/checkout@v4
+#         with: { fetch-depth: 0 }
+#       - uses: actions/setup-node@v4
+#         with: { node-version: 20, cache: npm }
+#       - run: npm ci
+#       - run: npx storybook build -c packages/${{ matrix.package }}/.storybook
+#       - uses: chromaui/action@latest
+#         with:
+#           projectToken: ${{ secrets[format('CHROMATIC_TOKEN_{0}', matrix.package)] }}
+#           storybookBuildDir: storybook-static
+#           onlyChanged: true
+#           exitZeroOnChanges: true
+
+# ============================================================
+# Scheduled baseline refresh — uncomment to run nightly
+# ============================================================
+
+#   nightly-baseline:
+#     if: github.event_name == 'schedule'
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-node@v4
+#         with: { node-version: 20, cache: npm }
+#       - run: npm ci && npx storybook build
+#       - uses: chromaui/action@latest
+#         with:
+#           projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+#           autoAcceptChanges: true

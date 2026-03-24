@@ -1,0 +1,180 @@
+# =============================================================================
+# Production wrangler.toml — Cloudflare Worker with all binding types
+# =============================================================================
+# Copy this file, remove unused bindings, and fill in IDs.
+# Docs: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "my-worker"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Account ID (optional — wrangler prompts if missing)
+# account_id = "YOUR_ACCOUNT_ID"
+
+# Custom build (if using esbuild plugins, etc.)
+# [build]
+# command = "npm run build:worker"
+# watch_dir = "src"
+
+# --- Routes ---
+# workers.dev subdomain (enabled by default)
+workers_dev = true
+
+# Custom domain routes
+# routes = [
+#   { pattern = "api.example.com/*", zone_name = "example.com" },
+#   { pattern = "example.com/api/*", zone_name = "example.com" },
+# ]
+
+# Or use Custom Domains (recommended over routes)
+# [custom_domain]
+# hostname = "api.example.com"
+
+# --- Smart Placement ---
+# Automatically place Worker near backend for lower latency
+# [placement]
+# mode = "smart"
+
+# --- Environment Variables (non-secret) ---
+[vars]
+ENVIRONMENT = "production"
+LOG_LEVEL = "info"
+
+# --- KV Namespaces ---
+[[kv_namespaces]]
+binding = "KV"
+id = "KV_NAMESPACE_ID"
+
+# --- D1 Databases ---
+[[d1_databases]]
+binding = "DB"
+database_name = "my-database"
+database_id = "D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# --- R2 Buckets ---
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "my-bucket"
+# jurisdiction = "eu"  # Optional: restrict to EU jurisdiction
+
+# --- Durable Objects ---
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterObject"
+
+[[durable_objects.bindings]]
+name = "CHAT_ROOM"
+class_name = "ChatRoomObject"
+
+# DO migrations (append-only — never edit or remove existing entries)
+[[migrations]]
+tag = "v1"
+new_classes = ["RateLimiterObject", "ChatRoomObject"]
+
+# [[migrations]]
+# tag = "v2"
+# renamed_classes = [{ from = "OldName", to = "NewName" }]
+# deleted_classes = ["DeprecatedObject"]
+
+# --- Queues ---
+[[queues.producers]]
+binding = "TASK_QUEUE"
+queue = "task-queue"
+
+[[queues.consumers]]
+queue = "task-queue"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "task-dlq"
+
+[[queues.consumers]]
+queue = "task-dlq"
+max_batch_size = 1
+
+# --- Service Bindings ---
+[[services]]
+binding = "AUTH_SERVICE"
+service = "auth-worker"
+
+# --- Hyperdrive ---
+# [[hyperdrive]]
+# binding = "HYPERDRIVE"
+# id = "HYPERDRIVE_CONFIG_ID"
+
+# --- Workers AI ---
+[ai]
+binding = "AI"
+
+# --- Vectorize ---
+# [[vectorize]]
+# binding = "VECTOR_INDEX"
+# index_name = "my-index"
+
+# --- Analytics Engine ---
+# [[analytics_engine_datasets]]
+# binding = "ANALYTICS"
+
+# --- Cron Triggers ---
+[triggers]
+crons = [
+  "0 * * * *",       # Every hour
+  "0 0 * * *",       # Daily at midnight UTC
+  # "*/5 * * * *",   # Every 5 minutes
+]
+
+# --- Tail Workers (observability) ---
+# tail_consumers = [
+#   { service = "my-tail-worker" }
+# ]
+
+# --- Limits ---
+# [limits]
+# cpu_ms = 50  # Override default CPU time limit
+
+# =============================================================================
+# Staging Environment
+# =============================================================================
+[env.staging]
+name = "my-worker-staging"
+workers_dev = true
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+LOG_LEVEL = "debug"
+
+[[env.staging.kv_namespaces]]
+binding = "KV"
+id = "STAGING_KV_NAMESPACE_ID"
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "my-database-staging"
+database_id = "STAGING_D1_DATABASE_ID"
+
+[[env.staging.r2_buckets]]
+binding = "BUCKET"
+bucket_name = "my-bucket-staging"
+
+[[env.staging.queues.producers]]
+binding = "TASK_QUEUE"
+queue = "task-queue-staging"
+
+[[env.staging.queues.consumers]]
+queue = "task-queue-staging"
+max_batch_size = 10
+max_batch_timeout = 5
+max_retries = 3
+
+# Note: Durable Objects, AI, and Service Bindings are inherited
+# unless you need different configs per environment.
+
+# =============================================================================
+# Preview Environment (for PR deployments)
+# =============================================================================
+# [env.preview]
+# name = "my-worker-preview"
+# [env.preview.vars]
+# ENVIRONMENT = "preview"

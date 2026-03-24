@@ -465,3 +465,35 @@ it("GET /users/:id", async () => {
 - Durable Objects are single-threaded — design sharding for high-throughput scenarios.
 - D1 `batch()` runs in a transaction — if any statement fails, all roll back.
 - Secrets: use `wrangler secret put`, store local dev secrets in `.dev.vars`, never in `wrangler.toml`.
+
+## Reference Docs
+
+Deep-dive guides in `references/`:
+
+| File | Topics |
+|------|--------|
+| [advanced-patterns.md](references/advanced-patterns.md) | DO actor model, WebSocket rooms, distributed locks, rate limiting, D1 migrations/schema, R2 multipart/presigned URLs, Queue retry/DLQ/fan-out, Service Bindings composition, Hyperdrive, Workers for Platforms, smart placement, tail workers |
+| [troubleshooting.md](references/troubleshooting.md) | CPU time exceeded, memory limits, subrequest limits (50/req), KV eventual consistency, DO billing surprises, D1 row limits, wrangler deploy errors, Miniflare vs production, CORS headers, wrangler tail debugging |
+| [hono-integration.md](references/hono-integration.md) | Hono routing, middleware, Zod validation, OpenAPI generation, RPC type-safe client, JWT auth, rate limiting, error handling, `app.request()` testing, monorepo patterns |
+
+## Scripts
+
+Executable helpers in `scripts/` (bash, `chmod +x`):
+
+| Script | Purpose |
+|--------|---------|
+| [init-worker.sh](scripts/init-worker.sh) | Scaffold new Worker: npm init, wrangler.toml with selected bindings (KV/D1/R2/DO/Queue), typed Env, vitest config, optional Hono setup |
+| [deploy-worker.sh](scripts/deploy-worker.sh) | Deploy workflow: lint → test → build → staging → smoke test → production. Includes `--rollback` and `--dry-run` |
+| [migrate-d1.sh](scripts/migrate-d1.sh) | D1 migration helper: create, apply-local, apply-remote, list, schema, status, seed, reset-local, backup |
+
+## Assets (Copy-Paste Templates)
+
+Ready-to-use templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [wrangler-template.toml](assets/wrangler-template.toml) | Production wrangler.toml with all binding types, staging/production envs, routes, compatibility flags |
+| [hono-app.ts](assets/hono-app.ts) | Hono app with typed bindings, middleware chain, CORS, error handling, Zod validation, CRUD routes |
+| [durable-object.ts](assets/durable-object.ts) | Durable Object with WebSocket hibernation, tag-based user tracking, alarms, state management |
+| [vitest-config.ts](assets/vitest-config.ts) | Vitest config for `@cloudflare/vitest-pool-workers` with mock bindings, coverage thresholds, test helpers |
+| [github-actions.yml](assets/github-actions.yml) | CI/CD: lint, test, deploy staging on push, production on release, smoke tests, PR preview |

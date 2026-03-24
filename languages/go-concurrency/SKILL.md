@@ -361,30 +361,13 @@ func main() {
     defer cancel()
     if err := srv.Shutdown(shutCtx); err != nil { log.Fatal(err) }
 }
-```
-### Drain pattern
+```### Drain pattern
 ```go
 close(jobsCh)    // 1. stop accepting new work
 wg.Wait()        // 2. wait for in-flight work
 close(resultsCh) // 3. close output
 ```
 
-### Worker shutdown with drain
-```go
-func gracefulWorker(ctx context.Context, jobs <-chan Job) {
-    for {
-        select {
-        case <-ctx.Done():
-            // drain remaining jobs
-            for j := range jobs { process(j) }
-            return
-        case j, ok := <-jobs:
-            if !ok { return }
-            process(j)
-        }
-    }
-}
-```
 ## Testing Concurrent Code
 ```bash
 go test -race -count=100 ./...  # repeat to surface timing bugs
@@ -486,3 +469,31 @@ func scrape(ctx context.Context, urls []string, workers int) (map[string]string,
 // Input: urls=["https://example.com","https://go.dev"], workers=5
 // Output: map[string]string with URL→HTML, or first error
 ```
+
+## Reference Documentation
+Detailed guides in `references/`:
+
+| File | Contents |
+|------|----------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Pipeline stages with cancellation, bounded parallelism, sharded maps, lock-free structures with atomic, singleflight deduplication, rate limiting (time.Ticker, x/time/rate), circuit breaker, pub/sub with channels, graceful degradation (hedged requests, bulkhead, load shedding) |
+| [troubleshooting.md](references/troubleshooting.md) | Goroutine leak detection (runtime.NumGoroutine, pprof, goleak), deadlock detection (go vet, go-deadlock), data race examples/fixes, channel misuse patterns, context cancellation bugs, WaitGroup counter bugs, mutex starvation, performance debugging with `go tool trace` |
+| [testing-guide.md](references/testing-guide.md) | Race detector usage (-race flag, GORACE env), testing with timeouts, deterministic testing with channels, goleak for leak detection, testing context cancellation, benchmarking concurrent code (RunParallel, benchstat), fuzz testing, table-driven concurrent tests, testing with errgroup |
+
+## Scripts
+Executable scripts in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| [init-concurrent-project.sh](scripts/init-concurrent-project.sh) | Scaffold a Go project with concurrency-ready structure: go module, errgroup/singleflight/semaphore deps, worker pool template, Makefile with race detection targets |
+| [race-detector.sh](scripts/race-detector.sh) | Run `go test -race` and `go vet`, parse output, summarize findings with file locations and suggested fixes |
+| [goroutine-profiler.sh](scripts/goroutine-profiler.sh) | Profile goroutine usage: capture pprof profiles at intervals, detect goroutine count growth, report potential leaks, generate flamegraph commands |
+
+## Copy-Paste Templates
+Production-ready templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [worker-pool.go](assets/worker-pool.go) | Generic worker pool with configurable workers, job queue, results channel, panic recovery, graceful shutdown, and stats tracking |
+| [pipeline.go](assets/pipeline.go) | Type-safe pipeline framework: Generate, Map, Filter, FanOut/FanIn, Batch, Tee, OrDone, Take — all with context cancellation and error propagation |
+| [graceful-server.go](assets/graceful-server.go) | HTTP server with signal handling, connection draining, health/ready/metrics endpoints, request timeout middleware, panic recovery, structured logging |
+| [rate-limiter.go](assets/rate-limiter.go) | Per-key token bucket rate limiter with burst support, automatic stale entry cleanup, Wait/Allow/AllowN methods, and HTTP middleware |

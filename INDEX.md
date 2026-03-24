@@ -194,6 +194,6 @@
 | databases | prisma-orm | Prisma ORM schema modeling, Client CRUD, migrations, edge deployment, and testing patterns | tested |
 | devops | aws-cdk | AWS CDK infrastructure as code with constructs, pipelines, testing, and deployment patterns | tested |
 | frontend | rxjs-patterns | RxJS reactive programming operators, patterns, testing, and Angular integration | tested |
-| frontend | storybook-patterns | Storybook 8.x component development with CSF3, addons, interaction testing, and visual testing | created |
-| devops | cloudflare-workers | Cloudflare Workers edge computing with KV, D1, R2, Durable Objects, Queues, and Hono integration | created |
-| languages | go-concurrency | Go concurrency patterns with goroutines, channels, select, sync primitives, and error handling | created |
+| frontend | storybook-patterns | Storybook 8.x component development with CSF3, addons, interaction testing, and visual testing | enriched |
+| devops | cloudflare-workers | Cloudflare Workers edge computing with KV, D1, R2, Durable Objects, Queues, and Hono integration | enriched |
+| languages | go-concurrency | Go concurrency patterns with goroutines, channels, select, sync primitives, and error handling | enriched |
