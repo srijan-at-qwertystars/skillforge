@@ -1,446 +1,498 @@
 ---
 name: redis-patterns
-description:
-  positive: "Use when user implements Redis caching, asks about Redis data structures (strings, hashes, sets, sorted sets, streams, HyperLogLog), pub/sub, Lua scripting, distributed locks, rate limiting, or Redis cluster/sentinel."
-  negative: "Do NOT use for Memcached, general database design, PostgreSQL/MySQL, or application-level caching frameworks (unless Redis-backed)."
+description: |
+  USE when writing code that uses Redis (the original Redis Ltd / Redis Community Edition, NOT Valkey fork), configuring Redis servers, designing caching layers, implementing pub/sub or streams, building rate limiters, distributed locks, session stores, leaderboards, or any Redis data structure usage. TRIGGER on imports of ioredis, redis, redis-py, go-redis, Jedis, Lettuce, or redis-cli commands. TRIGGER on mentions of Redis Cluster, Sentinel, RDB, AOF, ZADD, XADD, Lua scripting with EVAL, or Redis Stack modules (RedisJSON, RediSearch, RedisTimeSeries). DO NOT trigger for Valkey-specific forks, Memcached, DynamoDB, or general database design unrelated to Redis.
 ---
 
-# Redis Data Structure Patterns
+# Redis Patterns — Production Reference
 
-## Data Structure Selection Guide
+## Architecture Fundamentals
 
-Pick the narrowest type that fits the access pattern:
+Redis is single-threaded for command execution (event loop). All commands are atomic. Since Redis 6, I/O threading handles network reads/writes on multiple threads, but command execution remains single-threaded. Redis 7.x continues this model.
 
-| Use Case | Type | Why |
-|---|---|---|
-| Simple value, counter, flag | String | `SET`, `INCR`, `DECR` — O(1) |
-| Object with fields (user profile) | Hash | Partial read/write with `HGET`/`HSET` — less overhead than JSON strings |
-| Queue, stack, recent items | List | `LPUSH`/`RPOP` for FIFO; `LRANGE` for bounded lists |
-| Unique membership, tags | Set | `SADD`, `SISMEMBER`, `SINTER` for intersections |
-| Leaderboard, ranked feed, priority queue | Sorted Set | `ZADD`, `ZRANGEBYSCORE`, `ZRANK` — O(log N) |
-| Unique visitor count (approx) | HyperLogLog | `PFADD`/`PFCOUNT` — 12 KB per key regardless of cardinality |
-| Binary state tracking (daily active) | Bitmap | `SETBIT`/`BITCOUNT` — 1 bit per user |
-| Event log, message queue | Stream | `XADD`/`XREADGROUP` — persistent, replayable |
-| Geospatial queries | Geo | `GEOADD`/`GEOSEARCH` — backed by sorted set |
+- **In-memory**: All data lives in RAM. Persistence is async to disk.
+- **Single-threaded execution**: No lock contention. One command completes before the next starts.
+- **Persistence**: RDB snapshots, AOF log, or hybrid (both). See Persistence section.
+- **Replication**: Async primary→replica. Replicas are read-only by default.
+- **Eviction**: When `maxmemory` is hit, eviction policy decides what to remove.
 
-Rules:
-- Store objects as Hashes, not serialized JSON Strings, when you need partial field access.
-- Use Sorted Sets over Lists when you need ranked access or score-based filtering.
-- Use HyperLogLog when exact counts are unnecessary and memory matters.
+## Data Structures and Core Commands
 
-## Key Naming Conventions
+### Strings
+Binary-safe. Max 512MB. Use for counters, flags, serialized objects, cached responses.
 
-Use colon-delimited, lowercase, hierarchical names:
-
-```
-{service}:{entity}:{id}:{attribute}
+```redis
+SET user:1001:name "Alice" EX 3600    -- set with 1h expiry
+GET user:1001:name                     -- "Alice"
+MSET k1 "v1" k2 "v2" k3 "v3"         -- atomic multi-set
+MGET k1 k2 k3                         -- ["v1", "v2", "v3"]
+INCR page:views:home                   -- atomically increment; returns new value
+INCRBY cart:total 2500                 -- increment by amount
+SETNX lock:order:42 "owner-uuid"       -- set only if not exists; returns 1 or 0
+SET lock:order:42 "uuid" NX EX 30      -- combined NX + expiry for locks
 ```
 
-Examples:
-```
-cache:api:user:1001           # cached user object
-session:abc123                # session data
-rate:ip:10.0.0.1              # rate limit counter
-lock:order:5678               # distributed lock
-stream:events:payments        # event stream
+### Lists
+Doubly linked list. O(1) push/pop at ends. Use for queues, recent-items, feeds.
+
+```redis
+LPUSH queue:emails "msg1" "msg2"       -- push left; returns new length
+RPOP queue:emails                      -- pop right; "msg1" (FIFO)
+BRPOP queue:emails 5                   -- blocking pop, 5s timeout
+LRANGE recent:posts 0 9               -- get first 10 items
+LTRIM recent:posts 0 99               -- keep only first 100
+LLEN queue:emails                      -- length of list
 ```
 
-Rules:
-- Keep keys under 40 characters when practical.
-- Never use spaces or mixed delimiters.
-- Prefix by purpose (`cache:`, `session:`, `lock:`, `temp:`, `rate:`).
-- Use hash tags for cluster slot co-location: `{user:1001}:cart`, `{user:1001}:prefs`.
+### Sets
+Unordered, unique members. Use for tags, unique visitors, membership checks.
+
+```redis
+SADD tags:article:55 "redis" "cache" "db"
+SMEMBERS tags:article:55               -- {"redis", "cache", "db"}
+SISMEMBER tags:article:55 "redis"      -- 1 (true)
+SINTER tags:article:55 tags:article:72 -- intersection
+SCARD tags:article:55                  -- 3 (cardinality)
+SRANDMEMBER tags:article:55 2          -- 2 random members
+```
+
+### Sorted Sets
+Ordered by score. Use for leaderboards, priority queues, time-indexed data.
+
+```redis
+ZADD leaderboard 1500 "alice" 1200 "bob" 1800 "carol"
+ZRANGE leaderboard 0 -1 WITHSCORES    -- all, ascending by score
+ZREVRANGE leaderboard 0 2 WITHSCORES  -- top 3, descending
+ZRANK leaderboard "alice"              -- 0-based rank (ascending)
+ZINCRBY leaderboard 100 "bob"          -- increment score; returns new score
+ZRANGEBYSCORE leaderboard 1000 2000    -- members with score in range
+ZREMRANGEBYRANK leaderboard 0 -4       -- keep only top 3
+```
+
+### Hashes
+Field-value pairs under one key. Use for objects, user profiles, configs.
+
+```redis
+HSET user:1001 name "Alice" email "a@b.com" age 30
+HGET user:1001 name                    -- "Alice"
+HMGET user:1001 name email             -- ["Alice", "a@b.com"]
+HGETALL user:1001                      -- {name: "Alice", email: "a@b.com", age: "30"}
+HINCRBY user:1001 age 1               -- 31
+HDEL user:1001 email                   -- remove field
+HEXPIRE user:1001 3600 FIELDS 1 email  -- Redis 7.4+: per-field expiry
+```
+
+### Streams
+Append-only log with consumer groups. Use for event sourcing, message queues, activity feeds.
+
+```redis
+XADD events * user_id 1001 action "login" ip "10.0.0.1"
+-- returns "1234567890123-0" (auto-generated ID)
+XLEN events                            -- number of entries
+XRANGE events - + COUNT 10            -- first 10 entries
+XREAD COUNT 5 BLOCK 2000 STREAMS events $  -- read new entries, block 2s
+```
+
+### HyperLogLog
+Probabilistic cardinality estimation. ~0.81% error. 12KB per key max.
+
+```redis
+PFADD unique:visitors:2024-01 "user1" "user2" "user3"
+PFCOUNT unique:visitors:2024-01        -- ~3
+PFMERGE unique:visitors:q1 unique:visitors:2024-01 unique:visitors:2024-02
+```
+
+### Bitmaps
+Bit-level operations on strings. Use for feature flags, bloom-filter-like checks, daily active users.
+
+```redis
+SETBIT active:2024-01-15 1001 1        -- mark user 1001 active
+GETBIT active:2024-01-15 1001          -- 1
+BITCOUNT active:2024-01-15             -- count of set bits
+BITOP AND active:both day1 day2        -- users active both days
+```
+
+### Geospatial
+Longitude/latitude indexing built on sorted sets.
+
+```redis
+GEOADD stores -73.935242 40.730610 "nyc" -118.243685 34.052234 "la"
+GEODIST stores "nyc" "la" km           -- distance in km
+GEOSEARCH stores FROMLONLAT -73.9 40.7 BYRADIUS 50 km ASC COUNT 5
+```
+
+## Key Patterns
+
+### Naming Convention
+Use colon-separated namespaces: `{entity}:{id}:{field}`. Examples:
+- `user:1001:profile`
+- `session:abc123`
+- `cache:api:/users?page=2`
+- `rate:ip:10.0.0.1:minute`
+
+### Expiration and TTL
+```redis
+EXPIRE key 300                         -- expire in 5 min
+PEXPIRE key 1500                       -- expire in 1500ms
+TTL key                                -- seconds remaining (-1 = no expiry, -2 = gone)
+PERSIST key                            -- remove expiry
+EXPIREAT key 1735689600                -- expire at Unix timestamp
+```
+
+### Key Scanning
+Never use `KEYS *` in production — it blocks. Use `SCAN` instead:
+```redis
+SCAN 0 MATCH "user:*" COUNT 100       -- returns [cursor, [keys]]
+-- repeat with returned cursor until cursor is "0"
+HSCAN user:1001 0 MATCH "addr*" COUNT 10
+SSCAN myset 0 MATCH "prefix*" COUNT 50
+```
+
+## Pub/Sub
+
+Fire-and-forget messaging. No persistence, no replay. Use Streams if durability needed.
+
+```redis
+SUBSCRIBE chat:room:42                 -- blocks, receives messages
+PUBLISH chat:room:42 "hello world"     -- returns number of subscribers who received
+PSUBSCRIBE chat:room:*                 -- pattern subscribe
+UNSUBSCRIBE chat:room:42
+```
+
+Pub/Sub clients cannot run other commands while subscribed. Use a dedicated connection.
+
+## Streams — Consumer Groups
+
+Durable, replayable message processing with consumer groups:
+
+```redis
+-- Create consumer group starting from beginning
+XGROUP CREATE events mygroup 0 MKSTREAM
+
+-- Consumer reads from group (blocks 5s)
+XREADGROUP GROUP mygroup consumer1 COUNT 10 BLOCK 5000 STREAMS events >
+
+-- Acknowledge processed messages
+XACK events mygroup "1234567890123-0" "1234567890124-0"
+
+-- Check pending (unacknowledged) entries
+XPENDING events mygroup - + 10
+
+-- Claim stale messages from dead consumers (idle > 60s)
+XCLAIM events mygroup consumer2 60000 "1234567890123-0"
+
+-- Auto-claim (Redis 6.2+): claim + return in one step
+XAUTOCLAIM events mygroup consumer2 60000 0-0 COUNT 10
+
+-- Trim stream to approximate max length
+XTRIM events MAXLEN ~ 10000
+```
+
+Pattern: Use `>` to read only new messages. Use specific IDs to re-read pending messages.
+
+## Transactions and Scripting
+
+### MULTI/EXEC
+Batch commands atomically. No rollback — all execute or none (on EXEC failure).
+
+```redis
+MULTI
+SET user:1001:balance 500
+INCR user:1001:tx_count
+EXEC  -- returns [OK, 5]
+```
+
+### WATCH (Optimistic Locking)
+```redis
+WATCH user:1001:balance
+val = GET user:1001:balance
+MULTI
+SET user:1001:balance (val - 100)
+EXEC  -- returns nil if key changed between WATCH and EXEC
+```
+
+### Lua Scripting
+Atomic execution, access to multiple keys, conditional logic.
+
+```redis
+-- Atomic compare-and-delete (for lock release)
+EVAL "if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end" 1 lock:order:42 "owner-uuid"
+
+-- Cache with EVALSHA for performance: first load script
+SCRIPT LOAD "return redis.call('get',KEYS[1])"  -- returns SHA
+EVALSHA <sha> 1 mykey                            -- execute by SHA
+```
+
+Use `redis.call()` (propagates errors) vs `redis.pcall()` (catches errors). All Lua scripts are atomic — no other command runs while a script executes.
+
+## Pipelining and Batching
+
+Pipeline sends multiple commands without waiting for each response. Reduces round-trips.
+
+```python
+# Python (redis-py)
+pipe = r.pipeline(transaction=False)
+for i in range(1000):
+    pipe.set(f"key:{i}", f"value:{i}")
+pipe.execute()  # one round-trip for 1000 commands
+```
+
+```javascript
+// Node.js (ioredis)
+const pipeline = redis.pipeline();
+for (let i = 0; i < 1000; i++) {
+  pipeline.set(`key:${i}`, `value:${i}`);
+}
+await pipeline.exec();
+```
+
+Pipeline is NOT atomic unless wrapped in MULTI/EXEC. Use `pipeline(transaction=True)` in redis-py for atomic pipelines.
+
+## Client Libraries
+
+| Language   | Library         | Notes                                    |
+|------------|-----------------|------------------------------------------|
+| Node.js    | ioredis         | Cluster-aware, Lua scripting, pipelining |
+| Node.js    | redis (node-redis) | Official, redesigned in v4+           |
+| Python     | redis-py        | Async support via `redis.asyncio`        |
+| Go         | go-redis/v9     | Context-aware, pipelining, Cluster       |
+| Java       | Jedis           | Simple, thread-safe with pooling         |
+| Java       | Lettuce         | Async/reactive, Netty-based, Cluster     |
+| Rust       | fred / redis-rs | Cluster, pipelining                      |
+
+Always configure: connection pooling, reconnect with backoff, read/write timeouts, and Cluster mode if applicable.
 
 ## Caching Patterns
 
 ### Cache-Aside (Lazy Loading)
-
-Most common pattern. Application manages cache explicitly.
-
-```python
-def get_user(user_id):
-    data = redis.get(f"cache:user:{user_id}")
-    if data:
-        return deserialize(data)
-    data = db.query("SELECT * FROM users WHERE id = %s", user_id)
-    redis.setex(f"cache:user:{user_id}", 3600, serialize(data))
-    return data
 ```
+1. Check cache: GET cache:user:1001
+2. Cache miss → query database
+3. Write to cache: SET cache:user:1001 <data> EX 300
+4. Return data
+```
+Pros: only caches what is requested. Cons: first request always misses; stale data risk.
 
 ### Write-Through
-
-Write to cache and database together. Guarantees cache freshness at cost of write latency.
-
-```python
-def update_user(user_id, fields):
-    db.update("users", user_id, fields)
-    redis.hset(f"cache:user:{user_id}", mapping=fields)
-    redis.expire(f"cache:user:{user_id}", 3600)
-```
+Write to cache AND database on every write. Guarantees consistency at cost of write latency.
 
 ### Write-Behind (Write-Back)
+Write to cache immediately, async flush to database. Higher throughput, risk of data loss on crash.
 
-Write to Redis first; flush to database asynchronously via a background worker. Use Streams as a durable buffer:
+### Cache Invalidation
+- **TTL-based**: Set expiry on all cache keys. Simple, eventual consistency.
+- **Event-driven**: Publish invalidation events on write. Use Pub/Sub or Streams.
+- **Tag-based**: Track cache keys by tag set, invalidate all keys in a tag.
 
-```
-XADD stream:db-writes * table users id 1001 op update payload '{"name":"Jo"}'
-```
+Anti-pattern: Never cache without TTL. Unbounded caches cause OOM.
 
-A consumer group processes the stream and writes to the database.
+## Rate Limiting
 
-### Cache Stampede Prevention
-
-Prevent thundering herd on cache miss:
-
-1. **Singleflight with lock**: Only one caller regenerates; others wait.
-```
-SET cache:lock:user:1001 owner NX EX 5
-# If acquired, regenerate and populate cache
-# If not, poll or use stale value
-```
-
-2. **Jittered TTL**: Randomize expiry to prevent synchronized invalidation.
-```python
-ttl = base_ttl + random.randint(0, jitter_seconds)
-redis.setex(key, ttl, value)
+### Fixed Window
+```redis
+-- Allow 100 requests per minute per IP
+INCR rate:ip:10.0.0.1:minute:202401151430
+EXPIRE rate:ip:10.0.0.1:minute:202401151430 60
+-- check: if value > 100, reject
 ```
 
-3. **Soft TTL / Background Refresh**: Store a logical expiry inside the value. Serve stale data while a background task refreshes.
-
-## TTL Strategies and Eviction Policies
-
-Set TTL on every cache key. Never rely on eviction alone.
-
-```
-SETEX cache:product:99 3600 '{"name":"Widget"}'
-EXPIRE session:abc123 1800
-```
-
-### Eviction Policies (`maxmemory-policy`)
-
-| Policy | Behavior | Use When |
-|---|---|---|
-| `allkeys-lru` | Evict least recently used across all keys | General cache workload |
-| `allkeys-lfu` | Evict least frequently used | Popularity-skewed access |
-| `volatile-lru` | LRU among keys with TTL only | Mix of cache + persistent keys |
-| `volatile-ttl` | Evict keys nearest to expiry | Short-lived data priority |
-| `noeviction` | Reject writes when full | Critical persistent data only |
-
-Set `maxmemory` to ~75% of available RAM. Reserve headroom for replication buffers, AOF rewrites, and fragmentation.
-
-## Distributed Locking
-
-### SET NX EX Pattern (Single Instance)
-
-```
-SET lock:order:5678 <unique-token> NX EX 10
+### Sliding Window (Sorted Set)
+```redis
+-- Add request timestamp as score and member
+ZADD rate:user:1001 1705334400.123 "req-uuid-1"
+-- Remove entries older than window (60s ago)
+ZREMRANGEBYSCORE rate:user:1001 0 1705334340.123
+-- Count remaining
+ZCARD rate:user:1001  -- if > 100, reject
+EXPIRE rate:user:1001 60
 ```
 
-Release with Lua to ensure only the owner deletes:
-
-```lua
--- KEYS[1] = lock key, ARGV[1] = owner token
-if redis.call("GET", KEYS[1]) == ARGV[1] then
-    return redis.call("DEL", KEYS[1])
-end
-return 0
+### Token Bucket (Lua)
+```redis
+EVAL [[
+  local tokens = tonumber(redis.call('get', KEYS[1]) or ARGV[1])
+  local last = tonumber(redis.call('get', KEYS[2]) or ARGV[3])
+  local now = tonumber(ARGV[3])
+  local rate = tonumber(ARGV[2])
+  local max = tonumber(ARGV[1])
+  tokens = math.min(max, tokens + (now - last) * rate)
+  if tokens < 1 then return 0 end
+  tokens = tokens - 1
+  redis.call('set', KEYS[1], tokens)
+  redis.call('set', KEYS[2], now)
+  return 1
+]] 2 bucket:tokens:user1 bucket:ts:user1 10 2 <current_timestamp>
 ```
+
+## Distributed Locks
+
+### Simple Lock (SET NX EX)
+```redis
+-- Acquire: NX = only if not exists, EX = auto-expire
+SET lock:resource:42 "uuid-owner-token" NX EX 30
+-- returns OK if acquired, nil if held by someone else
+
+-- Release: Lua script for atomic check-and-delete
+EVAL "if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end" 1 lock:resource:42 "uuid-owner-token"
+```
+
+Always: unique token per client, always set TTL, release with Lua (not plain DEL).
 
 ### Redlock (Multi-Instance)
+For stronger guarantees across failures, use Redlock with 5 independent Redis masters:
+1. Generate unique token. Record start time.
+2. Try `SET lock NX EX` on all 5 instances sequentially with short timeout.
+3. Lock acquired if majority (3+) succeed AND total time < TTL.
+4. On failure or expiry, release lock on ALL instances.
 
-For stronger guarantees across N independent Redis nodes (typically 5):
+Caveats: Redlock does NOT provide strict mutual exclusion under clock drift or long GC pauses. Use fencing tokens for critical paths. For strict coordination, consider ZooKeeper or etcd.
 
-1. Record start time.
-2. Attempt `SET key token NX PX ttl` on all N nodes.
-3. Lock acquired if majority (N/2+1) succeed within a validity window.
-4. Effective TTL = initial TTL − elapsed acquisition time.
-5. On failure or expiry, release on all nodes.
-
-### Fencing Tokens
-
-Attach a monotonically increasing token to each lock grant. Downstream systems reject operations with stale tokens. Critical when lock holders may outlive their TTL due to GC pauses or network delays.
-
-### Lock Best Practices
-
-- Use exponential backoff with jitter on retry.
-- Set lock TTL longer than expected critical section duration.
-- Always release locks in `finally` blocks.
-- Never use `SETNX` + separate `EXPIRE` — use `SET key val NX EX` atomically.
-
-## Rate Limiting Patterns
-
-### Fixed Window Counter
-
-```
-INCR rate:ip:10.0.0.1:202507141530
-EXPIRE rate:ip:10.0.0.1:202507141530 60
-```
-
-Simple but allows burst at window boundaries.
-
-### Sliding Window Log (Sorted Set)
-
-```lua
--- Lua script: atomic sliding window rate limiter
-local key = KEYS[1]
-local now = tonumber(ARGV[1])
-local window = tonumber(ARGV[2])
-local limit = tonumber(ARGV[3])
-
-redis.call("ZREMRANGEBYSCORE", key, 0, now - window)
-local count = redis.call("ZCARD", key)
-if count < limit then
-    redis.call("ZADD", key, now, now .. ":" .. math.random())
-    redis.call("EXPIRE", key, window)
-    return 1
-end
-return 0
-```
-
-### Token Bucket
-
-Store token count and last refill timestamp in a Hash. Refill tokens on each request up to the bucket capacity. Implement atomically with Lua.
-
-```lua
-local key = KEYS[1]
-local rate = tonumber(ARGV[1])       -- tokens per second
-local capacity = tonumber(ARGV[2])
-local now = tonumber(ARGV[3])
-
-local tokens = tonumber(redis.call("HGET", key, "tokens") or capacity)
-local last = tonumber(redis.call("HGET", key, "ts") or now)
-
-local elapsed = now - last
-tokens = math.min(capacity, tokens + elapsed * rate)
-
-if tokens >= 1 then
-    tokens = tokens - 1
-    redis.call("HSET", key, "tokens", tokens, "ts", now)
-    redis.call("EXPIRE", key, capacity / rate + 1)
-    return 1
-end
-redis.call("HSET", key, "tokens", tokens, "ts", now)
-return 0
-```
-
-## Pub/Sub vs Streams
-
-| Aspect | Pub/Sub | Streams |
-|---|---|---|
-| Persistence | None — fire-and-forget | Stored until trimmed or deleted |
-| Missed messages | Lost if subscriber offline | Replayable from any offset |
-| Consumer groups | No | Yes — `XREADGROUP`, `XACK` |
-| Delivery guarantee | At-most-once | At-least-once (with ACK) |
-| Use case | Cache invalidation, real-time notifications | Event sourcing, task queues, audit logs |
-
-Use Pub/Sub when:
-- Subscribers are always connected.
-- Message loss is acceptable (cache invalidation signals).
-
-Use Streams when:
-- Messages must survive consumer downtime.
-- You need load-balanced processing across workers.
-- You require delivery acknowledgment and replay.
-
-## Redis Streams for Event Sourcing
-
-### Producing Events
-
-```
-XADD stream:orders * event_type order_created order_id 5678 user_id 1001 total 49.99
-```
-
-### Consumer Groups
-
-```
-XGROUP CREATE stream:orders order-processors 0 MKSTREAM
-XREADGROUP GROUP order-processors worker-1 COUNT 10 BLOCK 2000 STREAMS stream:orders >
-XACK stream:orders order-processors <message-id>
-```
-
-### Handling Failed Messages
-
-Claim stale messages from failed consumers:
-
-```
-XAUTOCLAIM stream:orders order-processors worker-2 60000 0
-```
-
-Inspect pending entries:
-
-```
-XPENDING stream:orders order-processors - + 10
-```
-
-Move poison messages to a dead-letter stream after N retries.
-
-### Stream Trimming
-
-Cap streams to prevent unbounded growth:
-
-```
-XADD stream:orders MAXLEN ~ 10000 * event_type order_created ...
-XTRIM stream:orders MAXLEN ~ 10000
-```
-
-Use `~` for approximate trimming (more efficient).
-
-## Lua Scripting for Atomic Operations
-
-Use Lua when you need read-then-write atomicity that `MULTI/EXEC` cannot provide (MULTI cannot branch on intermediate results).
-
-### Compare-and-Swap
-
-```lua
--- KEYS[1] = key, ARGV[1] = expected, ARGV[2] = new_value
-local current = redis.call("GET", KEYS[1])
-if current == ARGV[1] then
-    redis.call("SET", KEYS[1], ARGV[2])
-    return 1
-end
-return 0
-```
-
-### Rules for Lua Scripts
-
-- All keys accessed must be declared in `KEYS[]`. Required for cluster compatibility.
-- Keep scripts short. Redis blocks all commands during execution.
-- Use `EVALSHA` with `SCRIPT LOAD` to avoid retransmitting script text.
-- Use `redis.log()` for debugging; remove in production.
-- In cluster mode, all `KEYS[]` must hash to the same slot. Use hash tags: `{user:1001}:balance`.
-
-## Pipelining and Transactions
-
-### Pipelining
-
-Batch commands to reduce round trips. No atomicity guarantee — commands execute independently.
+## Session Storage
 
 ```python
-pipe = redis.pipeline(transaction=False)
-for uid in user_ids:
-    pipe.get(f"cache:user:{uid}")
-results = pipe.execute()
+# Store session as hash with TTL
+r.hset("session:abc123", mapping={
+    "user_id": "1001",
+    "role": "admin",
+    "csrf_token": "xyz789"
+})
+r.expire("session:abc123", 1800)  # 30 min
+
+# Retrieve
+session = r.hgetall("session:abc123")
+
+# Extend on activity (sliding expiration)
+r.expire("session:abc123", 1800)
 ```
 
-### MULTI/EXEC Transactions
+Use hash per session. Avoid storing large blobs — serialize selectively. Set TTL always.
 
-Atomic execution of a command block. No conditional logic — all commands execute or none do.
+## Redis Cluster
 
-```
-MULTI
-DECRBY account:1001:balance 100
-INCRBY account:1002:balance 100
-EXEC
-```
+16,384 hash slots distributed across master nodes. Key slot = `CRC16(key) % 16384`.
 
-Use `WATCH` for optimistic locking:
+- **Hash tags**: Force keys to same slot with `{tag}`. `user:{1001}:profile` and `user:{1001}:settings` share slot.
+- **MOVED**: Permanent redirect — update client slot map. `(error) MOVED 3999 10.0.0.2:6379`
+- **ASK**: Temporary redirect during migration — send `ASKING` then retry. Do NOT update slot map.
+- **Multi-key commands**: Only work if all keys map to same slot. Use hash tags.
+- **Resharding**: `redis-cli --cluster reshard <host>:<port>` moves slots between nodes live.
 
-```
-WATCH account:1001:balance
-val = GET account:1001:balance
-MULTI
-SET account:1001:balance <new_val>
-EXEC
-# Returns nil if key changed between WATCH and EXEC
+```redis
+CLUSTER INFO          -- cluster state, slots assigned, known nodes
+CLUSTER NODES         -- all nodes with slot ranges
+CLUSTER KEYSLOT mykey -- which slot a key maps to
 ```
 
-Prefer Lua scripts over `WATCH`/`MULTI`/`EXEC` when you need conditional branching.
+## Sentinel (High Availability)
+
+Sentinel monitors Redis primaries, handles automatic failover, provides service discovery.
+
+```
+sentinel monitor mymaster 10.0.0.1 6379 2   -- quorum of 2
+sentinel down-after-milliseconds mymaster 5000
+sentinel failover-timeout mymaster 60000
+```
+
+Clients connect to Sentinel to discover current primary. Use Sentinel-aware client libraries. Sentinel does NOT shard — use Cluster for horizontal scaling.
+
+## Persistence
+
+### RDB (Snapshots)
+Point-in-time snapshots via `BGSAVE`. Fast restarts, but data loss between snapshots.
+```
+save 900 1      -- snapshot if 1+ key changed in 900s
+save 300 10     -- snapshot if 10+ keys changed in 300s
+```
+
+### AOF (Append-Only File)
+Logs every write. Three fsync policies:
+- `always`: fsync every write. Safest, slowest.
+- `everysec`: fsync every second. Good balance (default recommended).
+- `no`: OS decides. Fastest, riskiest.
+
+```
+appendonly yes
+appendfsync everysec
+```
+
+### Hybrid (Redis 4.0+)
+RDB snapshot at start of AOF file, then AOF delta. Fast restarts + minimal data loss.
+```
+aof-use-rdb-preamble yes   -- enabled by default in Redis 7
+```
 
 ## Memory Optimization
 
-### Encoding Awareness
-
-Redis uses compact encodings for small structures:
-- Hashes with ≤ `hash-max-ziplist-entries` (default 128) fields use ziplist encoding.
-- Sets with ≤ `set-max-intset-entries` integer members use intset encoding.
-- Sorted Sets with ≤ `zset-max-ziplist-entries` use ziplist.
-
-Stay under these thresholds for memory savings. Check encoding:
-
+### Maxmemory Policies
 ```
-OBJECT ENCODING mykey
-DEBUG OBJECT mykey
+maxmemory 4gb
+maxmemory-policy allkeys-lru   -- evict least recently used across all keys
 ```
 
-### Memory Commands
+| Policy             | Behavior                                        |
+|--------------------|-------------------------------------------------|
+| `noeviction`       | Return error on writes when full                |
+| `allkeys-lru`      | Evict LRU keys (most common for caches)         |
+| `allkeys-lfu`      | Evict least frequently used (Redis 4.0+)        |
+| `volatile-lru`     | Evict LRU among keys with TTL set               |
+| `volatile-lfu`     | Evict LFU among keys with TTL set               |
+| `volatile-ttl`     | Evict keys with shortest TTL                    |
+| `allkeys-random`   | Evict random keys                               |
+| `volatile-random`  | Evict random keys with TTL set                  |
 
-```
-MEMORY USAGE cache:user:1001
-MEMORY DOCTOR
-INFO memory
-```
-
-### Optimization Checklist
-
-- Set TTL on all cache keys.
-- Use Hashes for objects instead of serialized Strings.
-- Compress large values (>1 KB) client-side before storing.
-- Avoid storing values >100 KB — split into chunks or use external storage.
-- Monitor fragmentation ratio: `INFO memory` → `mem_fragmentation_ratio`. Restart or use `MEMORY PURGE` if >1.5.
-- Use `UNLINK` instead of `DEL` for large keys (non-blocking deletion).
-
-## Cluster and Sentinel Patterns
-
-### Redis Cluster
-
-- 16,384 hash slots distributed across master nodes.
-- Automatic sharding and failover.
-- Multi-key operations require all keys in the same hash slot. Use hash tags: `{order:123}:items`, `{order:123}:total`.
-- `MGET`/`MSET` work only for co-located keys.
-
-Cluster deployment rules:
-- Minimum 3 masters with 1 replica each (6 nodes).
-- Monitor slot coverage. Missing slots mean unavailable key ranges.
-- Handle `MOVED` and `ASK` redirections in client libraries.
-
-### Redis Sentinel
-
-- Monitors master/replica health and performs automatic failover.
-- Use when you need HA without sharding.
-- Minimum 3 Sentinel instances for quorum.
-- Clients connect to Sentinel first, which returns the current master address.
-
-Choose Sentinel for: single-shard HA.
-Choose Cluster for: HA + horizontal scaling.
-
-## Common Anti-Patterns
-
-### Hot Keys
-
-A single key receiving disproportionate traffic saturates one node/slot.
-
-Mitigations:
-- Shard the key: `counter:{shard_id}` → sum across shards on read.
-- Cache hot reads client-side with short local TTL.
-- Use read replicas for read-heavy hot keys.
-
-### Large Values
-
-Values >10 KB cause latency spikes and block other operations.
-
-Mitigations:
-- Compress before storing.
-- Split into multiple keys or Hash fields.
-- Move blobs to object storage; store only references in Redis.
-
-### Missing TTLs
-
-Keys without TTLs accumulate indefinitely, leading to OOM.
-
-Fix: Set TTL on every non-permanent key. Use `volatile-lru` or `volatile-ttl` eviction as a safety net. Audit with:
-
-```
-redis-cli --bigkeys
-redis-cli --memkeys
+### Memory Analysis
+```redis
+MEMORY USAGE mykey                     -- bytes used by key
+INFO memory                            -- overall memory stats
+MEMORY DOCTOR                          -- diagnostic advice
+OBJECT ENCODING mykey                  -- internal encoding (listpack, skiplist...)
 ```
 
-### Other Anti-Patterns
+Use `redis-cli --bigkeys` and `redis-cli --memkeys` to find large keys.
 
-- **`KEYS *` in production**: Blocks the server. Use `SCAN` with `COUNT` instead.
-- **Unbounded collections**: Always cap Lists (`LTRIM`), Streams (`MAXLEN`), Sorted Sets (`ZREMRANGEBYRANK`).
-- **Separate `SETNX` + `EXPIRE`**: Not atomic. Use `SET key val NX EX seconds`.
-- **Ignoring cluster slot alignment**: Multi-key Lua scripts fail across slots. Use hash tags.
-- **Storing sessions without TTL**: Sessions pile up. Always `EXPIRE`.
-- **Using Redis as primary database without persistence**: Enable AOF (`appendonly yes`) or RDB snapshots if data must survive restarts.
+## Redis Stack Modules
 
-<!-- tested: pass -->
+Redis Stack bundles modules on top of core Redis (Redis 7+):
+
+### RedisJSON
+```redis
+JSON.SET user:1001 $ '{"name":"Alice","age":30,"tags":["admin"]}'
+JSON.GET user:1001 $.name              -- "\"Alice\""
+JSON.NUMINCRBY user:1001 $.age 1       -- 31
+JSON.ARRAPPEND user:1001 $.tags '"editor"'
+```
+
+### RediSearch
+```redis
+FT.CREATE idx:users ON JSON PREFIX 1 user: SCHEMA $.name AS name TEXT $.age AS age NUMERIC
+FT.SEARCH idx:users "@name:Alice @age:[25 35]"
+```
+
+### RedisTimeSeries
+```redis
+TS.CREATE temp:sensor:1 RETENTION 86400000 LABELS location "nyc"
+TS.ADD temp:sensor:1 * 72.5
+TS.RANGE temp:sensor:1 - + AGGREGATION avg 3600000  -- hourly averages
+```
+
+### Probabilistic (Bloom, Cuckoo, Count-Min, Top-K)
+```redis
+BF.ADD filter:emails "user@example.com"
+BF.EXISTS filter:emails "user@example.com"    -- 1 (probably exists)
+BF.EXISTS filter:emails "other@example.com"   -- 0 (definitely not)
+```
+
+## Common Pitfalls
+
+1. **KEYS in production**: Blocks server. Use SCAN with cursor iteration.
+2. **Unbounded collections**: Always LTRIM lists, XTRIM streams, set TTLs.
+3. **Large keys (>10KB values, >1000 hash fields)**: Cause latency spikes. Break up.
+4. **Missing TTL on cache keys**: OOM inevitable. Always set expiry.
+5. **Single long Lua script**: Blocks all clients. Keep scripts short (<100ms).
+6. **Not using pipelines**: 1000 round-trips vs 1. Always batch independent commands.
+7. **Pub/Sub without Streams for durability**: Pub/Sub drops messages if subscriber is down.
+8. **Hot keys**: Single keys with extreme traffic bottleneck the thread. Shard with hash tags or replicate reads.
+9. **Forgetting UNWATCH**: After failed WATCH/MULTI, always UNWATCH or start new MULTI.
+10. **DEL on large keys**: Blocks server. Use UNLINK (async delete) for keys >1000 members.
+11. **No connection pooling**: Creating connections per request kills performance.
+12. **Ignoring SLOWLOG**: `SLOWLOG GET 10` — review slow commands regularly.
