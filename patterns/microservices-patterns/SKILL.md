@@ -404,3 +404,29 @@ Output: Apply Circuit Breaker on the recommendation call with 5s timeout, 50% fa
 
 ### Input: "How do I ensure exactly-once processing with Kafka consumers?"
 Output: Use Idempotent Consumer pattern. Assign each message a unique event ID. Store processed event IDs in a deduplication table within the same transaction as your business logic. On duplicate receipt, return the cached result. Combine with Transactional Outbox on the producer side: write events to an outbox table in the local DB transaction, then use CDC (Debezium) to publish to Kafka. This achieves effectively-once semantics end-to-end.
+
+## References
+
+Detailed research and pattern catalogs for deep dives:
+
+- **references/advanced-patterns.md** — Choreography vs orchestration deep dive, distributed saga compensation strategies, event-driven architecture with CDC, service mesh data plane vs control plane, API versioning strategies, distributed caching patterns, cell-based architecture, data mesh in microservices, platform engineering patterns.
+- **references/troubleshooting.md** — Common microservices pitfalls with symptoms/fix format: distributed monolith anti-pattern, chatty services, shared database coupling, improper service boundaries, cascade failures, data consistency issues, deployment coupling, testing in production safely, debugging distributed systems.
+- **references/pattern-catalog.md** — Complete 28-pattern catalog in Problem/Solution/Consequences format with complexity ratings (★–★★★★), decision matrix, pattern dependency map, and recommended adoption order.
+
+## Scripts
+
+Executable helpers for microservices development workflows:
+
+- **scripts/service-dependency-map.sh** — Scans a codebase for HTTP clients, gRPC, message broker usage, Docker Compose links, and K8s Service references. Outputs a text dependency report and Graphviz DOT graph.
+- **scripts/health-check-all.sh** — Checks health of all microservices via `/health/ready` endpoints. Supports config file, Kubernetes auto-discovery, Docker Compose auto-discovery, parallel checks, and colorized output.
+- **scripts/contract-test-setup.sh** — Sets up Pact consumer-driven contract testing for Node.js, Java, or Python. Generates consumer/provider test files, optionally provisions a Pact Broker via Docker, and creates a CI integration script.
+
+## Assets
+
+Templates, configurations, and reference implementations:
+
+- **assets/saga-orchestrator.ts** — Generic TypeScript saga orchestrator with type-safe step definitions, automatic reverse-order compensation on failure, persistent state tracking, idempotent retry logic, and example order fulfillment saga.
+- **assets/circuit-breaker.ts** — Circuit breaker implementation with sliding time window, configurable failure thresholds, CLOSED/OPEN/HALF_OPEN state machine, metrics collection, and fallback support.
+- **assets/api-gateway.yaml** — API Gateway configuration template with Kong declarative config (routing, rate limiting, JWT auth, CORS, correlation IDs) and commented Envoy proxy config (circuit breaking, health checks, retry policies).
+- **assets/outbox-pattern.sql** — PostgreSQL transactional outbox schema with polling query (FOR UPDATE SKIP LOCKED), dead letter table, idempotent consumer table, cleanup jobs, and monitoring queries.
+- **assets/docker-compose-microservices.yaml** — Multi-service local development setup with API Gateway (Kong), 4 application services, per-service PostgreSQL databases, Kafka (KRaft mode), Redis, OpenTelemetry Collector, Jaeger, Prometheus, Grafana, pgAdmin, and MailHog.

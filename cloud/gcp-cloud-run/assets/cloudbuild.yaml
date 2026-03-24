@@ -1,0 +1,79 @@
+# Cloud Build pipeline for Cloud Run deployment
+# Trigger: Connect to GitHub/Cloud Source Repos, or run manually:
+#   gcloud builds submit --config=cloudbuild.yaml --substitutions=_SERVICE=my-api,_REGION=us-central1
+#
+# Required substitutions:
+#   _SERVICE  — Cloud Run service name
+#   _REGION   — Deployment region
+#
+# Optional substitutions:
+#   _DEPLOY_MODE — "full" (default) or "canary"
+
+substitutions:
+  _SERVICE: my-api
+  _REGION: us-central1
+  _DEPLOY_MODE: full
+  _AR_REPO: docker-repo
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # Step 1: Build container image
+  - name: gcr.io/cloud-builders/docker
+    id: build
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:latest
+      - --cache-from
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:latest
+      - .
+
+  # Step 2: Push to Artifact Registry
+  - name: gcr.io/cloud-builders/docker
+    id: push
+    args:
+      - push
+      - --all-tags
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}
+
+  # Step 3: Deploy to Cloud Run
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "${_DEPLOY_MODE}" = "canary" ]; then
+          gcloud run deploy ${_SERVICE} \
+            --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA} \
+            --region=${_REGION} \
+            --tag=canary \
+            --no-traffic \
+            --quiet
+          echo "Canary deployed. Promote with: gcloud run services update-traffic ${_SERVICE} --to-latest --region=${_REGION}"
+        else
+          gcloud run deploy ${_SERVICE} \
+            --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA} \
+            --region=${_REGION} \
+            --quiet
+        fi
+
+  # Step 4: Verify deployment
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: verify
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        URL=$(gcloud run services describe ${_SERVICE} --region=${_REGION} --format="value(status.url)")
+        echo "Service URL: $URL"
+        gcloud run services describe ${_SERVICE} --region=${_REGION} \
+          --format="yaml(status.conditions,status.traffic)"
+
+images:
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:${SHORT_SHA}
+  - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_AR_REPO}/${_SERVICE}:latest

@@ -218,6 +218,6 @@
 | frontend | pwa-patterns | Progressive Web Apps — service workers, caching strategies, Workbox, push notifications, offline-first | tested |
 | testing | jest-testing | Jest testing — mocking, snapshots, async, React testing, coverage, custom matchers | tested |
 | cloud | azure-bicep | Azure Bicep IaC — modules, types, loops, deployment scopes, registry, testing | tested |
-| cloud | gcp-cloud-run | Google Cloud Run — serverless containers, services/jobs, autoscaling, VPC, Eventarc, multi-region | created |
-| patterns | microservices-patterns | Microservices patterns — saga, circuit breaker, API gateway, BFF, outbox, service mesh | created |
-| backend | ruby-on-rails | Ruby on Rails 7/8 — Active Record, Hotwire, Solid Queue/Cache, authentication, API mode | created |
+| cloud | gcp-cloud-run | Google Cloud Run — serverless containers, services/jobs, autoscaling, VPC, Eventarc, multi-region | enriched |
+| patterns | microservices-patterns | Microservices patterns — saga, circuit breaker, API gateway, BFF, outbox, service mesh | enriched |
+| backend | ruby-on-rails | Ruby on Rails 7/8 — Active Record, Hotwire, Solid Queue/Cache, authentication, API mode | enriched |

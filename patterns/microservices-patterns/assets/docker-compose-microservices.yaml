@@ -1,0 +1,312 @@
+# Multi-Service Local Development Setup
+#
+# A complete Docker Compose configuration for developing microservices locally.
+# Includes: API Gateway, core services, databases, message broker, and observability.
+#
+# Usage:
+#   docker compose up -d                    # Start all services
+#   docker compose up -d order-service      # Start specific service + dependencies
+#   docker compose logs -f order-service    # Follow logs
+#   docker compose down -v                  # Stop and clean up volumes
+#
+# Access points:
+#   API Gateway:    http://localhost:8080
+#   Kafka UI:       http://localhost:9080
+#   Jaeger UI:      http://localhost:16686
+#   Prometheus:     http://localhost:9090
+#   Grafana:        http://localhost:3000 (admin/admin)
+#   pgAdmin:        http://localhost:5050 (admin@local.dev/admin)
+
+version: "3.8"
+
+x-common-env: &common-env
+  NODE_ENV: development
+  LOG_LEVEL: debug
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  OTEL_SERVICE_NAME: ${COMPOSE_SERVICE_NAME:-unknown}
+
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 15s
+
+services:
+  # ==========================================================================
+  # API GATEWAY
+  # ==========================================================================
+  api-gateway:
+    image: kong:3.7-alpine
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PROXY_LISTEN: 0.0.0.0:8080
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001
+      KONG_LOG_LEVEL: info
+    ports:
+      - "8080:8080"   # Proxy
+      - "8001:8001"   # Admin API
+    volumes:
+      - ./gateway/kong.yml:/etc/kong/kong.yml:ro
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "kong", "health"]
+    depends_on:
+      order-service:
+        condition: service_healthy
+      payment-service:
+        condition: service_healthy
+
+  # ==========================================================================
+  # APPLICATION SERVICES
+  # ==========================================================================
+  order-service:
+    build:
+      context: ./services/order-service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      COMPOSE_SERVICE_NAME: order-service
+      PORT: 8081
+      DATABASE_URL: postgres://orders:orders_pass@order-db:5432/orders
+      KAFKA_BROKERS: kafka:29092
+    ports:
+      - "8081:8081"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health/ready"]
+    depends_on:
+      order-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: ./services/payment-service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      COMPOSE_SERVICE_NAME: payment-service
+      PORT: 8082
+      DATABASE_URL: postgres://payments:payments_pass@payment-db:5432/payments
+      KAFKA_BROKERS: kafka:29092
+    ports:
+      - "8082:8082"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health/ready"]
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  inventory-service:
+    build:
+      context: ./services/inventory-service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      COMPOSE_SERVICE_NAME: inventory-service
+      PORT: 8083
+      DATABASE_URL: postgres://inventory:inventory_pass@inventory-db:5432/inventory
+      KAFKA_BROKERS: kafka:29092
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8083:8083"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health/ready"]
+    depends_on:
+      inventory-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  notification-service:
+    build:
+      context: ./services/notification-service
+      dockerfile: Dockerfile
+    environment:
+      <<: *common-env
+      COMPOSE_SERVICE_NAME: notification-service
+      PORT: 8084
+      KAFKA_BROKERS: kafka:29092
+      SMTP_HOST: mailhog
+      SMTP_PORT: 1025
+    ports:
+      - "8084:8084"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ==========================================================================
+  # DATABASES (one per service)
+  # ==========================================================================
+  order-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+      - ./services/order-service/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U orders"]
+
+  payment-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: payments
+      POSTGRES_USER: payments
+      POSTGRES_PASSWORD: payments_pass
+    ports:
+      - "5433:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U payments"]
+
+  inventory-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: inventory
+      POSTGRES_USER: inventory
+      POSTGRES_PASSWORD: inventory_pass
+    ports:
+      - "5434:5432"
+    volumes:
+      - inventory-db-data:/var/lib/postgresql/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U inventory"]
+
+  # ==========================================================================
+  # MESSAGE BROKER
+  # ==========================================================================
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,EXTERNAL://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      CLUSTER_ID: "microservices-local-dev"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092"]
+      start_period: 30s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    ports:
+      - "9080:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # ==========================================================================
+  # CACHE
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "redis-cli", "ping"]
+    command: redis-server --appendonly yes
+
+  # ==========================================================================
+  # OBSERVABILITY
+  # ==========================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "14268:14268"   # Accept traces
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "wget --spider http://localhost:16687/ || exit 1"]
+
+  prometheus:
+    image: prom/prometheus:v2.50.0
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:10.3.1
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-clock-panel
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+
+  # ==========================================================================
+  # DEV TOOLS
+  # ==========================================================================
+  pgadmin:
+    image: dpage/pgadmin4:8
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - order-db
+      - payment-db
+      - inventory-db
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    ports:
+      - "1025:1025"    # SMTP
+      - "8025:8025"    # Web UI
+
+volumes:
+  order-db-data:
+  payment-db-data:
+  inventory-db-data:
+  kafka-data:
+  redis-data:
+  grafana-data:

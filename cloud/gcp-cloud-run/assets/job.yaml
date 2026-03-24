@@ -1,0 +1,70 @@
+# Cloud Run Job YAML Template
+# Deploy: gcloud run jobs replace job.yaml --region=REGION
+#
+# Replace all PLACEHOLDER values before deploying.
+
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: JOB_NAME                          # <-- your job name
+  labels:
+    team: TEAM_NAME
+    env: production
+  annotations:
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        # --- VPC networking (optional) ---
+        # run.googleapis.com/vpc-access-egress: all-traffic
+        # run.googleapis.com/network-interfaces: '[{"network":"VPC_NAME","subnetwork":"SUBNET_NAME"}]'
+
+        # --- Cloud SQL connection (optional) ---
+        # run.googleapis.com/cloudsql-instances: PROJECT_ID:REGION:INSTANCE_NAME
+
+    spec:
+      # --- Parallelism ---
+      taskCount: 10                       # Number of tasks to run
+      parallelism: 5                      # Max concurrent tasks
+
+      template:
+        spec:
+          maxRetries: 3                   # Retries per failed task
+          timeoutSeconds: 1800            # Per-task timeout (30 min)
+          serviceAccountName: SA_NAME@PROJECT_ID.iam.gserviceaccount.com
+
+          containers:
+          - name: job
+            image: REGION-docker.pkg.dev/PROJECT_ID/REPO/IMAGE:TAG
+            resources:
+              limits:
+                cpu: "2"
+                memory: 2Gi
+
+            # --- Environment variables ---
+            env:
+            - name: BATCH_SIZE
+              value: "1000"
+            - name: CLOUD_RUN_TASK_INDEX
+              value: ""                   # Auto-set by Cloud Run (0 to taskCount-1)
+            - name: CLOUD_RUN_TASK_COUNT
+              value: ""                   # Auto-set by Cloud Run
+
+            # --- Secrets ---
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: "latest"
+                  name: db-password
+
+            # --- Volume mounts ---
+            # volumeMounts:
+            # - name: gcs-output
+            #   mountPath: /mnt/output
+
+          # --- Volumes ---
+          # volumes:
+          # - name: gcs-output
+          #   gcs:
+          #     bucket: OUTPUT_BUCKET

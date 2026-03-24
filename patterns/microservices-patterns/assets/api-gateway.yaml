@@ -1,0 +1,271 @@
+# API Gateway Configuration Template
+# Supports both Kong and Envoy styles. Adapt to your gateway of choice.
+#
+# Features demonstrated:
+#   - Route-based service routing
+#   - Rate limiting
+#   - Authentication (JWT)
+#   - Circuit breaking
+#   - CORS
+#   - Request/response transformation
+#   - Health check routing
+
+# ==============================================================================
+# KONG DECLARATIVE CONFIG (kong.yml)
+# Apply with: kong config db_import kong.yml
+# ==============================================================================
+
+_format_version: "3.0"
+
+services:
+  # --- Order Service ---
+  - name: order-service
+    url: http://order-service:8081
+    connect_timeout: 5000
+    write_timeout: 10000
+    read_timeout: 30000
+    retries: 2
+    routes:
+      - name: order-routes
+        paths:
+          - /api/v1/orders
+        methods:
+          - GET
+          - POST
+          - PUT
+          - PATCH
+        strip_path: false
+        preserve_host: true
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 100
+          hour: 5000
+          policy: redis
+          redis_host: redis
+          redis_port: 6379
+      - name: jwt
+        config:
+          uri_param_names:
+            - jwt
+          claims_to_verify:
+            - exp
+      - name: cors
+        config:
+          origins:
+            - "https://app.example.com"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Content-Type
+            - Authorization
+            - X-Request-ID
+          max_age: 3600
+
+  # --- Payment Service ---
+  - name: payment-service
+    url: http://payment-service:8082
+    connect_timeout: 5000
+    write_timeout: 15000
+    read_timeout: 30000
+    retries: 1
+    routes:
+      - name: payment-routes
+        paths:
+          - /api/v1/payments
+        methods:
+          - GET
+          - POST
+        strip_path: false
+    plugins:
+      - name: rate-limiting
+        config:
+          minute: 60
+          policy: redis
+          redis_host: redis
+          redis_port: 6379
+      - name: jwt
+      - name: request-transformer
+        config:
+          add:
+            headers:
+              - "X-Gateway-Source: api-gateway"
+              - "X-Request-Start: $(date +%s%N)"
+
+  # --- Inventory Service ---
+  - name: inventory-service
+    url: http://inventory-service:8083
+    connect_timeout: 3000
+    read_timeout: 10000
+    routes:
+      - name: inventory-routes
+        paths:
+          - /api/v1/inventory
+        methods:
+          - GET
+          - PUT
+        strip_path: false
+
+  # --- User Service ---
+  - name: user-service
+    url: http://user-service:8085
+    routes:
+      - name: user-routes
+        paths:
+          - /api/v1/users
+        strip_path: false
+      - name: auth-routes
+        paths:
+          - /api/v1/auth
+        strip_path: false
+        plugins:
+          # Auth routes don't require JWT (login/register)
+          - name: rate-limiting
+            config:
+              minute: 20
+              policy: local
+
+  # --- Health Aggregation ---
+  - name: health-aggregator
+    url: http://localhost:8080
+    routes:
+      - name: gateway-health
+        paths:
+          - /health
+        methods:
+          - GET
+        strip_path: false
+
+# Global plugins
+plugins:
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
+  - name: prometheus
+  - name: file-log
+    config:
+      path: /var/log/kong/access.log
+
+# ==============================================================================
+# ENVOY PROXY CONFIG (envoy.yaml)
+# Run with: envoy -c envoy.yaml
+# ==============================================================================
+# Uncomment below for Envoy-based gateway:
+#
+# static_resources:
+#   listeners:
+#     - name: main_listener
+#       address:
+#         socket_address:
+#           address: 0.0.0.0
+#           port_value: 8080
+#       filter_chains:
+#         - filters:
+#             - name: envoy.filters.network.http_connection_manager
+#               typed_config:
+#                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+#                 stat_prefix: ingress_http
+#                 generate_request_id: true
+#                 route_config:
+#                   name: local_route
+#                   virtual_hosts:
+#                     - name: api
+#                       domains: ["*"]
+#                       routes:
+#                         - match:
+#                             prefix: "/api/v1/orders"
+#                           route:
+#                             cluster: order-service
+#                             timeout: 30s
+#                             retry_policy:
+#                               retry_on: "5xx,connect-failure,refused-stream"
+#                               num_retries: 2
+#                               per_try_timeout: 10s
+#                         - match:
+#                             prefix: "/api/v1/payments"
+#                           route:
+#                             cluster: payment-service
+#                             timeout: 30s
+#                         - match:
+#                             prefix: "/api/v1/inventory"
+#                           route:
+#                             cluster: inventory-service
+#                             timeout: 10s
+#                         - match:
+#                             prefix: "/health"
+#                           route:
+#                             cluster: local-health
+#                 http_filters:
+#                   - name: envoy.filters.http.cors
+#                     typed_config:
+#                       "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+#                   - name: envoy.filters.http.router
+#                     typed_config:
+#                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+#
+#   clusters:
+#     - name: order-service
+#       type: STRICT_DNS
+#       lb_policy: ROUND_ROBIN
+#       circuit_breakers:
+#         thresholds:
+#           - priority: DEFAULT
+#             max_connections: 100
+#             max_pending_requests: 50
+#             max_requests: 200
+#             max_retries: 3
+#       health_checks:
+#         - timeout: 2s
+#           interval: 10s
+#           unhealthy_threshold: 3
+#           healthy_threshold: 2
+#           http_health_check:
+#             path: /health/ready
+#       load_assignment:
+#         cluster_name: order-service
+#         endpoints:
+#           - lb_endpoints:
+#               - endpoint:
+#                   address:
+#                     socket_address:
+#                       address: order-service
+#                       port_value: 8081
+#
+#     - name: payment-service
+#       type: STRICT_DNS
+#       lb_policy: ROUND_ROBIN
+#       circuit_breakers:
+#         thresholds:
+#           - priority: DEFAULT
+#             max_connections: 50
+#             max_pending_requests: 25
+#             max_requests: 100
+#       load_assignment:
+#         cluster_name: payment-service
+#         endpoints:
+#           - lb_endpoints:
+#               - endpoint:
+#                   address:
+#                     socket_address:
+#                       address: payment-service
+#                       port_value: 8082
+#
+#     - name: inventory-service
+#       type: STRICT_DNS
+#       lb_policy: ROUND_ROBIN
+#       load_assignment:
+#         cluster_name: inventory-service
+#         endpoints:
+#           - lb_endpoints:
+#               - endpoint:
+#                   address:
+#                     socket_address:
+#                       address: inventory-service
+#                       port_value: 8083

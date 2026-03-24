@@ -387,13 +387,6 @@ Keep concerns small — one behavior per concern.
   <%= render @article %>
 <% end %>
 
-# Russian doll (nested):
-<% cache [current_user, @article] do %>
-  <% @article.comments.each do |c| %>
-    <% cache c do %><%= render c %><% end %>
-  <% end %>
-<% end %>
-
 # Low-level:
 Rails.cache.fetch("trending", expires_in: 1.hour) do
   Article.published.order(views_count: :desc).limit(10).to_a
@@ -452,7 +445,6 @@ FactoryBot.define do
     trait(:published) { published { true }; published_at { Time.current } }
   end
 end
-# Use build_stubbed over create when DB persistence is unnecessary.
 ```
 
 ## Rails 8 Features
@@ -478,3 +470,29 @@ end
 - Missing `dependent:` on `has_many`/`has_one`
 - Skipping `null: false` and unique indexes at database level
 - Not running `bundle audit` for security vulnerabilities
+
+## References
+
+| File | Description |
+|------|-------------|
+| `references/advanced-patterns.md` | Custom generators, Rails engines, multi-database, encryption, Action Text/Mailbox, composite PKs, async queries, strict loading, query logs, horizontal sharding, Turbo Streams advanced, Stimulus composition |
+| `references/troubleshooting.md` | N+1 (Bullet gem), slow migrations, memory bloat, Sprockets→Propshaft migration, Zeitwerk errors, connection pool exhaustion, CSRF in API mode, Turbo debugging, Rails 7→8 upgrade guide |
+| `references/api-reference.md` | Active Record query interface, migration methods, routing DSL, controller callbacks, Minitest assertions, RSpec matchers, Rails CLI commands |
+
+## Scripts
+
+| File | Description |
+|------|-------------|
+| `scripts/setup-rails.sh` | Generate new Rails app with recommended gems, RSpec, Bullet, Pundit, and production config |
+| `scripts/audit-queries.sh` | Find N+1 queries, missing indexes, associations without `dependent:`, and missing strict_loading |
+| `scripts/upgrade-rails.sh` | Automated Rails upgrade checklist: version checks, deprecation scan, Zeitwerk validation, test run, and report |
+
+## Assets (Templates)
+
+| File | Description |
+|------|-------------|
+| `assets/service-object.rb` | Service object pattern with Result struct, validation, transactions, dependency injection |
+| `assets/model-template.rb` | Active Record model with associations, validations, scopes, callbacks, enums, encryption |
+| `assets/controller-template.rb` | RESTful controller with strong params, Pundit auth, Turbo Stream responses, pagination |
+| `assets/stimulus-controller.js` | Stimulus controller with targets, values (reactive), actions, outlets, CSS classes, fetch |
+| `assets/Gemfile` | Production-ready Gemfile: Rails 8 + Solid Queue/Cache/Cable, Pundit, Pagy, RSpec, monitoring |

@@ -1,0 +1,137 @@
+# Cloud Run Service YAML Template
+# Deploy: gcloud run services replace service.yaml --region=REGION
+#
+# Replace all PLACEHOLDER values before deploying.
+# Remove sections you don't need.
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: SERVICE_NAME                      # <-- your service name
+  labels:
+    team: TEAM_NAME
+    env: production
+  annotations:
+    run.googleapis.com/launch-stage: GA
+    run.googleapis.com/ingress: all       # all | internal | internal-and-cloud-load-balancing
+spec:
+  template:
+    metadata:
+      annotations:
+        # --- Scaling ---
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "100"
+
+        # --- CPU allocation ---
+        run.googleapis.com/cpu-throttling: "false"     # "true"=request-based, "false"=always-on
+        run.googleapis.com/startup-cpu-boost: "true"
+
+        # --- Session affinity ---
+        # run.googleapis.com/sessionAffinity: "true"
+
+        # --- VPC networking (Direct VPC egress) ---
+        # run.googleapis.com/vpc-access-egress: all-traffic
+        # run.googleapis.com/network-interfaces: '[{"network":"VPC_NAME","subnetwork":"SUBNET_NAME"}]'
+
+        # --- VPC connector (legacy, required for Memorystore) ---
+        # run.googleapis.com/vpc-access-connector: projects/PROJECT/locations/REGION/connectors/CONNECTOR
+        # run.googleapis.com/vpc-access-egress: all-traffic
+
+        # --- Binary Authorization ---
+        # run.googleapis.com/binary-authorization: default
+
+        # --- Multi-container dependencies ---
+        # run.googleapis.com/container-dependencies: '{"app": ["proxy"]}'
+
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: SA_NAME@PROJECT_ID.iam.gserviceaccount.com
+
+      containers:
+      # --- Main container ---
+      - name: app
+        image: REGION-docker.pkg.dev/PROJECT_ID/REPO/IMAGE:TAG
+        ports:
+        - name: http1                     # Use "h2c" for gRPC/HTTP2
+          containerPort: 8080
+        resources:
+          limits:
+            cpu: "2"
+            memory: 1Gi
+            # nvidia.com/gpu: "1"         # Uncomment for GPU workloads
+
+        # --- Environment variables ---
+        env:
+        - name: ENV
+          value: production
+        - name: LOG_LEVEL
+          value: info
+
+        # --- Secrets from Secret Manager ---
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              key: "latest"               # Pin to version number in production
+              name: db-password
+
+        # --- Volume mounts ---
+        # volumeMounts:
+        # - name: gcs-data
+        #   mountPath: /mnt/gcs
+        #   readOnly: true
+        # - name: scratch
+        #   mountPath: /tmp/shared
+
+        # --- Startup probe ---
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 0
+          periodSeconds: 2
+          failureThreshold: 15
+          timeoutSeconds: 3
+
+        # --- Liveness probe ---
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          periodSeconds: 30
+          failureThreshold: 3
+          timeoutSeconds: 5
+
+      # --- Sidecar container (uncomment if needed) ---
+      # - name: proxy
+      #   image: REGION-docker.pkg.dev/PROJECT_ID/REPO/SIDECAR:TAG
+      #   resources:
+      #     limits:
+      #       cpu: 500m
+      #       memory: 256Mi
+      #   volumeMounts:
+      #   - name: scratch
+      #     mountPath: /tmp/shared
+
+      # --- Volumes ---
+      # volumes:
+      # - name: gcs-data
+      #   gcs:
+      #     bucket: BUCKET_NAME
+      #     readOnly: true
+      # - name: scratch
+      #   emptyDir:
+      #     medium: Memory
+      #     sizeLimit: 256Mi
+      # - name: nfs-share
+      #   nfs:
+      #     server: NFS_SERVER_IP
+      #     path: /share
+
+  # --- Traffic routing ---
+  traffic:
+  - percent: 100
+    latestRevision: true
+  # - percent: 10
+  #   revisionName: SERVICE_NAME-canary
+  #   tag: canary

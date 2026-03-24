@@ -1,0 +1,103 @@
+# Production-Ready Gemfile Template — Rails 8.x
+#
+# Usage: Copy to new project and run `bundle install`
+# Remove sections you don't need. Comments explain each gem's purpose.
+
+source "https://rubygems.org"
+
+ruby ">= 3.2.0"
+
+# ── Core Framework ────────────────────────────────────────────────────────────
+gem "rails", "~> 8.0"
+gem "puma", ">= 6.0"           # Web server
+
+# ── Database ──────────────────────────────────────────────────────────────────
+gem "pg"                        # PostgreSQL adapter
+# gem "mysql2"                  # MySQL adapter
+# gem "sqlite3"                 # SQLite (dev/small projects only)
+
+# ── Rails 8 Built-in Infrastructure (no Redis required) ───────────────────────
+gem "solid_queue"               # Background jobs (database-backed)
+gem "solid_cache"               # Cache store (database-backed)
+gem "solid_cable"               # Action Cable adapter (database-backed)
+gem "mission_control-jobs"      # Job dashboard UI
+
+# ── Asset Pipeline & Frontend ─────────────────────────────────────────────────
+gem "propshaft"                 # Asset pipeline (Rails 8 default)
+gem "importmap-rails"           # JavaScript ESM import maps (no Node.js)
+gem "turbo-rails"               # Hotwire Turbo (SPA-like navigation)
+gem "stimulus-rails"            # Hotwire Stimulus (JS controllers)
+# gem "cssbundling-rails"       # CSS bundling (Tailwind/Bootstrap/Sass)
+# gem "jsbundling-rails"        # JS bundling (esbuild/rollup/webpack)
+gem "tailwindcss-rails"         # Tailwind CSS integration
+
+# ── Authentication & Authorization ────────────────────────────────────────────
+# Rails 8 built-in: `rails generate authentication`
+# Use Devise only if you need OAuth, confirmable, lockable, etc.
+# gem "devise"
+gem "pundit"                    # Policy-based authorization
+
+# ── API & Serialization ──────────────────────────────────────────────────────
+# gem "jsonapi-serializer"      # Fast JSON:API serialization
+# gem "rack-cors"               # Cross-origin resource sharing
+
+# ── File Uploads ──────────────────────────────────────────────────────────────
+gem "image_processing"          # Active Storage image variants (requires libvips)
+
+# ── Pagination ────────────────────────────────────────────────────────────────
+gem "pagy"                      # Fast, lightweight pagination
+
+# ── Search ────────────────────────────────────────────────────────────────────
+# gem "pg_search"               # PostgreSQL full-text search
+# gem "ransack"                 # Object-based searching
+
+# ── Rich Text ────────────────────────────────────────────────────────────────
+gem "actiontext", require: "action_text" # Rich text editor (Trix)
+
+# ── HTTP & External APIs ─────────────────────────────────────────────────────
+# gem "faraday"                 # HTTP client
+# gem "httpx"                   # Modern HTTP client with HTTP/2
+
+# ── Performance & Monitoring ──────────────────────────────────────────────────
+gem "bootsnap", require: false  # Faster boot times via caching
+gem "rack-mini-profiler"        # Performance profiling in browser
+# gem "skylight"                # APM (application performance monitoring)
+# gem "sentry-ruby"             # Error tracking
+# gem "sentry-rails"
+
+# ── Security ──────────────────────────────────────────────────────────────────
+gem "bundler-audit", require: false  # Vulnerability scanning
+gem "brakeman", require: false       # Static security analysis
+
+# ── Deployment ────────────────────────────────────────────────────────────────
+gem "kamal", require: false     # Docker-based zero-downtime deploy
+gem "thruster", require: false  # HTTP/2 proxy (pairs with Kamal)
+
+# ── Development & Test ────────────────────────────────────────────────────────
+group :development do
+  gem "web-console"             # In-browser Rails console
+  gem "bullet"                  # N+1 query detection
+  gem "annotate"                # Schema annotations on models
+  gem "strong_migrations"       # Catch unsafe migrations
+  gem "letter_opener"           # Preview emails in browser
+  gem "rubocop-rails-omakase", require: false  # Rails-blessed linting
+  gem "error_highlight"         # Enhanced error pages
+end
+
+group :development, :test do
+  gem "debug", platforms: %i[mri windows]  # Debugger
+  gem "factory_bot_rails"       # Test data factories
+  gem "faker"                   # Fake data generation
+  gem "rspec-rails"             # RSpec testing framework
+  gem "shoulda-matchers"        # One-liner model tests
+  gem "dotenv-rails"            # .env file loading
+end
+
+group :test do
+  gem "capybara"                # Integration/system test DSL
+  gem "selenium-webdriver"      # Browser driver for system tests
+  gem "simplecov", require: false  # Code coverage
+  gem "webmock"                 # Stub external HTTP requests
+  gem "vcr"                     # Record/replay HTTP interactions
+  gem "database_cleaner-active_record"  # Clean DB between tests
+end

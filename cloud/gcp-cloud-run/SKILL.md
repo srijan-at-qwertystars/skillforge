@@ -16,6 +16,25 @@ description: >
 
 # Google Cloud Run — Complete Reference
 
+## Skill Resources
+
+### references/
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Multi-container sidecars, session affinity, startup CPU boost, GPU support, gRPC, Cloud CDN integration, binary authorization, volume mounts (GCS FUSE, NFS, in-memory), always-on CPU, Cloud Run integrations marketplace
+- **[troubleshooting.md](references/troubleshooting.md)** — Cold start debugging, container contract violations, memory/CPU limits exceeded, request timeouts, VPC connector issues, Cloud SQL connection pooling, permission errors (invoker vs admin), health check failures, revision not serving
+- **[cli-reference.md](references/cli-reference.md)** — Complete gcloud run commands: deploy, services, revisions, jobs, executions, domain-mappings — all flags and common patterns
+
+### scripts/
+- **[deploy-cloud-run.sh](scripts/deploy-cloud-run.sh)** — Deploy with environment detection, canary/full traffic modes, promote, rollback, status
+- **[setup-cloud-sql.sh](scripts/setup-cloud-sql.sh)** — Configure Cloud Run ↔ Cloud SQL via Auth Proxy or VPC private IP, manage secrets
+- **[monitor-cloud-run.sh](scripts/monitor-cloud-run.sh)** — Health checks, revision traffic, latency/request metrics, error logs
+
+### assets/
+- **[service.yaml](assets/service.yaml)** — Cloud Run service YAML template with all common settings (scaling, probes, secrets, VPC, sidecars, volumes)
+- **[job.yaml](assets/job.yaml)** — Cloud Run job YAML template (parallel tasks, retries, timeouts)
+- **[cloudbuild.yaml](assets/cloudbuild.yaml)** — Cloud Build CI/CD pipeline with canary/full deploy modes
+- **[Dockerfile](assets/Dockerfile)** — Multi-stage Dockerfile optimized for Cloud Run (Go/Node/Python variants)
+- **[terraform-cloud-run.tf](assets/terraform-cloud-run.tf)** — Terraform module with variables for all common Cloud Run settings
+
 ## Services vs Jobs
 
 **Services** handle HTTP/gRPC requests, autoscale 0-to-N, and support revisions with traffic splitting.
@@ -397,33 +416,6 @@ resource "google_cloud_run_v2_service_iam_member" "public" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
-```
-
-## Pulumi (TypeScript)
-
-```typescript
-import * as gcp from "@pulumi/gcp";
-
-const service = new gcp.cloudrunv2.Service("my-api", {
-  location: "us-central1",
-  template: {
-    scaling: { minInstanceCount: 1, maxInstanceCount: 100 },
-    containers: [{
-      image: "us-central1-docker.pkg.dev/PROJECT/repo/app:v1",
-      ports: [{ containerPort: 8080 }],
-      resources: { limits: { cpu: "2", memory: "1Gi" }, cpuIdle: false },
-      envs: [{ name: "DB_NAME", value: "mydb" }],
-    }],
-  },
-  traffics: [{ type: "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST", percent: 100 }],
-});
-
-new gcp.cloudrunv2.ServiceIamMember("invoker", {
-  name: service.name,
-  location: service.location,
-  role: "roles/run.invoker",
-  member: "allUsers",
-});
 ```
 
 ## Multi-Region Deployment
