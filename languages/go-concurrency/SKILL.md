@@ -497,3 +497,4 @@ Production-ready templates in `assets/`:
 | [pipeline.go](assets/pipeline.go) | Type-safe pipeline framework: Generate, Map, Filter, FanOut/FanIn, Batch, Tee, OrDone, Take — all with context cancellation and error propagation |
 | [graceful-server.go](assets/graceful-server.go) | HTTP server with signal handling, connection draining, health/ready/metrics endpoints, request timeout middleware, panic recovery, structured logging |
 | [rate-limiter.go](assets/rate-limiter.go) | Per-key token bucket rate limiter with burst support, automatic stale entry cleanup, Wait/Allow/AllowN methods, and HTTP middleware |
+<!-- tested: needs-fix -->

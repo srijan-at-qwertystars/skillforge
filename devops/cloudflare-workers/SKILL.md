@@ -497,3 +497,4 @@ Ready-to-use templates in `assets/`:
 | [durable-object.ts](assets/durable-object.ts) | Durable Object with WebSocket hibernation, tag-based user tracking, alarms, state management |
 | [vitest-config.ts](assets/vitest-config.ts) | Vitest config for `@cloudflare/vitest-pool-workers` with mock bindings, coverage thresholds, test helpers |
 | [github-actions.yml](assets/github-actions.yml) | CI/CD: lint, test, deploy staging on push, production on release, smoke tests, PR preview |
+<!-- tested: pass -->

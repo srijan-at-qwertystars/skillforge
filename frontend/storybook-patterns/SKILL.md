@@ -497,3 +497,5 @@ jobs:
 | [msw-handlers.ts](assets/msw-handlers.ts) | MSW mock handlers for REST CRUD, authentication, pagination (offset + cursor), error states (500, 401, 422, 429, timeout) |
 | [addon-template.tsx](assets/addon-template.tsx) | Custom addon with panel, toolbar button, parameter integration, manager↔preview channel communication |
 | [chromatic-config.yml](assets/chromatic-config.yml) | GitHub Actions workflow for Chromatic with TurboSnap, PR comments, caching, monorepo support |
+
+<!-- tested: pass -->
