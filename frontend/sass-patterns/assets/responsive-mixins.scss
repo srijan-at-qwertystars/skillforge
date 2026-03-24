@@ -1,0 +1,218 @@
+// Responsive Mixin Library
+// Complete set of breakpoint, container query, and fluid typography mixins.
+// Usage: @use 'responsive-mixins' as *;
+
+@use 'sass:map';
+@use 'sass:math';
+@use 'sass:meta';
+
+// ─── Configuration ───────────────────────────────────────────
+
+$breakpoints: (
+  sm:  576px,
+  md:  768px,
+  lg:  992px,
+  xl:  1200px,
+  xxl: 1400px,
+) !default;
+
+// ─── Media Query Mixins ──────────────────────────────────────
+
+/// Breakpoint up (min-width — mobile-first)
+@mixin bp-up($name) {
+  @if not map.has-key($breakpoints, $name) {
+    @error 'Unknown breakpoint `#{$name}`. Available: #{map.keys($breakpoints)}';
+  }
+  @media (min-width: map.get($breakpoints, $name)) { @content; }
+}
+
+/// Breakpoint down (max-width)
+@mixin bp-down($name) {
+  @if not map.has-key($breakpoints, $name) {
+    @error 'Unknown breakpoint `#{$name}`.';
+  }
+  @media (max-width: map.get($breakpoints, $name) - 0.02px) { @content; }
+}
+
+/// Breakpoint between two sizes
+@mixin bp-between($lower, $upper) {
+  @media (min-width: map.get($breakpoints, $lower))
+     and (max-width: map.get($breakpoints, $upper) - 0.02px) {
+    @content;
+  }
+}
+
+/// Breakpoint only (exact range)
+@mixin bp-only($name) {
+  $keys: map.keys($breakpoints);
+  $i: list.index($keys, $name);
+  $min: map.get($breakpoints, $name);
+
+  @if $i < list.length($keys) {
+    $next: list.nth($keys, $i + 1);
+    $max: map.get($breakpoints, $next) - 0.02px;
+    @media (min-width: $min) and (max-width: $max) { @content; }
+  } @else {
+    @media (min-width: $min) { @content; }
+  }
+}
+
+/// Custom media query with raw value
+@mixin bp-custom($min: null, $max: null) {
+  @if $min and $max {
+    @media (min-width: $min) and (max-width: $max) { @content; }
+  } @else if $min {
+    @media (min-width: $min) { @content; }
+  } @else if $max {
+    @media (max-width: $max) { @content; }
+  }
+}
+
+// ─── Container Query Mixins ──────────────────────────────────
+
+/// Define a container context
+@mixin container($name: null, $type: inline-size) {
+  container-type: $type;
+  @if $name {
+    container-name: $name;
+  }
+}
+
+/// Container query: min-width
+@mixin cq-up($width, $name: null) {
+  @if $name {
+    @container #{$name} (min-width: #{$width}) { @content; }
+  } @else {
+    @container (min-width: #{$width}) { @content; }
+  }
+}
+
+/// Container query: max-width
+@mixin cq-down($width, $name: null) {
+  @if $name {
+    @container #{$name} (max-width: #{$width}) { @content; }
+  } @else {
+    @container (max-width: #{$width}) { @content; }
+  }
+}
+
+/// Container query: range
+@mixin cq-between($min, $max, $name: null) {
+  @if $name {
+    @container #{$name} (min-width: #{$min}) and (max-width: #{$max}) { @content; }
+  } @else {
+    @container (min-width: #{$min}) and (max-width: #{$max}) { @content; }
+  }
+}
+
+// ─── Fluid Typography ────────────────────────────────────────
+
+/// Fluid font size that scales between viewport widths
+/// Uses CSS clamp() for smooth scaling without JavaScript.
+///
+/// @param {Number} $min-size  — Minimum font size (e.g., 1rem)
+/// @param {Number} $max-size  — Maximum font size (e.g., 2.5rem)
+/// @param {Number} $min-vw    — Viewport width where min-size applies (default: 320px)
+/// @param {Number} $max-vw    — Viewport width where max-size applies (default: 1200px)
+@mixin fluid-type($min-size, $max-size, $min-vw: 320px, $max-vw: 1200px) {
+  $slope: math.div($max-size - $min-size, $max-vw - $min-vw);
+  $intercept: $min-size - $slope * $min-vw;
+
+  font-size: clamp(
+    #{$min-size},
+    #{$intercept} + #{$slope * 100}vw,
+    #{$max-size}
+  );
+}
+
+/// Fluid spacing (margin, padding, gap, etc.)
+@mixin fluid-space($prop, $min, $max, $min-vw: 320px, $max-vw: 1200px) {
+  $slope: math.div($max - $min, $max-vw - $min-vw);
+  $intercept: $min - $slope * $min-vw;
+
+  #{$prop}: clamp(#{$min}, #{$intercept} + #{$slope * 100}vw, #{$max});
+}
+
+// ─── Responsive Visibility ──────────────────────────────────
+
+/// Hide below a breakpoint
+@mixin hide-below($bp) {
+  @include bp-down($bp) { display: none !important; }
+}
+
+/// Hide above a breakpoint
+@mixin hide-above($bp) {
+  @include bp-up($bp) { display: none !important; }
+}
+
+/// Show only at a specific breakpoint range
+@mixin show-only($bp) {
+  display: none !important;
+  @include bp-only($bp) { display: revert !important; }
+}
+
+// ─── Responsive Grid Helpers ─────────────────────────────────
+
+/// Auto-fit grid that responds without media queries
+@mixin auto-grid($min-col: 250px, $gap: 1rem) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax($min-col, 1fr));
+  gap: $gap;
+}
+
+/// Responsive columns with breakpoint-based overrides
+@mixin responsive-cols($default: 1, $sm: null, $md: null, $lg: null, $xl: null, $gap: 1rem) {
+  display: grid;
+  gap: $gap;
+  grid-template-columns: repeat($default, 1fr);
+
+  @if $sm { @include bp-up(sm) { grid-template-columns: repeat($sm, 1fr); } }
+  @if $md { @include bp-up(md) { grid-template-columns: repeat($md, 1fr); } }
+  @if $lg { @include bp-up(lg) { grid-template-columns: repeat($lg, 1fr); } }
+  @if $xl { @include bp-up(xl) { grid-template-columns: repeat($xl, 1fr); } }
+}
+
+// ─── Responsive Aspect Ratio ─────────────────────────────────
+
+/// Modern aspect-ratio with fallback
+@mixin aspect-ratio($width, $height) {
+  aspect-ratio: #{$width} / #{$height};
+
+  // Fallback for older browsers
+  @supports not (aspect-ratio: 1) {
+    &::before {
+      content: '';
+      display: block;
+      padding-top: math.div($height, $width) * 100%;
+    }
+  }
+}
+
+// ─── Print Styles ────────────────────────────────────────────
+
+@mixin print-only { @media print { @content; } }
+@mixin screen-only { @media screen { @content; } }
+
+// ─── Preference Queries ──────────────────────────────────────
+
+@mixin prefers-dark   { @media (prefers-color-scheme: dark)  { @content; } }
+@mixin prefers-light  { @media (prefers-color-scheme: light) { @content; } }
+@mixin reduced-motion { @media (prefers-reduced-motion: reduce) { @content; } }
+@mixin high-contrast  { @media (prefers-contrast: more) { @content; } }
+@mixin forced-colors  { @media (forced-colors: active) { @content; } }
+
+// ─── Utility: Generate Responsive Variants ───────────────────
+
+/// Generate responsive utility classes from a property map
+@mixin responsive-utilities($class, $prop, $values) {
+  @each $name, $val in $values {
+    .#{$class}-#{$name} { #{$prop}: $val; }
+  }
+  @each $bp, $width in $breakpoints {
+    @media (min-width: $width) {
+      @each $name, $val in $values {
+        .#{$bp}\:#{$class}-#{$name} { #{$prop}: $val; }
+      }
+    }
+  }
+}

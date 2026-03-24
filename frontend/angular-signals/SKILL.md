@@ -460,6 +460,29 @@ ng generate @angular/core:output-migration           # @Output → output()
 
 ---
 
+## Supplemental Files
+
+### References
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Custom signal utilities, signal-based state management, fine-grained reactivity, nested signals, equality functions, RxJS↔Signal interop deep dive, zoneless architecture, performance optimization.
+- **[references/troubleshooting.md](references/troubleshooting.md)** — effect() cleanup, computed() caching gotchas, mutation vs set, circular deps, memory leaks, decorator→signal migration issues, zone.js removal problems, testing, error messages.
+- **[references/api-reference.md](references/api-reference.md)** — Complete API with all overloads: signal, computed, effect, input, output, model, viewChild/viewChildren, contentChild/contentChildren, toSignal, toObservable, linkedSignal, resource, httpResource, untracked, DestroyRef, takeUntilDestroyed, outputToObservable, outputFromObservable.
+
+### Scripts
+
+- **[scripts/migrate-to-signals.sh](scripts/migrate-to-signals.sh)** — Find @Input/@Output/@ViewChild/@ContentChild decorators, suggest signal equivalents with line numbers.
+- **[scripts/check-zoneless.sh](scripts/check-zoneless.sh)** — Analyze project for zone.js deps blocking zoneless migration (polyfills, NgZone, async patterns).
+- **[scripts/signal-audit.sh](scripts/signal-audit.sh)** — Audit signal usage, find effect() without cleanup, detect anti-patterns (writes in computed, signal sync, mutations).
+
+### Assets
+
+- **[assets/signal-store.ts](assets/signal-store.ts)** — NgRx SignalStore template: withEntities, withComputed, withMethods, withHooks, rxMethod.
+- **[assets/signal-component.ts](assets/signal-component.ts)** — Signal-based component: all inputs/outputs/queries as signals, resource(), OnPush + zoneless-ready.
+- **[assets/rxjs-interop.ts](assets/rxjs-interop.ts)** — RxJS↔Signal interop patterns: toSignal, toObservable, takeUntilDestroyed, WebSocket→signal.
+- **[assets/custom-signal.ts](assets/custom-signal.ts)** — Custom signal utilities: toggle, history (undo/redo), debounced, array helpers, localStorage, form field.
+
+---
+
 ## Anti-Patterns
 
 - Do NOT set signals inside `computed()` — use `linkedSignal()` instead
@@ -469,31 +492,6 @@ ng generate @angular/core:output-migration           # @Output → output()
 - Do NOT nest `effect()` inside `effect()` — flatten or restructure
 - Do NOT call `effect()` outside injection context without providing `Injector`
 
-## Example: Full Signal-Based Component
+## Full Example
 
-```typescript
-@Component({
-  selector: 'app-user-card',
-  standalone: true,
-  changeDetection: ChangeDetectionStrategy.OnPush,
-  template: `
-    <h2>{{ fullName() }}</h2>
-    <p>Posts: {{ postCount() }}</p>
-    <button (click)="posts.reload()">Reload</button>
-    @if (posts.isLoading()) { <spinner /> }
-    @for (post of posts.value() ?? []; track post.id) {
-      <article>{{ post.title }}</article>
-    }
-  `,
-})
-export class UserCardComponent {
-  userId = input.required<number>();
-  fullName = input('');
-  selected = output<number>();
-  posts = resource({
-    params: () => ({ uid: this.userId() }),
-    loader: async ({ params }) => (await fetch(`/api/users/${params.uid}/posts`)).json() as Promise<Post[]>,
-  });
-  postCount = computed(() => this.posts.value()?.length ?? 0);
-}
-```
+See [assets/signal-component.ts](assets/signal-component.ts) for a complete signal-based component using all signal APIs (inputs, outputs, model, queries, resource, computed, linkedSignal, effect with cleanup).

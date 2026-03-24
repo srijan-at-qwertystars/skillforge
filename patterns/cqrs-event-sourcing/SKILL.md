@@ -393,3 +393,31 @@ def test_order_summary_projection():
 
 **Input:** "Design a saga for order fulfillment"
 **Output:** Process manager listening to `OrderConfirmed` → sends `ReserveInventory` command → on `InventoryReserved` → sends `ProcessPayment` → on `PaymentProcessed` → sends `ShipOrder`. On `PaymentFailed` → sends `ReleaseInventory` (compensating action). Each step idempotent with correlation ID tracking.
+
+## Supplementary Materials
+
+### References (Deep-Dive Guides)
+
+| File | Contents |
+|------|----------|
+| `references/advanced-patterns.md` | Process managers/sagas (orchestration vs choreography, compensation), event-driven microservices (outbox pattern, integration events), CQRS with GraphQL, multi-tenant event stores, DDD tactical patterns with ES, read model rebuilding strategies (blue-green), event store partitioning, temporal/bitemporal queries, crypto-shredding for GDPR |
+| `references/troubleshooting.md` | Diagnosing and fixing: event versioning hell (upcaster chains), projection lag (batching, parallelization, DLQ), idempotency failures (dedup keys, optimistic concurrency), aggregate boundary mistakes (sizing heuristics, splitting), eventual consistency debugging (reservation pattern), snapshot corruption (versioned recovery), event ordering issues (gap detection), split-brain scenarios (quorum, fencing tokens) |
+| `references/framework-comparison.md` | EventStoreDB vs Axon Framework vs Marten vs Eventuous vs Custom — feature matrix, performance benchmarks, language support, hosting options, licensing, community maturity, decision tree, migration paths |
+
+### Scripts (Executable Helpers)
+
+| File | Purpose |
+|------|---------|
+| `scripts/event-store-setup.sh` | Set up EventStoreDB locally via Docker with all projections enabled. Commands: `start`, `stop`, `status`, `logs`. Health-check polling included. |
+| `scripts/replay-events.sh` | Template for replaying events to rebuild projections. Supports `--projection`, `--from-position`, `--batch-size`, `--dry-run`. Customization points marked with TODO. |
+| `scripts/generate-aggregate.sh` | Scaffold a complete aggregate: events, commands, aggregate root, command handler, and test file. Supports TypeScript (`--lang ts`) and Python (`--lang py`). Custom events via `--events`. |
+
+### Assets (Templates and Configs)
+
+| File | Contents |
+|------|----------|
+| `assets/aggregate-template.ts` | TypeScript aggregate root with rehydration, snapshot support, command methods with invariant enforcement, event application |
+| `assets/event-store-schema.sql` | PostgreSQL schema: events table with optimistic concurrency function, snapshots, projection checkpoints, outbox, dead-letter queue, command deduplication, NOTIFY trigger, utility views |
+| `assets/projection-template.ts` | Read model projection handler with idempotent batch processing, checkpointing, rebuild support, example OrderSummaryProjection |
+| `assets/saga-template.ts` | Process manager/saga with full state machine: OrderConfirmed → ReserveInventory → ProcessPayment → ShipOrder, compensation paths, timeout handling |
+| `assets/docker-compose.yml` | EventStoreDB + PostgreSQL dev environment with health checks, auto-applied schema, persistent volumes |

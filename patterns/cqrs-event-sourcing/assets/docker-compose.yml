@@ -1,0 +1,64 @@
+# EventStoreDB + PostgreSQL Development Environment
+#
+# Usage:
+#   docker compose up -d          # Start both services
+#   docker compose down           # Stop
+#   docker compose down -v        # Stop and remove volumes (data loss)
+#
+# Services:
+#   EventStoreDB:  http://localhost:2113 (Admin UI + gRPC)
+#   PostgreSQL:    localhost:5432 (user: esuser, password: espass, db: eventstore)
+#
+# EventStoreDB is configured for development (insecure mode, all projections enabled).
+# PostgreSQL includes the event store schema auto-applied on first startup.
+
+services:
+  eventstoredb:
+    image: eventstore/eventstore:latest
+    container_name: esdb-dev
+    environment:
+      EVENTSTORE_CLUSTER_SIZE: 1
+      EVENTSTORE_RUN_PROJECTIONS: All
+      EVENTSTORE_START_STANDARD_PROJECTIONS: "true"
+      EVENTSTORE_INSECURE: "true"
+      EVENTSTORE_ENABLE_ATOM_PUB_OVER_HTTP: "true"
+      EVENTSTORE_MEM_DB: "false"
+    ports:
+      - "2113:2113"
+    volumes:
+      - esdb-data:/var/lib/eventstore
+      - esdb-logs:/var/log/eventstore
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:2113/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: pg-eventstore
+    environment:
+      POSTGRES_USER: esuser
+      POSTGRES_PASSWORD: espass
+      POSTGRES_DB: eventstore
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      # Auto-apply event store schema on first startup:
+      # Place event-store-schema.sql in the same directory as this compose file
+      - ./event-store-schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U esuser -d eventstore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  esdb-data:
+  esdb-logs:
+  pg-data:

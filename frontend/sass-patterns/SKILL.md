@@ -401,7 +401,7 @@ $theme-dark:  (bg: #1a1a2e, text: #e0e0e0, accent: #4dabf7);
 
 ## Build Tool Configuration
 
-### Vite (recommended)
+### Vite (recommended) — see `assets/vite-sass-config.ts` for full config
 
 ```bash
 npm install -D sass-embedded
@@ -423,40 +423,21 @@ export default defineConfig({
 
 ### Webpack
 
-```bash
-npm install -D sass-embedded sass-loader css-loader style-loader postcss-loader
-```
-
 ```js
 // webpack.config.js — SCSS rule
 {
   test: /\.scss$/,
   use: [
-    'style-loader',
-    'css-loader',
-    'postcss-loader',
+    'style-loader', 'css-loader', 'postcss-loader',
     { loader: 'sass-loader', options: { implementation: require('sass-embedded'), api: 'modern-compiler' } },
   ],
 }
 ```
 
-### Stylelint
+### Stylelint — see `assets/stylelint.config.js` for production config
 
 ```bash
-npm install -D stylelint stylelint-config-standard-scss
-```
-
-```json
-// .stylelintrc.json
-{
-  "extends": ["stylelint-config-standard-scss"],
-  "rules": {
-    "scss/at-rule-no-unknown": true,
-    "selector-class-pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*(__[a-z0-9]+(-[a-z0-9]+)*)*(--[a-z0-9]+(-[a-z0-9]+)*)?$",
-    "max-nesting-depth": 3,
-    "scss/no-global-function-names": true
-  }
-}
+npm install -D stylelint stylelint-config-standard-scss stylelint-order
 ```
 
 ## Migration from @import to @use
@@ -492,3 +473,22 @@ $result: percentage(0.5);              $result: math.percentage(0.5);
 - Use `sass-embedded` + `api: 'modern-compiler'` in build tools.
 - Emit CSS custom properties from Sass maps for runtime theming.
 - Validate with `stylelint-config-standard-scss`.
+
+## Supplemental Files
+
+### references/
+- `advanced-patterns.md` — meta.load-css(), @at-root, selector manipulation, custom @function, deep merge, CSS grid/container query mixins, dark mode theming, animation mixins, module configuration
+- `troubleshooting.md` — @import→@use migration pitfalls, namespace conflicts, circular deps, variable scoping, !default vs !global, nesting performance, source maps, Dart Sass vs LibSass
+- `api-reference.md` — Complete built-in module API: sass:math, sass:color, sass:string, sass:list, sass:map, sass:selector, sass:meta — all functions with signatures and examples
+
+### scripts/
+- `migrate-imports.sh` — Convert @import to @use/@forward using sass-migrator (--dry-run, --verbose, --no-deps)
+- `lint-setup.sh` — Set up stylelint with SCSS plugin, property ordering, BEM patterns (--with-prettier)
+- `analyze-sass.sh` — Find unused variables/mixins, deep nesting, @import usage, file complexity metrics
+
+### assets/
+- `design-tokens.scss` — Complete token system: colors (with auto light/dark variants), spacing scale, typography, breakpoints, radii, shadows, z-index, transitions, CSS variable emission
+- `responsive-mixins.scss` — Breakpoint mixins (up/down/between/only), container queries, fluid typography, visibility helpers, auto-grid, preference queries (dark mode, reduced motion)
+- `bem-component.scss` — BEM card component template with modifiers, variants from maps, responsive behavior
+- `stylelint.config.js` — Production config with BEM naming, nesting limits, property ordering, SCSS rules
+- `vite-sass-config.ts` — Vite config with sass-embedded, global @use injection, path aliases, framework notes
