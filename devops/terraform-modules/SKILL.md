@@ -1,502 +1,477 @@
 ---
 name: terraform-modules
 description: >
-  Comprehensive guide for authoring, composing, versioning, testing, and
-  publishing reusable Terraform modules using HCL. Covers module structure,
-  variable design, composition patterns, provider aliasing, state management,
-  CI/CD pipelines, and registry publishing. Includes scripts for scaffolding,
-  validation, and publishing, plus references for advanced patterns,
-  troubleshooting, and testing.
-  Triggers on: "terraform module", "tf module composition", "terraform
-  registry", "module versioning", "terraform workspaces", "terraform state
-  management", "terratest", "terraform test", "module inputs outputs",
-  "terraform remote module", "terraform CI/CD", "terraform provider
-  configuration", "HCL module pattern", "terraform troubleshooting",
-  "terraform import", "terraform moved block", "tflint", "tfsec", "checkov".
-  NOT for Pulumi, CloudFormation, CDK, Ansible, or general cloud questions.
+  Guide for designing, building, testing, and managing Terraform modules and infrastructure as code.
+  Use when working with Terraform modules, HCL configuration, infrastructure as code, module
+  composition, Terraform Registry, state management, remote backends, workspaces, provider
+  configuration, variable validation, moved/import/removed blocks, terraform test, or CI/CD
+  pipelines for infrastructure. Do NOT use for Pulumi, AWS CloudFormation, AWS CDK, Ansible
+  playbooks, Chef/Puppet, or simple shell scripts that do not involve infrastructure as code.
 ---
 
-# Terraform Modules — Authoring & Operations Guide
+# Terraform Modules
 
 ## Module Structure
 
-Use the canonical layout. Every module repository follows `terraform-<PROVIDER>-<NAME>`.
+Organize every module with this standard layout:
 
 ```
 modules/my-module/
-├── main.tf          # Resource definitions
-├── variables.tf     # All input variables
-├── outputs.tf       # All outputs
-├── versions.tf      # Required providers & terraform version
-├── providers.tf     # Provider configuration (root modules only)
-├── locals.tf        # Computed locals
-├── data.tf          # Data sources
-├── README.md
+├── main.tf          # Resources and data sources
+├── variables.tf     # Input variable declarations
+├── outputs.tf       # Output value declarations
+├── versions.tf      # Required providers and terraform version
+├── locals.tf        # Local values and computed expressions
+├── README.md        # Usage docs, examples, inputs/outputs table
 ├── examples/
-│   └── complete/
-│       ├── main.tf
-│       └── outputs.tf
+│   └── complete/    # Runnable example configuration
 └── tests/
     └── main.tftest.hcl
 ```
 
-Keep each module single-purpose. If description exceeds one sentence, split.
-
-## versions.tf — Pin Everything
+Place `versions.tf` at the root with required version constraints:
 
 ```hcl
 terraform {
-  required_version = ">= 1.6.0"
-
+  required_version = ">= 1.5.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = ">= 5.0, < 6.0"
     }
   }
 }
 ```
 
-Never declare `provider` blocks inside reusable child modules — accept them via `configuration_aliases` or inherit from the calling root module.
+## Module Design Principles
+
+- **Single responsibility** — one module manages one logical component (VPC, database, app).
+- **Composability** — expose outputs that other modules consume; accept resource IDs as inputs.
+- **Backward compatibility** — add new variables with defaults; never remove outputs without deprecation.
+- **No hardcoded values** — parameterize regions, names, tags, and sizing via variables.
+- **No provider config in child modules** — define providers only in root modules.
+- **Minimal blast radius** — keep resource count per module under ~20; split larger modules.
 
 ## Input Variables
 
-Define in `variables.tf`. Use strong types, defaults, descriptions, and validation.
+Declare typed variables with validation, descriptions, and defaults:
 
 ```hcl
-variable "name" {
+variable "instance_type" {
+  description = "EC2 instance type for web servers"
   type        = string
-  description = "Name prefix for all resources."
-
+  default     = "t3.micro"
   validation {
-    condition     = length(var.name) > 0 && length(var.name) <= 64
-    error_message = "Name must be 1-64 characters."
+    condition     = can(regex("^t3\\.", var.instance_type))
+    error_message = "Only t3 instance types are allowed."
   }
 }
 
 variable "environment" {
+  description = "Deployment environment"
   type        = string
-  description = "Deployment environment."
-  default     = "dev"
-
   validation {
     condition     = contains(["dev", "staging", "prod"], var.environment)
     error_message = "Must be dev, staging, or prod."
   }
 }
 
-variable "tags" {
-  type        = map(string)
-  description = "Resource tags to apply."
-  default     = {}
-}
-
-variable "enable_logging" {
-  type        = bool
-  description = "Enable access logging."
-  default     = false
-}
-
 variable "db_password" {
+  description = "Database master password"
   type        = string
   sensitive   = true
-  description = "Database password. Marked sensitive."
+}
+
+variable "subnet_config" {
+  description = "Subnet definitions"
+  type = list(object({
+    cidr_block        = string
+    availability_zone = string
+    public            = optional(bool, false)
+  }))
 }
 ```
 
-Use `object()` and `optional()` for complex inputs (Terraform 1.3+):
+Use `optional()` with defaults for object attributes (Terraform 1.3+). Mark secrets `sensitive = true`.
 
-```hcl
-variable "scaling" {
-  type = object({
-    min_size     = number
-    max_size     = number
-    desired      = optional(number, 2)
-    cpu_target   = optional(number, 70)
-  })
-  description = "Auto-scaling parameters."
-}
-```
+## Outputs
 
-## Output Variables
-
-Expose only what consumers need in `outputs.tf`.
+Declare outputs with descriptions. Use conditional values for optional resources:
 
 ```hcl
 output "vpc_id" {
+  description = "ID of the created VPC"
   value       = aws_vpc.main.id
-  description = "ID of the created VPC."
 }
 
 output "private_subnet_ids" {
+  description = "List of private subnet IDs"
   value       = aws_subnet.private[*].id
-  description = "List of private subnet IDs."
 }
 
-output "db_connection_string" {
-  value       = "postgresql://${aws_db_instance.main.endpoint}/${var.db_name}"
+output "db_endpoint" {
+  description = "Database connection endpoint"
+  value       = var.create_db ? aws_db_instance.main[0].endpoint : null
   sensitive   = true
-  description = "Database connection string."
 }
 ```
 
-## Module Composition Patterns
-
-### Flat Composition — root calls independent child modules
+## Module Sources
 
 ```hcl
-module "network" {
-  source      = "./modules/network"
-  cidr_block  = "10.0.0.0/16"
-  environment = var.environment
+# Local path
+module "vpc" { source = "./modules/vpc" }
+
+# Git with tag
+module "vpc" {
+  source = "git::https://github.com/org/terraform-aws-vpc.git?ref=v3.2.0"
 }
 
-module "compute" {
-  source     = "./modules/compute"
-  subnet_ids = module.network.private_subnet_ids
-  vpc_id     = module.network.vpc_id
-}
-```
-
-### Facade — wrapper encapsulates child modules
-
-```hcl
-# modules/platform/main.tf
-module "network" { source = "../network"; cidr = var.cidr }
-module "eks" {
-  source     = "../eks"
-  vpc_id     = module.network.vpc_id
-  subnet_ids = module.network.private_subnet_ids
-}
-output "cluster_endpoint" { value = module.eks.endpoint }
-```
-
-### for_each — stamp multiple instances
-
-```hcl
-variable "services" {
-  type = map(object({ image = string, cpu = number, port = number }))
-}
-
-module "service" {
-  source   = "./modules/ecs-service"
-  for_each = var.services
-  name     = each.key
-  image    = each.value.image
-  cpu      = each.value.cpu
-  port     = each.value.port
-}
-```
-
-## Remote Module Sources
-
-```hcl
-# Terraform Registry (public or private)
+# Terraform Registry with version constraint
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "~> 5.0"
 }
 
-# Git repository (pin to tag)
-module "custom" {
-  source = "git::https://github.com/org/terraform-modules.git//modules/rds?ref=v2.1.0"
-}
-
 # S3 bucket
-module "lambda" {
-  source = "s3::https://s3-us-east-1.amazonaws.com/my-tf-modules/lambda-v1.0.0.zip"
+module "vpc" {
+  source = "s3::https://s3-eu-west-1.amazonaws.com/bucket/vpc-module.zip"
 }
 ```
 
-Always pin with `version` (registry) or `ref`/tag (git). Never use `ref=main`.
+Pin versions explicitly. Use `~>` for minor version flexibility. Never use unversioned registry modules in production.
 
-## Versioning Strategies
+## Module Versioning
 
-Use Semantic Versioning: `MAJOR.MINOR.PATCH`.
+Follow semantic versioning for published modules:
 
-| Change type | Bump | Example |
-|---|---|---|
-| Breaking variable/output rename | MAJOR | 1.0.0 → 2.0.0 |
-| New optional variable | MINOR | 1.0.0 → 1.1.0 |
-| Bug fix, docs | PATCH | 1.1.0 → 1.1.1 |
+- **MAJOR** — breaking changes (removed variables, renamed outputs, changed resource types).
+- **MINOR** — new features with backward-compatible defaults.
+- **PATCH** — bug fixes, documentation updates.
 
-Version constraint operators:
+Tag releases: `git tag v1.2.0 && git push origin v1.2.0`. Maintain CHANGELOG.md.
+
+## Module Composition and Nesting
+
+Compose infrastructure from focused modules in root configurations:
 
 ```hcl
-version = "5.1.0"      # Exact
-version = "~> 5.1"     # >= 5.1.0, < 6.0.0
-version = ">= 5.0, < 6.0"  # Range
+module "vpc" {
+  source      = "./modules/vpc"
+  cidr_block  = "10.0.0.0/16"
+  environment = var.environment
+}
+
+module "eks" {
+  source          = "./modules/eks"
+  vpc_id          = module.vpc.vpc_id
+  subnet_ids      = module.vpc.private_subnet_ids
+  cluster_version = "1.29"
+}
+
+module "app" {
+  source       = "./modules/app"
+  cluster_name = module.eks.cluster_name
+  db_endpoint  = module.rds.endpoint
+}
 ```
 
-Use `moved` blocks for safe refactoring without state loss:
+Limit nesting to 2 levels. Use `for_each` to instantiate modules per environment or region:
 
 ```hcl
-moved {
-  from = aws_instance.old_name
-  to   = aws_instance.new_name
+module "regional_vpc" {
+  for_each = toset(["us-east-1", "eu-west-1"])
+  source   = "./modules/vpc"
+  region   = each.key
 }
 ```
 
-## Workspace Management
+## State Management
 
-```hcl
-locals {
-  env_config = {
-    dev  = { instance_type = "t3.small",  count = 1 }
-    staging = { instance_type = "t3.medium", count = 2 }
-    prod = { instance_type = "m5.large",  count = 3 }
-  }
-  env = local.env_config[terraform.workspace]
-}
-
-resource "aws_instance" "app" {
-  count         = local.env.count
-  instance_type = local.env.instance_type
-  ami           = var.ami_id
-}
-```
-
-Commands: `terraform workspace new staging && terraform workspace select staging && terraform plan`
-
-## State Management Patterns
-
-### Remote backend (S3 + DynamoDB locking)
+### Remote Backends
 
 ```hcl
 terraform {
   backend "s3" {
-    bucket = "my-tf-state"
-    key    = "infra/terraform.tfstate"
-    region = "us-east-1"
-    dynamodb_table = "tf-lock"
-    encrypt = true
+    bucket         = "my-terraform-state"
+    key            = "prod/vpc/terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-locks"
+    encrypt        = true
   }
 }
 ```
 
-### Cross-stack references via remote state
+Use DynamoDB (S3), Cloud Storage (GCS), or Blob lease (Azure) for state locking. Structure keys: `{env}/{component}/terraform.tfstate`.
+
+### Import Blocks (1.5+)
+
+Import existing resources into state declaratively:
 
 ```hcl
-data "terraform_remote_state" "network" {
-  backend = "s3"
-  config  = { bucket = "my-tf-state", key = "network/terraform.tfstate", region = "us-east-1" }
+import {
+  to = aws_s3_bucket.legacy
+  id = "my-existing-bucket"
 }
 
-resource "aws_instance" "app" {
-  subnet_id = data.terraform_remote_state.network.outputs.private_subnet_ids[0]
-}
-```
-
-Prefer passing outputs explicitly over remote state when modules are in the same root.
-
-## Provider Configuration
-
-Root modules configure providers; child modules only declare requirements.
-
-```hcl
-# Root module
-provider "aws" { region = "us-east-1" }
-provider "aws" { alias = "west"; region = "us-west-2" }
-
-module "replica" {
-  source    = "./modules/s3-replica"
-  providers = { aws.primary = aws, aws.replica = aws.west }
+resource "aws_s3_bucket" "legacy" {
+  bucket = "my-existing-bucket"
 }
 ```
 
-```hcl
-# modules/s3-replica/versions.tf — child declares aliases it expects
-terraform {
-  required_providers {
-    aws = {
-      source                = "hashicorp/aws"
-      configuration_aliases = [aws.primary, aws.replica]
-    }
-  }
-}
-```
+Run `terraform plan` to verify before applying.
 
-## Testing Modules
+## Workspaces vs Directory-Based Environments
 
-### Native terraform test (>= 1.6)
-
-Place `*.tftest.hcl` files in `tests/` or module root.
-
-```hcl
-# tests/main.tftest.hcl
-
-variables {
-  name        = "test-vpc"
-  environment = "dev"
-  cidr_block  = "10.0.0.0/16"
-}
-
-run "creates_vpc" {
-  command = plan
-
-  assert {
-    condition     = aws_vpc.main.cidr_block == "10.0.0.0/16"
-    error_message = "VPC CIDR mismatch."
-  }
-}
-
-run "validates_tags" {
-  command = plan
-
-  assert {
-    condition     = aws_vpc.main.tags["Environment"] == "dev"
-    error_message = "Environment tag not set."
-  }
-}
-
-run "full_apply" {
-  command = apply
-
-  assert {
-    condition     = output.vpc_id != ""
-    error_message = "VPC ID must not be empty."
-  }
-}
-```
-
-Run with:
+**Workspaces** — lightweight isolation when code is identical across environments:
 
 ```bash
-terraform test
-terraform test -filter=tests/main.tftest.hcl
+terraform workspace new staging
+terraform workspace select staging
+terraform apply -var-file="staging.tfvars"
 ```
+
+**Directory-based** — when environments differ structurally:
+
+```
+environments/
+├── dev/      (main.tf + terraform.tfvars)
+├── staging/  (main.tf + terraform.tfvars)
+└── prod/     (main.tf + terraform.tfvars)
+```
+
+Prefer directory-based for production. Each directory has its own state and backend config.
+
+## Testing
+
+### Native terraform test (1.6+)
+
+Write `.tftest.hcl` files in a `tests/` directory:
+
+```hcl
+run "creates_vpc" {
+  command = plan
+  variables {
+    cidr_block  = "10.0.0.0/16"
+    environment = "test"
+  }
+  assert {
+    condition     = aws_vpc.main.cidr_block == "10.0.0.0/16"
+    error_message = "VPC CIDR does not match input"
+  }
+}
+```
+
+### Mock Providers (1.7+)
+
+Test without real cloud calls:
+
+```hcl
+mock_provider "aws" {
+  mock_resource "aws_s3_bucket" {
+    defaults = { arn = "arn:aws:s3:::mock-bucket" }
+  }
+}
+
+run "bucket_name_set" {
+  variables { bucket_name = "my-bucket" }
+  assert {
+    condition     = aws_s3_bucket.main.bucket == "my-bucket"
+    error_message = "Bucket name mismatch"
+  }
+}
+```
+
+Run: `terraform test`. Filter: `terraform test -filter=tests/vpc.tftest.hcl`.
 
 ### Terratest (Go)
 
 ```go
 func TestVpcModule(t *testing.T) {
-  t.Parallel()
-  opts := &terraform.Options{
-    TerraformDir: "../examples/complete",
-    Vars: map[string]interface{}{"name": "test", "environment": "dev"},
-  }
-  defer terraform.Destroy(t, opts)
-  terraform.InitAndApply(t, opts)
-  assert.NotEmpty(t, terraform.Output(t, opts, "vpc_id"))
+    opts := &terraform.Options{
+        TerraformDir: "../modules/vpc",
+        Vars: map[string]interface{}{"cidr_block": "10.0.0.0/16"},
+    }
+    defer terraform.Destroy(t, opts)
+    terraform.InitAndApply(t, opts)
+    vpcID := terraform.Output(t, opts, "vpc_id")
+    assert.NotEmpty(t, vpcID)
 }
 ```
 
-### Static analysis
+## CI/CD Pipeline
 
-```bash
-terraform fmt -check -recursive && terraform validate && tflint --recursive
-```
+1. **On PR** — `terraform fmt -check`, `terraform validate`, `terraform plan -out=tfplan`.
+2. **On merge** — `terraform apply tfplan` using saved plan artifact.
+3. **Scheduled** — `terraform plan` for drift detection; alert on differences.
 
-## CI/CD Pipeline for Modules
+Set `TF_IN_AUTOMATION=1` and `-input=false` in CI. Store plan files as artifacts for audit.
 
-See [`assets/github-actions-ci.yml`](assets/github-actions-ci.yml) for a complete workflow. Minimal example:
+## Provider Configuration and Dependency Injection
 
-```yaml
-# .github/workflows/module-ci.yml
-name: Module CI
-on:
-  pull_request: { branches: [main] }
-  push: { tags: ["v*"] }
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
-      - run: terraform fmt -check -recursive
-      - run: terraform init -backend=false
-      - run: terraform validate
-      - run: terraform test
-```
-
-Tag releases: `git tag -a v1.2.0 -m "Add logging" && git push origin v1.2.0`
-
-## Module Registry Publishing
-
-**Public Registry:** Name repo `terraform-<PROVIDER>-<NAME>`, use standard structure, tag with semver (`v1.0.0`), connect GitHub to registry.terraform.io — auto-publishes on tags.
-
-**Private Registry (TFC/TFE):** Connect VCS repo via API or UI; same semver tagging workflow applies.
-
-## Examples
-
-### "Create a reusable VPC module"
+Define providers only in root. Pass to child modules explicitly:
 
 ```hcl
-# modules/vpc/main.tf
-resource "aws_vpc" "this" {
-  cidr_block           = var.cidr
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-  tags = { Name = "vpc-${var.cidr}" }
+provider "aws" {
+  region = "us-east-1"
+  alias  = "primary"
 }
 
-resource "aws_subnet" "private" {
-  count             = length(var.azs)
-  vpc_id            = aws_vpc.this.id
-  cidr_block        = cidrsubnet(var.cidr, 8, count.index)
-  availability_zone = var.azs[count.index]
+provider "aws" {
+  region = "eu-west-1"
+  alias  = "secondary"
 }
 
-output "vpc_id" { value = aws_vpc.this.id }
-output "private_subnet_ids" { value = aws_subnet.private[*].id }
+module "primary_vpc" {
+  source    = "./modules/vpc"
+  providers = { aws = aws.primary }
+}
+
+module "dr_vpc" {
+  source    = "./modules/vpc"
+  providers = { aws = aws.secondary }
+}
 ```
 
-### "Test this module"
+In child modules, declare required providers without configuration:
 
 ```hcl
-# tests/vpc.tftest.hcl
-variables { cidr = "10.0.0.0/16"; azs = ["us-east-1a", "us-east-1b"] }
-
-run "plan_vpc" {
-  command = plan
-  assert {
-    condition     = aws_vpc.this.cidr_block == "10.0.0.0/16"
-    error_message = "CIDR mismatch."
+terraform {
+  required_providers {
+    aws = { source = "hashicorp/aws" }
   }
 }
 ```
 
-### "Multi-region with provider aliases"
+## Data Sources and Dynamic Blocks
+
+Reference existing resources with data sources:
 
 ```hcl
-provider "aws" { region = "us-east-1" }
-provider "aws" { alias = "eu"; region = "eu-west-1" }
-
-module "us" { source = "./modules/regional"; providers = { aws = aws } }
-module "eu" { source = "./modules/regional"; providers = { aws = aws.eu } }
+data "aws_caller_identity" "current" {}
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "name"
+    values = ["al2023-ami-*-x86_64"]
+  }
+}
 ```
 
----
+Use dynamic blocks for repeatable nested structures:
 
-## References
+```hcl
+resource "aws_security_group" "main" {
+  name   = "${var.name}-sg"
+  vpc_id = var.vpc_id
 
-Deep-dive guides for advanced usage:
+  dynamic "ingress" {
+    for_each = var.ingress_rules
+    content {
+      from_port   = ingress.value.from_port
+      to_port     = ingress.value.to_port
+      protocol    = ingress.value.protocol
+      cidr_blocks = ingress.value.cidr_blocks
+    }
+  }
+}
+```
 
-| Reference | Description |
-|-----------|-------------|
-| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Module composition (root/child, facade, factory), dynamic backends, complex variable validation, provider aliasing, moved blocks, import blocks, state migration strategies |
-| [`references/troubleshooting.md`](references/troubleshooting.md) | Common errors (provider inheritance, circular deps, count/for_each limitations, state locking), debugging with TF_LOG, state surgery (mv/rm/import), performance tuning |
-| [`references/testing-guide.md`](references/testing-guide.md) | Terraform test framework (HCL-based), Terratest patterns in Go, tflint custom rules, Checkov/tfsec security scanning, CI/CD integration for module testing |
+Avoid deeply nested dynamic blocks — split into separate resources if complex.
 
-## Scripts
+## Moved Blocks and Refactoring
 
-Ready-to-use automation scripts (all `chmod +x`):
+Use `moved` blocks to rename or relocate resources without destroy/recreate:
 
-| Script | Description |
-|--------|-------------|
-| [`scripts/scaffold-module.sh`](scripts/scaffold-module.sh) | Generate a new module directory with main.tf, variables.tf, outputs.tf, versions.tf, README.md, examples/, and tests/. Usage: `./scaffold-module.sh <name> [provider]` |
-| [`scripts/validate-module.sh`](scripts/validate-module.sh) | Run terraform fmt, validate, tflint, and tfsec/checkov on a module directory. Usage: `./validate-module.sh [module-dir]` |
-| [`scripts/publish-module.sh`](scripts/publish-module.sh) | Tag a module release (semver) and publish to a private registry. Usage: `./publish-module.sh <version> [--dry-run]` |
+```hcl
+moved {
+  from = aws_instance.web
+  to   = aws_instance.application
+}
 
-## Assets
+moved {
+  from = module.old_name
+  to   = module.new_name
+}
+```
 
-Templates and configuration files for bootstrapping module infrastructure:
+Use `removed` blocks (1.7+) to drop resources from state without destroying:
 
-| Asset | Description |
-|-------|-------------|
-| [`assets/module-template/`](assets/module-template/) | Complete module boilerplate: main.tf, variables.tf, outputs.tf, versions.tf, README.md |
-| [`assets/github-actions-ci.yml`](assets/github-actions-ci.yml) | GitHub Actions CI workflow: format, validate, lint, security scan, plan tests, integration tests, release |
-| [`assets/terrafile.hcl`](assets/terrafile.hcl) | Example terraform test file demonstrating plan tests, validation tests, and apply tests |
-| [`assets/.tflint.hcl`](assets/.tflint.hcl) | TFLint configuration template with terraform, AWS, GCP, and Azure plugin sections |
+```hcl
+removed {
+  from = aws_instance.legacy
+  lifecycle { destroy = false }
+}
+```
 
-<!-- tested: pass -->
+Apply `moved` blocks in one release, then remove them in the next.
+
+## Common Module Patterns
+
+### VPC Module
+
+```hcl
+module "vpc" {
+  source             = "terraform-aws-modules/vpc/aws"
+  version            = "~> 5.0"
+  name               = "${var.project}-${var.environment}"
+  cidr               = var.vpc_cidr
+  azs                = var.availability_zones
+  private_subnets    = var.private_subnet_cidrs
+  public_subnets     = var.public_subnet_cidrs
+  enable_nat_gateway = true
+  single_nat_gateway = var.environment != "prod"
+  tags               = var.tags
+}
+```
+
+### EKS Module
+
+```hcl
+module "eks" {
+  source          = "terraform-aws-modules/eks/aws"
+  version         = "~> 20.0"
+  cluster_name    = "${var.project}-${var.environment}"
+  cluster_version = "1.29"
+  vpc_id          = module.vpc.vpc_id
+  subnet_ids      = module.vpc.private_subnets
+  enable_irsa     = true
+  eks_managed_node_groups = {
+    default = {
+      instance_types = ["m5.large"]
+      min_size       = var.environment == "prod" ? 3 : 1
+      max_size       = var.environment == "prod" ? 10 : 3
+    }
+  }
+}
+```
+
+### Lambda Module
+
+```hcl
+module "lambda" {
+  source        = "./modules/lambda"
+  function_name = "${var.project}-processor"
+  handler       = "index.handler"
+  runtime       = "nodejs20.x"
+  source_dir    = "${path.root}/src/processor"
+  environment_variables = {
+    TABLE_NAME = module.dynamodb.table_name
+    STAGE      = var.environment
+  }
+}
+```
+
+## Quick Reference
+
+| Practice | Do | Don't |
+|---|---|---|
+| Providers | Define in root only | Configure in child modules |
+| Variables | Type + validate + describe | Use `any` type |
+| Outputs | Describe every output | Expose internal details |
+| Versions | Pin with `~>` constraints | Use unversioned sources |
+| State | Remote backend + locking | Local state in production |
+| Testing | `terraform test` + CI plan | Skip validation |
+| Naming | `terraform-{provider}-{name}` | Ambiguous names |
+| Modules | <20 resources, single purpose | Monolithic modules |
