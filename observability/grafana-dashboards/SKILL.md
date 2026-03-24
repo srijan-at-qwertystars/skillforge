@@ -497,3 +497,4 @@ Templates and configs in `assets/`:
 | **provisioning/dashboards.yml** | Dashboard provisioning provider config (file-based, folder structure) |
 | **provisioning/datasources.yml** | Data source provisioning for Prometheus + Loki |
 | **golden-signals-dashboard.json** | Complete Golden Signals dashboard (Latency, Traffic, Errors, Saturation) with template variables |
+<!-- tested: pass -->

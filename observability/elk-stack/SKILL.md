@@ -460,3 +460,5 @@ Ready-to-use configurations in `assets/`:
 | [logstash/pipeline.conf](assets/logstash/pipeline.conf) | Multi-input pipeline (beats/syslog/HTTP) with grok, geoip, useragent, fingerprint dedup, conditional output routing |
 | [filebeat/filebeat.yml](assets/filebeat/filebeat.yml) | Docker autodiscover with hints, container-specific templates, processors, ILM-enabled ES output |
 | [elasticsearch/ilm-policy.json](assets/elasticsearch/ilm-policy.json) | 5-phase ILM template: hot → warm → cold → frozen → delete with rollover, shrink, searchable snapshots |
+
+<!-- tested: pass -->

@@ -483,3 +483,5 @@ Production-ready templates in `assets/`:
 - **`assets/inventory/dynamic_inventory.py`** — Dynamic inventory script template with `--list`/`--host` interface
 - **`assets/site.yml`** — Top-level playbook with common/web/app/db/monitoring plays, role includes, tags, and health checks
 - **`assets/requirements.yml`** — Collection and role requirements with version pinning for Galaxy and private hubs
+
+<!-- tested: pass -->
