@@ -143,3 +143,6 @@
 | web | [htmx-patterns](web/htmx-patterns/) | htmx 2.x hypermedia-driven UI — core attributes, targeting, swapping, OOB updates, extensions, server-side patterns, and progressive enhancement | tested |
 | typescript | [zod-validation](typescript/zod-validation/) | Zod schema validation — TypeScript-first parsing, transforms, refinements, error handling, framework integration, and type inference | tested |
 | devops | [pulumi-iac](devops/pulumi-iac/) | Pulumi Infrastructure as Code — real programming languages for cloud resources, stacks, component resources, testing, Automation API, and CI/CD | tested |
+| testing | [playwright-e2e](testing/playwright-e2e/) | Playwright end-to-end testing — locators, actions, assertions, fixtures, POM, API testing, visual comparison, network interception, and CI/CD | created |
+| databases | [valkey-redis](databases/valkey-redis/) | Valkey/Redis in-memory data store — data structures, streams, Pub/Sub, caching patterns, rate limiting, Lua scripting, cluster mode, and Sentinel | created |
+| web | [sveltekit-framework](web/sveltekit-framework/) | SvelteKit 2.x with Svelte 5 runes — file-based routing, load functions, form actions, hooks, adapters, env vars, and SSR/SSG/SPA modes | created |
