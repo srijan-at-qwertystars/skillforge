@@ -167,6 +167,6 @@
 | observability | [prometheus-monitoring](observability/prometheus-monitoring/) | Prometheus monitoring — PromQL, metrics, alerting rules, Alertmanager, exporters | tested |
 | messaging | [rabbitmq-patterns](messaging/rabbitmq-patterns/) | RabbitMQ messaging — AMQP, exchanges, queues, routing, clustering, streams | tested |
 | testing | [cypress-testing](testing/cypress-testing/) | Cypress E2E testing — selectors, intercepts, component testing, CI integration | tested |
-| databases | [cockroachdb-patterns](databases/cockroachdb-patterns/) | CockroachDB distributed SQL — multi-region, serializable isolation, changefeeds | enriched |
-| networking | [istio-service-mesh](networking/istio-service-mesh/) | Istio service mesh — traffic management, mTLS, observability, Envoy sidecar | enriched |
-| mobile | [flutter-dart](mobile/flutter-dart/) | Flutter/Dart — widgets, state management, platform channels, multi-platform | enriched |
+| databases | [cockroachdb-patterns](databases/cockroachdb-patterns/) | CockroachDB distributed SQL — multi-region, serializable isolation, changefeeds | tested |
+| networking | [istio-service-mesh](networking/istio-service-mesh/) | Istio service mesh — traffic management, mTLS, observability, Envoy sidecar | tested |
+| mobile | [flutter-dart](mobile/flutter-dart/) | Flutter/Dart — widgets, state management, platform channels, multi-platform | tested |

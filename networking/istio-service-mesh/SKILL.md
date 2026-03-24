@@ -433,3 +433,5 @@ Ready-to-use Kubernetes manifests in `assets/`:
 | [authorization-policy.yaml](assets/authorization-policy.yaml) | Deny-by-default AuthorizationPolicy with per-service ALLOW rules and monitoring access |
 | [peer-authentication.yaml](assets/peer-authentication.yaml) | Mesh-wide STRICT mTLS with port-level exceptions for health checks |
 | [istio-operator-values.yaml](assets/istio-operator-values.yaml) | IstioOperator config with production resource limits, HPA, egress lockdown, CNI, ext-authz |
+
+<!-- tested: needs-fix -->

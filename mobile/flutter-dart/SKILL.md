@@ -498,3 +498,4 @@ Run `dart run build_runner build --delete-conflicting-outputs`. Key generators:
 | GitHub Actions | `assets/github-actions-flutter.yml` | Full CI/CD pipeline: quality checks, Android/iOS/web builds, golden tests, coverage |
 | Architecture Template | `assets/app-architecture-template.dart` | Clean architecture feature module: domain entities, repository interfaces, use cases, data layer, Riverpod providers, presentation |
 | Theme Template | `assets/theme-template.dart` | Material 3 theme with light/dark modes, component themes, spacing/shape systems, typography |
+<!-- tested: pass -->

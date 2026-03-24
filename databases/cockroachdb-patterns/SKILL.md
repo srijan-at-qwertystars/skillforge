@@ -487,3 +487,5 @@ Ready-to-use configuration and code in `assets/`:
 | [retry-transaction.go](assets/retry-transaction.go) | Go (pgx) transaction retry with exponential backoff |
 | [retry-transaction.py](assets/retry-transaction.py) | Python (psycopg2) transaction retry with SAVEPOINT protocol |
 | [cockroachdb-helm-values.yaml](assets/cockroachdb-helm-values.yaml) | Helm values for Kubernetes deployment with TLS, monitoring, topology spread |
+
+<!-- tested: pass -->
