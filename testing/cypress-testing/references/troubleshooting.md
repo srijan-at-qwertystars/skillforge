@@ -1,592 +1,662 @@
 # Cypress Troubleshooting Guide
 
 ## Table of Contents
-1. [Flaky Tests](#1-flaky-tests)
-2. [Element Detached from DOM](#2-element-detached-from-dom)
-3. [cy.intercept Not Matching](#3-cyintercept-not-matching)
-4. [CORS Issues](#4-cors-issues)
-5. [Iframe Access Problems](#5-iframe-access-problems)
-6. [Memory Leaks in Long Specs](#6-memory-leaks-in-long-specs)
-7. [Slow Test Execution](#7-slow-test-execution)
-8. [CI Failures](#8-ci-failures)
-9. [Screenshots/Videos Debugging](#9-screenshotsvideos-debugging)
-10. [Cypress vs App State Conflicts](#10-cypress-vs-app-state-conflicts)
+
+- [Flaky Tests](#flaky-tests)
+  - [Common Causes](#common-causes)
+  - [Fixes and Prevention](#fixes-and-prevention)
+- [Detached DOM Elements](#detached-dom-elements)
+- [Race Conditions](#race-conditions)
+- [cy.intercept Not Matching](#cyintercept-not-matching)
+- [CORS Issues](#cors-issues)
+- [Iframe Access Problems](#iframe-access-problems)
+- [Slow Tests Optimization](#slow-tests-optimization)
+- [Memory Leaks in Long Test Suites](#memory-leaks-in-long-test-suites)
+- [CI-Specific Failures](#ci-specific-failures)
+  - [Missing Dependencies](#missing-dependencies)
+  - [Headless Browser Issues](#headless-browser-issues)
+  - [Docker Troubleshooting](#docker-troubleshooting)
+- [Cypress vs Playwright Decision Matrix](#cypress-vs-playwright-decision-matrix)
+
 ---
-## 1. Flaky Tests
-**Problem:** Tests pass intermittently—succeed locally, fail in CI, or pass only on retry.
 
-**Root Cause:** Race conditions between the test runner and application state. Animations delay element interactability, network responses arrive unpredictably, and elements exist in the DOM but are not yet visible or enabled.
+## Flaky Tests
 
-**Solution:**
-```javascript
-// BAD — arbitrary wait is still a race condition
+### Common Causes
+
+1. **Timing dependencies** — tests assume elements appear instantly.
+2. **Shared state** — tests rely on state from previous tests.
+3. **Unstubbed network** — real API responses vary between runs.
+4. **Animation interference** — clicks land on animating elements.
+5. **Viewport differences** — elements hidden at certain screen sizes.
+6. **Third-party scripts** — analytics/chat widgets interfere with selectors.
+
+### Fixes and Prevention
+
+**Replace hard waits with assertions:**
+
+```ts
+// ❌ Flaky
 cy.wait(3000);
-cy.get('.dashboard').should('be.visible');
+cy.get('[data-cy="result"]').click();
 
-// GOOD — Cypress retries the assertion until it passes or times out
-cy.get('.dashboard', { timeout: 10000 }).should('be.visible');
+// ✅ Reliable
+cy.get('[data-cy="result"]').should('be.visible').click();
 ```
-Wait for network requests with aliases instead of timers:
-```javascript
-cy.intercept('GET', '/api/users').as('getUsers');
-cy.visit('/users');
-cy.wait('@getUsers').its('response.statusCode').should('eq', 200);
-cy.get('[data-testid="user-list"] li').should('have.length.greaterThan', 0);
+
+**Wait for network requests explicitly:**
+
+```ts
+cy.intercept('GET', '/api/data').as('getData');
+cy.visit('/page');
+cy.wait('@getData');
+cy.get('[data-cy="data-table"]').should('exist');
 ```
-Disable CSS animations globally to eliminate transition-based flakiness:
-```javascript
-// cypress/support/e2e.js
+
+**Disable animations in test mode:**
+
+```css
+/* cypress/support/disable-animations.css */
+*, *::before, *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+```
+
+```ts
+// cypress/support/e2e.ts
+import './disable-animations.css';
+```
+
+**Use `cy.session()` for deterministic auth:**
+
+```ts
 beforeEach(() => {
-  cy.document().then((doc) => {
-    const style = doc.createElement('style');
-    style.textContent = `*, *::before, *::after {
-      transition-duration: 0s !important; animation-duration: 0s !important;
-      transition-delay: 0s !important; animation-delay: 0s !important;
-    }`;
-    doc.head.appendChild(style);
-  });
-});
-```
-Ensure elements are actionable before interacting:
-```javascript
-cy.get('[data-testid="submit-btn"]').should('be.visible').and('not.be.disabled').click();
-```
-Stub unreliable endpoints to stabilize network-dependent flows:
-```javascript
-cy.intercept('GET', '/api/recommendations', {
-  statusCode: 200, body: { items: [{ id: 1, name: 'Item A' }] }, delay: 0,
-}).as('recommendations');
-cy.visit('/home');
-cy.wait('@recommendations');
-```
-
-**Prevention:** Never use `cy.wait(ms)` for application state. Set `defaultCommandTimeout` globally (e.g., 8000). Enable retries as a safety net (`retries: { runMode: 2, openMode: 0 }`). Use `data-testid` attributes for resilient selectors.
----
-## 2. Element Detached from DOM
-**Problem:** `CypressError: cy.click() failed because this element is detached from the DOM.`
-
-**Root Cause:** React/Vue/Angular tear down and re-create DOM nodes on re-render. If Cypress grabs a reference and the framework re-renders before the action executes, the original node is orphaned. Triggers include state updates between `cy.get()` and `.click()`, API responses causing re-renders, or parent components remounting children.
-
-**Solution:**
-```javascript
-// BAD — stores a reference that goes stale after re-render
-cy.get('.item').then(($el) => { cy.wrap($el).click(); });
-
-// GOOD — .should() forces Cypress to re-query on each retry
-cy.get('.item').should('be.visible').click();
-```
-Never store and reuse element references across interactions:
-```javascript
-// BAD — alias goes stale after first click triggers re-render
-cy.get('[data-testid="toggle"]').as('toggle');
-cy.get('@toggle').click();
-cy.get('@toggle').click(); // DETACHED
-
-// GOOD — always query fresh
-cy.get('[data-testid="toggle"]').click();
-cy.get('[data-testid="toggle"]').click();
-```
-Wait for re-renders to settle before interacting with the next element:
-```javascript
-cy.get('[data-testid="save-btn"]').click();
-cy.get('[data-testid="status"]').should('contain', 'Saved');
-cy.get('[data-testid="next-step-btn"]').should('be.visible').click();
-```
-Custom guard command:
-```javascript
-// cypress/support/commands.js
-Cypress.Commands.add('safeClick', { prevSubject: 'element' }, (subject) => {
-  const selector = subject.attr('data-testid')
-    ? `[data-testid="${subject.attr('data-testid')}"]` : subject.selector;
-  cy.get(selector).should('be.visible').click();
-});
-```
-
-**Prevention:** Always chain assertions before actions. Avoid `.then()` for storing references across re-render boundaries. Prefer `cy.contains('Submit').click()` which re-queries naturally.
----
-## 3. cy.intercept Not Matching
-**Problem:** `cy.intercept()` is set up but requests pass through unintercepted. `cy.wait('@alias')` times out.
-
-**Root Cause:** URL pattern doesn't match the actual request URL, method is wrong (defaults to matching all but can confuse ordering), later intercepts shadow earlier ones, or the intercept was registered after the request fired.
-
-**Solution — Debug with a catch-all:**
-```javascript
-cy.intercept('**', (req) => { console.log(`${req.method} ${req.url}`); }).as('allRequests');
-```
-Fix URL pattern mistakes:
-```javascript
-// BAD — forgot query strings are part of the URL
-cy.intercept('GET', '/api/users').as('getUsers'); // misses /api/users?page=1
-
-// GOOD — wildcard captures query strings
-cy.intercept('GET', '/api/users*').as('getUsers');
-// GOOD — use ** to ignore host differences between environments
-cy.intercept('GET', '**/api/users**').as('getUsers');
-// GOOD — regex for complex patterns
-cy.intercept('GET', /\/api\/users(\?.*)?$/).as('getUsers');
-```
-Be explicit about HTTP methods:
-```javascript
-cy.intercept('POST', '/api/users').as('createUser');
-cy.intercept('DELETE', '/api/users/*').as('deleteUser');
-```
-Route ordering — last match wins:
-```javascript
-cy.intercept('GET', '/api/users*', { body: [] }).as('emptyUsers');
-cy.intercept('GET', '/api/users*', { body: [{ id: 1 }] }).as('oneUser');
-// Second intercept wins — response will be [{ id: 1 }]
-```
-Register intercepts BEFORE the triggering action:
-```javascript
-// BAD — intercept registered after cy.visit fires the request
-cy.visit('/dashboard');
-cy.intercept('GET', '/api/stats').as('stats'); // Too late!
-
-// GOOD
-cy.intercept('GET', '/api/stats').as('stats');
-cy.visit('/dashboard');
-cy.wait('@stats');
-```
-Modify requests and responses:
-```javascript
-cy.intercept('POST', '/api/orders', (req) => {
-  req.headers['X-Test'] = 'true';
-  req.continue();
-});
-cy.intercept('GET', '/api/products', (req) => {
-  req.continue((res) => { res.body = res.body.slice(0, 5); });
-});
-```
-
-**Prevention:** Register intercepts before `cy.visit()`. Check the Command Log for route badges—missing badges mean no match. Use `**/path` to ignore host differences.
----
-## 4. CORS Issues
-**Problem:** `Access to XMLHttpRequest blocked by CORS policy` or `cy.visit() failed...different origin`.
-
-**Root Cause:** Browsers enforce Same-Origin Policy. Cypress runs inside the browser and is subject to the same restrictions—it restricts test commands to a single origin by default.
-
-**Solution:**
-```javascript
-// cypress.config.js — disable browser same-origin enforcement (Chromium only)
-module.exports = defineConfig({
-  e2e: { chromeWebSecurity: false },
-});
-```
-For multi-domain flows use `cy.origin()` (Cypress 12+):
-```javascript
-cy.visit('/login');
-cy.get('[data-testid="login-with-google"]').click();
-cy.origin('https://accounts.google.com', () => {
-  cy.get('input[type="email"]').type('user@example.com');
-  cy.get('#next').click();
-});
-cy.url().should('include', '/dashboard');
-```
-Pass data into `cy.origin()`:
-```javascript
-const creds = { email: 'user@test.com', password: 's3cret' };
-cy.origin('https://auth.example.com', { args: creds }, ({ email, password }) => {
-  cy.get('#email').type(email);
-  cy.get('#password').type(password);
-  cy.get('form').submit();
-});
-```
-Configure a dev server proxy to avoid CORS entirely:
-```javascript
-// vite.config.js
-export default { server: { proxy: { '/api': { target: 'https://api.example.com', changeOrigin: true } } } };
-```
-Prevent cross-origin errors from failing tests:
-```javascript
-Cypress.on('uncaught:exception', (err) => {
-  if (err.message.includes('cross-origin')) return false;
-});
-```
-
-**Prevention:** Use a dev server proxy so app and API share an origin. Stub cross-origin APIs with `cy.intercept()`. Use `cy.request()` for API calls—it bypasses CORS entirely.
----
-## 5. Iframe Access Problems
-**Problem:** `cy.get()` cannot find elements inside `<iframe>` tags. The iframe's document is separate from the main document Cypress operates on.
-
-**Root Cause:** Iframes create a separate browsing context. Cypress queries the top-level document by default. Cross-origin iframes are blocked by browser security entirely.
-
-**Solution — Custom command for same-origin iframes:**
-```javascript
-Cypress.Commands.add('getIframeBody', (selector) => {
-  return cy.get(selector, { timeout: 10000 })
-    .its('0.contentDocument').should('exist')
-    .its('body').should('not.be.empty')
-    .then(cy.wrap);
-});
-cy.getIframeBody('#my-iframe').find('[data-testid="iframe-button"]').click();
-```
-Wait for the iframe to fully load:
-```javascript
-Cypress.Commands.add('waitForIframe', (selector) => {
-  return cy.get(selector)
-    .should(($iframe) => {
-      expect($iframe[0].contentDocument).to.not.be.null;
-      expect($iframe[0].contentDocument.readyState).to.eq('complete');
-    })
-    .then(($iframe) => cy.wrap($iframe[0].contentDocument.body));
-});
-```
-Handle nested iframes:
-```javascript
-Cypress.Commands.add('getNestedIframeBody', (outer, inner) => {
-  return cy.getIframeBody(outer).find(inner)
-    .its('0.contentDocument.body').should('not.be.empty').then(cy.wrap);
-});
-```
-Cross-origin iframes with `cy.origin()`:
-```javascript
-cy.get('#cross-origin-iframe').invoke('attr', 'src').then((src) => {
-  cy.origin(new URL(src).origin, () => { cy.get('button.accept').click(); });
-});
-```
-Stub third-party iframe content:
-```javascript
-cy.intercept('GET', 'https://third-party.com/widget*', {
-  statusCode: 200, headers: { 'content-type': 'text/html' },
-  body: '<html><body><button id="mock-btn">OK</button></body></html>',
-});
-```
-
-**Prevention:** Always wait for `readyState === 'complete'`. Serve iframe content from the same origin when possible. Stub third-party iframes to remove external dependencies.
----
-## 6. Memory Leaks in Long Specs
-**Problem:** Tests get progressively slower or the browser crashes with "Out of Memory." The Cypress UI becomes unresponsive during long suites.
-
-**Root Cause:** Cypress stores DOM snapshots for every command for time-travel debugging. Hundreds of tests accumulate enormous snapshot data. Intercepted request/response bodies also consume memory.
-
-**Solution:**
-```javascript
-// cypress.config.js
-module.exports = defineConfig({
-  e2e: {
-    experimentalMemoryManagement: true, // Aggressive GC of completed test snapshots
-    numTestsKeptInMemory: 5,            // Default is 50; use 0 in CI
-  },
-});
-```
-Split large spec files — each spec runs in a fresh browser context:
-```
-# BAD: cypress/e2e/everything.cy.js (200 tests)
-# GOOD:
-cypress/e2e/auth/login.cy.js          # 15 tests
-cypress/e2e/auth/registration.cy.js    # 12 tests
-cypress/e2e/dashboard/overview.cy.js   # 10 tests
-cypress/e2e/settings/profile.cy.js     # 9 tests
-```
-Minimize stored response bodies in intercepts:
-```javascript
-cy.intercept('GET', '/api/large-dataset', (req) => {
-  req.continue((res) => { delete res.body; });
-});
-```
-Run specs sequentially with fresh browser instances via the Module API:
-```javascript
-const cypress = require('cypress');
-const specs = ['cypress/e2e/auth/**/*.cy.js', 'cypress/e2e/dashboard/**/*.cy.js'];
-(async () => { for (const spec of specs) await cypress.run({ spec }); })();
-```
-
-**Prevention:** Keep specs under 30 tests / 500 lines. Set `numTestsKeptInMemory: 0` in CI. Monitor CI memory and split specs proactively.
----
-## 7. Slow Test Execution
-**Problem:** Suite runtime is too long, making CI feedback loops unacceptable.
-
-**Root Cause:** Repeated `cy.visit()` reloads the app per test, full login UI flow runs for every test instead of using `cy.session()`, real network requests add latency, and large specs can't be parallelized.
-
-**Solution — Cache auth with `cy.session()`:**
-```javascript
-Cypress.Commands.add('login', (username, password) => {
-  cy.session([username, password], () => {
-    cy.visit('/login');
-    cy.get('[data-testid="username"]').type(username);
-    cy.get('[data-testid="password"]').type(password);
-    cy.get('[data-testid="login-btn"]').click();
-    cy.url().should('include', '/dashboard');
-  }, {
-    validate() { cy.request('/api/me').its('status').should('eq', 200); },
-  });
-});
-beforeEach(() => { cy.login('testuser', 'pass123'); cy.visit('/dashboard'); });
-```
-Reduce `cy.visit()` calls for read-only checks:
-```javascript
-describe('Dashboard (read-only)', () => {
-  before(() => { cy.login('testuser', 'pass123'); cy.visit('/dashboard'); });
-  it('shows header', () => { cy.get('h1').should('contain', 'Dashboard'); });
-  it('shows sidebar', () => { cy.get('nav').should('be.visible'); });
-});
-```
-Stub network requests to eliminate latency:
-```javascript
-beforeEach(() => {
-  cy.intercept('GET', '/api/dashboard/stats', { fixture: 'dashboard-stats.json' });
-  cy.intercept('GET', '/api/notifications', { fixture: 'notifications.json' });
+  cy.loginByApi('user@test.com', 'password');
   cy.visit('/dashboard');
 });
 ```
-Use API shortcuts for test setup instead of UI interactions:
-```javascript
-// BAD — slow UI-based setup
-beforeEach(() => { cy.visit('/admin'); cy.get('#name').type('User'); cy.get('form').submit(); });
-// GOOD — fast API-based setup
-beforeEach(() => { cy.request('POST', '/api/users', { name: 'User' }); });
-```
-Parallel execution with GitHub Actions:
-```yaml
-jobs:
-  cypress:
-    strategy:
-      matrix:
-        container: [1, 2, 3, 4]
-    steps:
-      - uses: cypress-io/github-action@v6
-        with:
-          record: true
-          parallel: true
-          group: 'e2e-tests'
-        env:
-          CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
-```
 
-**Prevention:** Use `cy.session()` for authentication. Seed data via `cy.request()` / `cy.task()`, not the UI. Stub external APIs by default.
----
-## 8. CI Failures
-**Problem:** Tests pass locally but fail in CI due to missing dependencies, headless rendering differences, or environment mismatches.
+**Configure retries for CI:**
 
-**Root Cause:** Missing browser/system libraries, no display server, different fonts/resolution, stale caches, or missing Cypress binary.
-
-**Solution — Use official Docker images:**
-```yaml
-jobs:
-  cypress:
-    runs-on: ubuntu-latest
-    container:
-      image: cypress/browsers:node-20.18.0-chrome-130.0.6723.69-1-ff-131.0.3-edge-130.0.2849.52-1
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cypress-io/github-action@v6
-        with:
-          browser: chrome
-```
-Install dependencies on bare Ubuntu:
-```yaml
-- run: |
-    sudo apt-get update && sudo apt-get install -y \
-      libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev libnss3 \
-      libxss1 libasound2 libxtst6 xauth xvfb fonts-liberation
-```
-Cache node_modules and Cypress binary separately:
-```yaml
-- uses: actions/cache@v4
-  with:
-    path: node_modules
-    key: node-modules-${{ hashFiles('package-lock.json') }}
-- uses: actions/cache@v4
-  with:
-    path: ~/.cache/Cypress
-    key: cypress-binary-${{ hashFiles('package-lock.json') }}
-- run: npm ci && npx cypress verify
-```
-Handle Xvfb for headless mode:
-```yaml
-- run: Xvfb :99 -screen 0 1280x720x24 &
-- run: npx cypress run --browser chrome
-  env:
-    DISPLAY: ':99'
-```
-Upload failure artifacts:
-```yaml
-- uses: cypress-io/github-action@v6
-- if: failure()
-  uses: actions/upload-artifact@v4
-  with:
-    name: cypress-screenshots
-    path: cypress/screenshots
-- if: failure()
-  uses: actions/upload-artifact@v4
-  with:
-    name: cypress-videos
-    path: cypress/videos
-```
-GitHub Actions tips:
-```yaml
-- uses: cypress-io/github-action@v6
-  with:
-    config: defaultCommandTimeout=15000,pageLoadTimeout=60000
-    wait-on: 'http://localhost:3000'
-    wait-on-timeout: 120
-```
-
-**Prevention:** Match Node.js versions between local and CI. Pin Cypress version in `package.json`. Run `npx cypress verify` in CI. Use `cypress-io/github-action` which handles Xvfb and caching.
----
-## 9. Screenshots/Videos Debugging
-**Problem:** Failure screenshots are blank/unhelpful, videos are too large, or artifacts are missing from CI.
-
-**Root Cause:** Default screenshot timing may capture post-cleanup state, compression settings are wrong, or CI artifact upload only runs on success.
-
-**Solution — Configure capture:**
-```javascript
-// cypress.config.js
-module.exports = defineConfig({
-  e2e: {
-    screenshotOnRunFailure: true,
-    screenshotsFolder: 'cypress/screenshots',
-    video: true,
-    videosFolder: 'cypress/videos',
-    videoCompression: 32, // 0 = none, 32 = default, false = disable video
+```ts
+// cypress.config.ts
+export default defineConfig({
+  retries: {
+    runMode: 2,   // CI retries
+    openMode: 0,  // local — see failures immediately
   },
 });
 ```
-Take targeted screenshots during execution:
-```javascript
-cy.get('[data-testid="error-message"]').should('be.visible');
-cy.screenshot('error-state', { capture: 'viewport' });
-// Options: 'fullPage' (scrolls), 'viewport' (visible area), or element-level:
-cy.get('[data-testid="chart"]').screenshot('chart-element');
+
+---
+
+## Detached DOM Elements
+
+**Symptom:** `cy.click()` fails with "element is detached from the DOM."
+
+**Cause:** React/Vue/Angular re-renders replace the element between Cypress finding it and acting on it.
+
+**Fixes:**
+
+```ts
+// ❌ Element may detach between .then() and .click()
+cy.get('[data-cy="item"]').then(($el) => {
+  // ... some logic
+  cy.wrap($el).click(); // $el may be stale
+});
+
+// ✅ Re-query after any operation that may trigger re-render
+cy.get('[data-cy="item"]').click(); // Cypress auto-retries the query
+
+// ✅ For complex scenarios, guard with should
+cy.get('[data-cy="item"]')
+  .should('be.visible')
+  .and('not.be.disabled')
+  .click();
+
+// ✅ Use an alias and re-query
+cy.get('[data-cy="list"]').find('li').first().as('firstItem');
+cy.get('@firstItem').should('exist'); // re-queries from alias
 ```
-Custom debug screenshot command:
-```javascript
-Cypress.Commands.add('debugScreenshot', (label) => {
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  cy.screenshot(`debug/${label}-${ts}`, { capture: 'viewport', overwrite: false });
+
+**When elements intentionally detach (e.g., modal closes, list re-sorts):**
+
+```ts
+// Wait for the re-render to complete
+cy.get('[data-cy="sort-btn"]').click();
+// Don't reuse old references — re-query
+cy.get('[data-cy="list-item"]').first().should('contain', 'Alpha');
+```
+
+---
+
+## Race Conditions
+
+### Problem: Action Before Page Ready
+
+```ts
+// ❌ Page may not be fully loaded
+cy.visit('/dashboard');
+cy.get('[data-cy="chart"]').click();
+
+// ✅ Wait for a specific readiness indicator
+cy.visit('/dashboard');
+cy.get('[data-cy="chart"]').should('be.visible').click();
+```
+
+### Problem: Multiple Rapid Clicks
+
+```ts
+// ❌ Double-submit
+cy.get('[data-cy="submit"]').click();
+cy.get('[data-cy="submit"]').click();
+
+// ✅ Verify state between actions
+cy.get('[data-cy="submit"]').click();
+cy.get('[data-cy="submit"]').should('be.disabled');
+```
+
+### Problem: Intercepted Routes Not Ready
+
+```ts
+// ❌ intercept registered after visit — misses the request
+cy.visit('/page');
+cy.intercept('GET', '/api/data', { fixture: 'data.json' }).as('getData');
+
+// ✅ Register intercepts BEFORE triggering the request
+cy.intercept('GET', '/api/data', { fixture: 'data.json' }).as('getData');
+cy.visit('/page');
+cy.wait('@getData');
+```
+
+### Problem: Assertion on Element That Updates
+
+```ts
+// ❌ May catch intermediate state
+cy.get('[data-cy="count"]').should('have.text', '5');
+
+// ✅ Use a function assertion for complex checks
+cy.get('[data-cy="count"]').should(($el) => {
+  const count = parseInt($el.text(), 10);
+  expect(count).to.eq(5);
 });
 ```
-Log failure details for screenshot correlation:
-```javascript
-Cypress.on('test:after:run', (test, runnable) => {
-  if (test.state === 'failed') {
-    const title = runnable.titlePath().join(' > ');
-    console.log(`FAILED: ${Cypress.spec.name} > ${title}`);
+
+---
+
+## cy.intercept Not Matching
+
+### Debugging Steps
+
+```ts
+// 1. Log all outgoing requests to find the actual URL
+cy.intercept('*', (req) => {
+  console.log(`${req.method} ${req.url}`);
+  req.continue();
+});
+
+// 2. Use a broader pattern, then narrow down
+cy.intercept('/api/**').as('anyApi');
+```
+
+### Common Causes and Fixes
+
+**URL mismatch (relative vs absolute):**
+
+```ts
+// ❌ Won't match if baseUrl is set
+cy.intercept('GET', 'http://localhost:3000/api/users', ...);
+
+// ✅ Use path-only patterns
+cy.intercept('GET', '/api/users', ...);
+
+// ✅ Use glob or regex for dynamic segments
+cy.intercept('GET', '/api/users/*', ...);
+cy.intercept('GET', /\/api\/users\/\d+/, ...);
+```
+
+**Query parameters:**
+
+```ts
+// ❌ Query params in the URL string are ignored
+cy.intercept('GET', '/api/users?role=admin', ...);
+
+// ✅ Use the query option
+cy.intercept({ method: 'GET', url: '/api/users', query: { role: 'admin' } }, ...).as('getAdmins');
+```
+
+**Intercept order (last wins):**
+
+```ts
+// The LAST matching intercept takes priority
+cy.intercept('GET', '/api/users', { body: [] });       // overridden
+cy.intercept('GET', '/api/users', { body: [{ id: 1 }] }); // this one wins
+```
+
+**Request already fired:**
+
+```ts
+// ❌ cy.visit triggers the request before intercept is registered
+cy.visit('/users');
+cy.intercept('GET', '/api/users', ...).as('getUsers');
+
+// ✅ Always register intercepts first
+cy.intercept('GET', '/api/users', ...).as('getUsers');
+cy.visit('/users');
+cy.wait('@getUsers');
+```
+
+**POST body matching:**
+
+```ts
+// Filter by request body
+cy.intercept('POST', '/api/search', (req) => {
+  if (req.body.query === 'specific') {
+    req.reply({ results: ['found'] });
+  } else {
+    req.continue();
   }
+}).as('search');
+```
+
+---
+
+## CORS Issues
+
+**Symptom:** `cy.request()` returns a CORS error or `cy.visit()` shows a blank page for cross-origin resources.
+
+### Fixes
+
+**For `cy.request` — bypass CORS entirely:**
+`cy.request` does NOT go through the browser — it uses Node.js HTTP. If you're getting CORS errors with `cy.request`, the issue is likely on the server (preflight failure). Check the server allows the origin.
+
+**For `cy.visit` with chromeWebSecurity:**
+
+```ts
+// cypress.config.ts
+export default defineConfig({
+  e2e: {
+    chromeWebSecurity: false, // disables same-origin policy in Chrome
+  },
 });
 ```
-CI artifact upload (use `if: failure()` or `if: always()`):
+
+> ⚠️ Only works in Chromium browsers. Firefox ignores this setting.
+
+**For cross-origin API calls from the app:**
+
+```ts
+// Proxy through Cypress
+// cypress.config.ts
+export default defineConfig({
+  e2e: {
+    setupNodeEvents(on, config) {
+      // configure a proxy or use cy.intercept to stub cross-origin calls
+    },
+  },
+});
+
+// Or intercept and stub the cross-origin call
+cy.intercept('GET', 'https://external-api.com/**', { fixture: 'external-data.json' });
+```
+
+---
+
+## Iframe Access Problems
+
+**Symptom:** `cy.get('iframe').find(...)` returns nothing or errors.
+
+### Same-Origin Iframes
+
+```ts
+// ❌ find() doesn't cross iframe boundaries
+cy.get('iframe').find('button');
+
+// ✅ Access the iframe's document body
+cy.get('iframe')
+  .its('0.contentDocument.body')
+  .should('not.be.empty')
+  .then(cy.wrap)
+  .find('button')
+  .click();
+```
+
+### Cross-Origin Iframes
+
+Cross-origin iframes cannot be accessed directly. Options:
+
+```ts
+// Option 1: Disable web security (Chrome only)
+// cypress.config.ts: chromeWebSecurity: false
+
+// Option 2: Stub the iframe content
+cy.intercept('GET', 'https://external.com/widget', {
+  body: '<html><body><button id="pay">Pay</button></body></html>',
+  headers: { 'content-type': 'text/html' },
+});
+
+// Option 3: Test the iframe content separately
+// Create a separate spec that visits the iframe URL directly
+```
+
+### Iframe Load Timing
+
+```ts
+// Wait for iframe to fully load
+cy.get('iframe[data-cy="editor"]', { timeout: 15000 })
+  .should(($iframe) => {
+    const body = $iframe[0].contentDocument?.body;
+    expect(body).to.exist;
+    expect(body.children.length).to.be.greaterThan(0);
+  })
+  .its('0.contentDocument.body')
+  .then(cy.wrap)
+  .find('.editor-content')
+  .should('be.visible');
+```
+
+---
+
+## Slow Tests Optimization
+
+### Diagnosis
+
+```bash
+# Find slow specs
+npx cypress run --reporter cypress-multi-reporters --reporter-options \
+  configFile=reporter-config.json
+
+# Use Cypress Cloud for timing breakdowns
+npx cypress run --record
+```
+
+### Optimization Strategies
+
+**1. Use `cy.session()` — biggest single improvement:**
+
+```ts
+// Before: 2-5s per test for UI login
+beforeEach(() => { loginViaUI(); }); // each test: login + navigate
+
+// After: ~50ms per test (cached)
+beforeEach(() => {
+  cy.session('admin', () => { loginViaUI(); });
+  cy.visit('/dashboard');
+});
+```
+
+**2. Use API seeding instead of UI setup:**
+
+```ts
+// ❌ Slow: create test data through UI (10+ seconds)
+cy.visit('/admin/products');
+cy.get('[data-cy="add"]').click();
+cy.get('[data-cy="name"]').type('Widget');
+cy.get('[data-cy="save"]').click();
+
+// ✅ Fast: API call (~100ms)
+cy.request('POST', '/api/products', { name: 'Widget' });
+```
+
+**3. Parallelize with Cypress Cloud:**
+
 ```yaml
-- if: failure()
-  uses: actions/upload-artifact@v4
-  with:
-    name: cypress-screenshots-${{ github.run_id }}
-    path: cypress/screenshots
-    retention-days: 7
-- if: always()
-  uses: actions/upload-artifact@v4
-  with:
-    name: cypress-videos-${{ github.run_id }}
-    path: cypress/videos
-    retention-days: 3
-    if-no-files-found: ignore
+# GitHub Actions
+strategy:
+  matrix:
+    containers: [1, 2, 3, 4]
+steps:
+  - uses: cypress-io/github-action@v6
+    with:
+      record: true
+      parallel: true
 ```
 
-**Prevention:** Always use `if: failure()` for artifact uploads. Set `retention-days`. Use `videoCompression: 32` for balanced size/quality. Disable video in CI when only screenshots suffice.
+**4. Limit video recording:**
+
+```ts
+// Only record on failure
+export default defineConfig({
+  video: false, // or true only in CI
+  screenshotOnRunFailure: true,
+});
+```
+
+**5. Optimize spec file size:**
+- Keep specs under 20 tests each.
+- Group related tests by feature, not by type.
+- Use `describe.only` / `it.only` during development.
+
+**6. Stub external services:**
+
+```ts
+// Stub slow third-party APIs
+cy.intercept('GET', 'https://api.stripe.com/**', { fixture: 'stripe-response.json' });
+cy.intercept('GET', 'https://maps.googleapis.com/**', { body: {} });
+```
+
 ---
-## 10. Cypress vs App State Conflicts
-**Problem:** Tests pass individually but fail when run together. Test B sees stale state from Test A.
 
-**Root Cause:** localStorage/sessionStorage persist between tests within a spec, cookies survive, IndexedDB is not cleared by default cleanup, service workers cache stale responses, and `before()` vs `beforeEach()` misuse shares mutable state.
+## Memory Leaks in Long Test Suites
 
-**Solution — Enable test isolation (default in Cypress 12+):**
-```javascript
-// cypress.config.js
-module.exports = defineConfig({ e2e: { testIsolation: true } });
-```
-Explicit cleanup in beforeEach:
-```javascript
-beforeEach(() => {
-  cy.clearLocalStorage();
-  cy.clearCookies();
-  cy.window().then((win) => win.sessionStorage.clear());
+### Symptoms
+
+- Tests pass individually but fail in a full suite run.
+- Browser becomes unresponsive after 50+ tests.
+- "Out of memory" errors in CI.
+
+### Causes and Fixes
+
+**1. Snapshot accumulation:**
+
+```ts
+// Cypress stores a DOM snapshot per command; large DOMs + many commands = OOM
+// Reduce numTestsKeptInMemory
+export default defineConfig({
+  numTestsKeptInMemory: 5, // default: 50 (interactive), 0 (run mode)
 });
 ```
-Clear IndexedDB:
-```javascript
-Cypress.Commands.add('clearIndexedDB', () => {
-  cy.window().then((win) => new Cypress.Promise((resolve) => {
-    if (win.indexedDB?.databases) {
-      win.indexedDB.databases().then((dbs) => {
-        Promise.all(dbs.map((db) =>
-          new Promise((r) => { const req = win.indexedDB.deleteDatabase(db.name); req.onsuccess = r; req.onerror = r; })
-        )).then(resolve);
-      });
-    } else resolve();
-  }));
-});
+
+**2. Large fixture files:**
+
+```ts
+// ❌ Loading 10MB fixture per test
+cy.fixture('huge-dataset.json').then((data) => { ... });
+
+// ✅ Use smaller, focused fixtures
+cy.fixture('dataset-page1.json').then((data) => { ... });
+
+// ✅ Generate minimal test data inline
+const items = Array.from({ length: 10 }, (_, i) => ({ id: i, name: `Item ${i}` }));
 ```
-Unregister service workers and clear Cache API:
-```javascript
-Cypress.Commands.add('unregisterServiceWorkers', () => {
+
+**3. Uncleaned event listeners / intervals:**
+
+```ts
+afterEach(() => {
+  // Clean up if your app attaches listeners to window
   cy.window().then((win) => {
-    if (win.navigator?.serviceWorker)
-      win.navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
+    win.dispatchEvent(new Event('test-cleanup'));
   });
-});
-Cypress.Commands.add('clearCacheStorage', () => {
-  cy.window().then((win) => {
-    if (win.caches) win.caches.keys().then((names) => names.forEach((n) => win.caches.delete(n)));
-  });
-});
-```
-Understand `before()` vs `beforeEach()`:
-```javascript
-// BAD — `before` runs ONCE; mutations in test A affect test B
-describe('User profile', () => {
-  before(() => { cy.request('POST', '/api/users', { name: 'Test User' }); });
-  it('updates name', () => { cy.request('PATCH', '/api/users/1', { name: 'Changed' }); });
-  it('shows original', () => {
-    cy.visit('/users/1');
-    cy.get('h1').should('contain', 'Test User'); // FAILS — state mutated
-  });
-});
-// GOOD — `beforeEach` ensures fresh state per test
-describe('User profile', () => {
-  beforeEach(() => { cy.request('POST', '/api/test/reset'); });
-  it('updates name', () => { /* ... */ });
-  it('shows original', () => { /* passes */ });
-});
-```
-Full reset command combining all strategies:
-```javascript
-Cypress.Commands.add('fullReset', () => {
-  cy.clearLocalStorage();
-  cy.clearCookies();
-  cy.window().then((win) => win.sessionStorage.clear());
-  cy.clearIndexedDB();
-  cy.unregisterServiceWorkers();
-  cy.clearCacheStorage();
-});
-beforeEach(() => { cy.fullReset(); });
-```
-Isolate test data with unique identifiers:
-```javascript
-beforeEach(() => {
-  const uid = `test-${Date.now()}-${Cypress._.random(1000)}`;
-  cy.request('POST', '/api/users', { name: `User ${uid}`, email: `${uid}@test.com` })
-    .then((res) => cy.wrap(res.body.id).as('userId'));
-  cy.wrap(uid).as('testId');
 });
 ```
 
-**Prevention:** Use `beforeEach()` for setup (not `before()` for mutable state). Keep `testIsolation: true`. Create a `cy.fullReset()` command. Generate unique test data per test.
+**4. Video recording memory impact:**
+
+```ts
+// Disable video for large suites
+export default defineConfig({
+  video: false,
+  // Or compress aggressively
+  videoCompression: 32,
+});
+```
+
+**5. Split large suites:**
+
+```bash
+# Run subsets of specs
+npx cypress run --spec "cypress/e2e/auth/**"
+npx cypress run --spec "cypress/e2e/dashboard/**"
+```
+
 ---
-## Quick Reference: Error → Fix
 
-| Error | § | Fix |
-|---|---|---|
-| `element is detached from the DOM` | [2](#2-element-detached-from-dom) | Re-query with `cy.get()` + `.should()` |
-| `cy.visit() failed...different origin` | [4](#4-cors-issues) | `cy.origin()` or `chromeWebSecurity: false` |
-| `Timed out retrying after 4000ms` | [1](#1-flaky-tests) | Add `.should()` assertions; increase timeout |
-| `cy.wait() timed out...@alias` | [3](#3-cyintercept-not-matching) | Verify URL pattern and HTTP method |
-| `Cannot access contentDocument` | [5](#5-iframe-access-problems) | Wait for iframe load; check same-origin |
-| `Out of memory` / Page crash | [6](#6-memory-leaks-in-long-specs) | Split specs; `numTestsKeptInMemory: 0` |
-| `No binary found` / `ENOENT` | [8](#8-ci-failures) | `npx cypress install && npx cypress verify` |
-| Test isolation violation | [10](#10-cypress-vs-app-state-conflicts) | `cy.fullReset()` in `beforeEach` |
+## CI-Specific Failures
 
-## Further Resources
-- [Cypress Best Practices](https://docs.cypress.io/guides/references/best-practices)
-- [Cypress Retry-ability](https://docs.cypress.io/guides/core-concepts/retry-ability)
-- [Cypress Network Requests](https://docs.cypress.io/guides/guides/network-requests)
-- [Cypress CI Configuration](https://docs.cypress.io/guides/continuous-integration/introduction)
+### Missing Dependencies
+
+**Symptom:** `Cypress failed to start` or missing shared library errors.
+
+```bash
+# Ubuntu/Debian — install required system dependencies
+apt-get install -y \
+  libgtk2.0-0 libgtk-3-0 libgbm-dev libnotify-dev \
+  libnss3 libxss1 libasound2 libxtst6 xauth xvfb
+
+# Or use Cypress Docker images (recommended)
+FROM cypress/browsers:node-20.14.0-chrome-126.0.6478.114-1-ff-127.0.1-edge-126.0.2592.61-1
+```
+
+**Cypress binary cache:**
+
+```bash
+# Verify Cypress is installed
+npx cypress verify
+
+# Clear and reinstall
+npx cypress cache clear
+npx cypress install
+
+# CI caching — cache ~/.cache/Cypress
+# GitHub Actions:
+- uses: actions/cache@v4
+  with:
+    path: ~/.cache/Cypress
+    key: cypress-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+```
+
+### Headless Browser Issues
+
+**Symptom:** Tests pass locally (headed) but fail in CI (headless).
+
+**Common causes:**
+
+1. **Viewport differences:**
+
+```ts
+// Set explicit viewport in config
+export default defineConfig({
+  e2e: {
+    viewportWidth: 1280,
+    viewportHeight: 720,
+  },
+});
+```
+
+2. **Font rendering differences:**
+
+```ts
+// Use tolerance in visual regression tests
+cy.matchImageSnapshot('component', { failureThreshold: 0.05 });
+```
+
+3. **Timing — CI machines are slower:**
+
+```ts
+// Increase timeouts for CI
+export default defineConfig({
+  e2e: {
+    defaultCommandTimeout: process.env.CI ? 15000 : 10000,
+    responseTimeout: process.env.CI ? 30000 : 20000,
+  },
+});
+```
+
+4. **GPU/rendering issues:**
+
+```bash
+# Run with specific browser flags
+npx cypress run --browser chrome --config '{"chromeWebSecurity":false}' \
+  -- --disable-gpu --no-sandbox
+```
+
+### Docker Troubleshooting
+
+```dockerfile
+# Recommended Dockerfile for Cypress in CI
+FROM cypress/included:13.6.0
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+
+# Run tests
+CMD ["npx", "cypress", "run"]
+```
+
+```yaml
+# docker-compose.yml for testing with services
+services:
+  app:
+    build: .
+    ports: ["3000:3000"]
+
+  cypress:
+    image: cypress/included:13.6.0
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      - CYPRESS_baseUrl=http://app:3000
+    volumes:
+      - .:/e2e
+    working_dir: /e2e
+    command: npx cypress run
+```
+
+---
+
+## Cypress vs Playwright Decision Matrix
+
+| Criteria | Cypress | Playwright |
+|----------|---------|------------|
+| **Language support** | JavaScript/TypeScript only | JS/TS, Python, Java, C# |
+| **Browser support** | Chrome, Firefox, Edge, Electron | Chromium, Firefox, WebKit (Safari) |
+| **Architecture** | Runs inside browser (same-origin) | Controls browser via CDP/protocol |
+| **Multi-tab/window** | ❌ Not supported | ✅ Native support |
+| **Multi-domain** | ✅ via `cy.origin()` (Cypress 12+) | ✅ Native support |
+| **Parallel execution** | Via Cypress Cloud (paid) or CI matrix | Built-in, free |
+| **Auto-waiting** | ✅ Implicit (command queue) | ✅ Implicit (locator-based) |
+| **Network stubbing** | ✅ `cy.intercept()` | ✅ `page.route()` |
+| **Component testing** | ✅ Built-in | ✅ Experimental |
+| **Visual testing** | Via plugins (Percy, Applitools) | Built-in screenshot comparison |
+| **API testing** | ✅ `cy.request()` | ✅ `request` context |
+| **Debugging** | Time-travel UI, Cypress Studio | Trace viewer, codegen |
+| **iframes** | Manual handling required | ✅ `frame()` / `frameLocator()` |
+| **Mobile emulation** | Viewport only | Full device emulation |
+| **Test isolation** | Per-test (Cypress 12+) | Per-test by default |
+| **Community/ecosystem** | Larger, more plugins | Growing rapidly |
+| **Learning curve** | Lower (jQuery-like API) | Moderate (async/await) |
+| **CI cost** | Free runner + paid Cloud for parallelization | Fully free parallelization |
+| **Best for** | Frontend-heavy apps, component testing, teams familiar with jQuery-style API | Multi-browser/multi-platform, complex multi-page flows, teams wanting free parallel execution |
+
+### When to Choose Cypress
+
+- Your team already uses JavaScript/TypeScript exclusively.
+- You need robust component testing integrated with E2E.
+- The app is a single-page application with primarily same-origin interactions.
+- You value the time-travel debugger and interactive test runner.
+- Budget allows for Cypress Cloud for parallelization.
+
+### When to Choose Playwright
+
+- You need Safari/WebKit testing.
+- The app involves multi-tab workflows or complex multi-domain flows.
+- You need free, built-in parallel execution.
+- Your team uses Python, Java, or C# in addition to JavaScript.
+- You need full mobile device emulation (not just viewport resizing).

@@ -1,41 +1,27 @@
 {
-  "rabbit_version": "3.13.0",
-  "rabbitmq_version": "3.13.0",
+  "rabbit_version": "4.0.0",
+  "rabbitmq_version": "4.0.0",
   "product_name": "RabbitMQ",
-  "product_version": "3.13.0",
+  "product_version": "4.0.0",
 
   "users": [
     {
       "name": "admin",
-      "password_hash": "CHANGE_ME",
+      "password_hash": "CHANGE_ME_USE_rabbitmqctl_OR_API",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
       "tags": ["administrator"],
       "limits": {}
     },
     {
-      "name": "app_orders",
-      "password_hash": "CHANGE_ME",
+      "name": "app_service",
+      "password_hash": "CHANGE_ME_USE_rabbitmqctl_OR_API",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
-      "tags": ["monitoring"],
+      "tags": ["management"],
       "limits": {}
     },
     {
-      "name": "app_payments",
-      "password_hash": "CHANGE_ME",
-      "hashing_algorithm": "rabbit_password_hashing_sha256",
-      "tags": ["monitoring"],
-      "limits": {}
-    },
-    {
-      "name": "app_notifications",
-      "password_hash": "CHANGE_ME",
-      "hashing_algorithm": "rabbit_password_hashing_sha256",
-      "tags": [],
-      "limits": {}
-    },
-    {
-      "name": "prometheus",
-      "password_hash": "CHANGE_ME",
+      "name": "monitoring",
+      "password_hash": "CHANGE_ME_USE_rabbitmqctl_OR_API",
       "hashing_algorithm": "rabbit_password_hashing_sha256",
       "tags": ["monitoring"],
       "limits": {}
@@ -43,10 +29,27 @@
   ],
 
   "vhosts": [
-    { "name": "/" },
-    { "name": "/production" },
-    { "name": "/staging" },
-    { "name": "/test" }
+    {
+      "name": "/",
+      "metadata": {
+        "description": "Default virtual host",
+        "default_queue_type": "quorum"
+      }
+    },
+    {
+      "name": "production",
+      "metadata": {
+        "description": "Production workloads",
+        "default_queue_type": "quorum"
+      }
+    },
+    {
+      "name": "staging",
+      "metadata": {
+        "description": "Staging and testing",
+        "default_queue_type": "quorum"
+      }
+    }
   ],
 
   "permissions": [
@@ -59,49 +62,42 @@
     },
     {
       "user": "admin",
-      "vhost": "/production",
+      "vhost": "production",
       "configure": ".*",
       "write": ".*",
       "read": ".*"
     },
     {
       "user": "admin",
-      "vhost": "/staging",
+      "vhost": "staging",
       "configure": ".*",
       "write": ".*",
       "read": ".*"
     },
     {
-      "user": "admin",
-      "vhost": "/test",
+      "user": "app_service",
+      "vhost": "production",
+      "configure": "^app\\.",
+      "write": "^(app\\.|events\\.|dlx)",
+      "read": "^(app\\.|events\\.|dlx)"
+    },
+    {
+      "user": "app_service",
+      "vhost": "staging",
       "configure": ".*",
       "write": ".*",
       "read": ".*"
     },
     {
-      "user": "app_orders",
-      "vhost": "/production",
-      "configure": "^(orders\\.|dlx|dead-letters)",
-      "write": "^(orders\\.|dlx|dead-letters)",
-      "read": "^(orders\\.|dlx|dead-letters)"
+      "user": "monitoring",
+      "vhost": "/",
+      "configure": "",
+      "write": "",
+      "read": ".*"
     },
     {
-      "user": "app_payments",
-      "vhost": "/production",
-      "configure": "^(payments\\.|dlx|dead-letters)",
-      "write": "^(payments\\.|dlx|dead-letters|orders\\.)",
-      "read": "^(payments\\.|dlx|dead-letters|orders\\.)"
-    },
-    {
-      "user": "app_notifications",
-      "vhost": "/production",
-      "configure": "^(notifications\\.)",
-      "write": "^(notifications\\.)",
-      "read": "^(notifications\\.|orders\\.|payments\\.)"
-    },
-    {
-      "user": "prometheus",
-      "vhost": "/production",
+      "user": "monitoring",
+      "vhost": "production",
       "configure": "",
       "write": "",
       "read": ".*"
@@ -110,18 +106,11 @@
 
   "topic_permissions": [
     {
-      "user": "app_orders",
-      "vhost": "/production",
-      "exchange": "orders",
-      "write": "order\\..*",
-      "read": "order\\..*"
-    },
-    {
-      "user": "app_payments",
-      "vhost": "/production",
-      "exchange": "payments",
-      "write": "payment\\..*",
-      "read": "payment\\..*"
+      "user": "app_service",
+      "vhost": "production",
+      "exchange": "events",
+      "write": "^app\\..*",
+      "read": ".*"
     }
   ],
 
@@ -129,188 +118,32 @@
   "global_parameters": [
     {
       "name": "internal_cluster_id",
-      "value": "rabbitmq-cluster-production-01"
-    }
-  ],
-
-  "policies": [
-    {
-      "vhost": "/production",
-      "name": "quorum-default",
-      "pattern": "^(?!amq\\.).*",
-      "apply-to": "queues",
-      "definition": {
-        "queue-mode": "default",
-        "delivery-limit": 10
-      },
-      "priority": 0
-    },
-    {
-      "vhost": "/production",
-      "name": "ttl-24h",
-      "pattern": ".*",
-      "apply-to": "queues",
-      "definition": {
-        "message-ttl": 86400000
-      },
-      "priority": 1
-    },
-    {
-      "vhost": "/production",
-      "name": "ha-quorum",
-      "pattern": "^(?!amq\\.).*",
-      "apply-to": "quorum_queues",
-      "definition": {
-        "max-in-memory-length": 10000
-      },
-      "priority": 2
-    },
-    {
-      "vhost": "/staging",
-      "name": "ttl-1h-staging",
-      "pattern": ".*",
-      "apply-to": "queues",
-      "definition": {
-        "message-ttl": 3600000,
-        "max-length": 10000,
-        "overflow": "reject-publish"
-      },
-      "priority": 0
-    }
-  ],
-
-  "queues": [
-    {
-      "name": "orders.processing",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-quorum-initial-group-size": 3,
-        "x-delivery-limit": 5,
-        "x-dead-letter-exchange": "dlx",
-        "x-dead-letter-routing-key": "order.failed",
-        "x-max-length": 100000,
-        "x-overflow": "reject-publish"
-      }
-    },
-    {
-      "name": "orders.notifications",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-quorum-initial-group-size": 3,
-        "x-delivery-limit": 5,
-        "x-dead-letter-exchange": "dlx",
-        "x-dead-letter-routing-key": "order.notification.failed"
-      }
-    },
-    {
-      "name": "payments.processing",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-quorum-initial-group-size": 3,
-        "x-delivery-limit": 3,
-        "x-dead-letter-exchange": "dlx",
-        "x-dead-letter-routing-key": "payment.failed",
-        "x-max-length": 50000,
-        "x-overflow": "reject-publish"
-      }
-    },
-    {
-      "name": "notifications.email",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-quorum-initial-group-size": 3,
-        "x-delivery-limit": 10,
-        "x-dead-letter-exchange": "dlx",
-        "x-dead-letter-routing-key": "notification.email.failed"
-      }
-    },
-    {
-      "name": "notifications.push",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-quorum-initial-group-size": 3,
-        "x-delivery-limit": 5,
-        "x-dead-letter-exchange": "dlx",
-        "x-dead-letter-routing-key": "notification.push.failed"
-      }
-    },
-    {
-      "name": "dead-letters.parking",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-quorum-initial-group-size": 3
-      }
-    },
-    {
-      "name": "retry.30s",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-message-ttl": 30000,
-        "x-dead-letter-exchange": "orders",
-        "x-dead-letter-routing-key": "order.created.retry"
-      }
-    },
-    {
-      "name": "retry.300s",
-      "vhost": "/production",
-      "durable": true,
-      "auto_delete": false,
-      "arguments": {
-        "x-queue-type": "quorum",
-        "x-message-ttl": 300000,
-        "x-dead-letter-exchange": "orders",
-        "x-dead-letter-routing-key": "order.created.retry"
-      }
+      "value": "rabbitmq-cluster-001"
     }
   ],
 
   "exchanges": [
     {
-      "name": "orders",
-      "vhost": "/production",
+      "name": "events",
+      "vhost": "production",
       "type": "topic",
       "durable": true,
       "auto_delete": false,
       "internal": false,
-      "arguments": {
-        "alternate-exchange": "unrouted"
-      }
+      "arguments": {}
     },
     {
-      "name": "payments",
-      "vhost": "/production",
-      "type": "topic",
+      "name": "commands",
+      "vhost": "production",
+      "type": "direct",
       "durable": true,
       "auto_delete": false,
       "internal": false,
-      "arguments": {
-        "alternate-exchange": "unrouted"
-      }
+      "arguments": {}
     },
     {
       "name": "notifications",
-      "vhost": "/production",
+      "vhost": "production",
       "type": "fanout",
       "durable": true,
       "auto_delete": false,
@@ -319,16 +152,7 @@
     },
     {
       "name": "dlx",
-      "vhost": "/production",
-      "type": "topic",
-      "durable": true,
-      "auto_delete": false,
-      "internal": false,
-      "arguments": {}
-    },
-    {
-      "name": "dlx.retry",
-      "vhost": "/production",
+      "vhost": "production",
       "type": "direct",
       "durable": true,
       "auto_delete": false,
@@ -336,9 +160,18 @@
       "arguments": {}
     },
     {
-      "name": "unrouted",
-      "vhost": "/production",
-      "type": "fanout",
+      "name": "dlx",
+      "vhost": "staging",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "events",
+      "vhost": "staging",
+      "type": "topic",
       "durable": true,
       "auto_delete": false,
       "internal": false,
@@ -346,78 +179,190 @@
     }
   ],
 
-  "bindings": [
+  "queues": [
     {
-      "source": "orders",
-      "vhost": "/production",
-      "destination": "orders.processing",
-      "destination_type": "queue",
-      "routing_key": "order.created.#",
-      "arguments": {}
+      "name": "app.order-processor",
+      "vhost": "production",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "app.order-processor.dead"
+      }
     },
     {
-      "source": "orders",
-      "vhost": "/production",
-      "destination": "orders.notifications",
+      "name": "app.payment-processor",
+      "vhost": "production",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 3,
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "app.payment-processor.dead"
+      }
+    },
+    {
+      "name": "app.notification-sender",
+      "vhost": "production",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 10,
+        "x-dead-letter-exchange": "dlx",
+        "x-dead-letter-routing-key": "app.notification-sender.dead"
+      }
+    },
+    {
+      "name": "app.analytics-collector",
+      "vhost": "production",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-max-length": 500000
+      }
+    },
+    {
+      "name": "dlq",
+      "vhost": "production",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 604800000
+      }
+    },
+    {
+      "name": "app.order-processor",
+      "vhost": "staging",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "dlx"
+      }
+    },
+    {
+      "name": "dlq",
+      "vhost": "staging",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-message-ttl": 86400000
+      }
+    }
+  ],
+
+  "bindings": [
+    {
+      "source": "events",
+      "vhost": "production",
+      "destination": "app.order-processor",
       "destination_type": "queue",
       "routing_key": "order.#",
       "arguments": {}
     },
     {
-      "source": "payments",
-      "vhost": "/production",
-      "destination": "payments.processing",
+      "source": "events",
+      "vhost": "production",
+      "destination": "app.analytics-collector",
       "destination_type": "queue",
-      "routing_key": "payment.#",
+      "routing_key": "#",
+      "arguments": {}
+    },
+    {
+      "source": "commands",
+      "vhost": "production",
+      "destination": "app.payment-processor",
+      "destination_type": "queue",
+      "routing_key": "payment.process",
       "arguments": {}
     },
     {
       "source": "notifications",
-      "vhost": "/production",
-      "destination": "notifications.email",
-      "destination_type": "queue",
-      "routing_key": "",
-      "arguments": {}
-    },
-    {
-      "source": "notifications",
-      "vhost": "/production",
-      "destination": "notifications.push",
+      "vhost": "production",
+      "destination": "app.notification-sender",
       "destination_type": "queue",
       "routing_key": "",
       "arguments": {}
     },
     {
       "source": "dlx",
-      "vhost": "/production",
-      "destination": "dead-letters.parking",
+      "vhost": "production",
+      "destination": "dlq",
       "destination_type": "queue",
       "routing_key": "#",
       "arguments": {}
     },
     {
-      "source": "dlx.retry",
-      "vhost": "/production",
-      "destination": "retry.30s",
+      "source": "events",
+      "vhost": "staging",
+      "destination": "app.order-processor",
       "destination_type": "queue",
-      "routing_key": "retry.30s",
+      "routing_key": "order.#",
       "arguments": {}
     },
     {
-      "source": "dlx.retry",
-      "vhost": "/production",
-      "destination": "retry.300s",
+      "source": "dlx",
+      "vhost": "staging",
+      "destination": "dlq",
       "destination_type": "queue",
-      "routing_key": "retry.300s",
+      "routing_key": "#",
       "arguments": {}
+    }
+  ],
+
+  "policies": [
+    {
+      "vhost": "production",
+      "name": "quorum-default",
+      "pattern": "^app\\.",
+      "apply-to": "queues",
+      "definition": {
+        "queue-type": "quorum"
+      },
+      "priority": 0
     },
     {
-      "source": "unrouted",
-      "vhost": "/production",
-      "destination": "dead-letters.parking",
-      "destination_type": "queue",
-      "routing_key": "",
-      "arguments": {}
+      "vhost": "production",
+      "name": "dlq-ttl",
+      "pattern": "^dlq",
+      "apply-to": "queues",
+      "definition": {
+        "message-ttl": 604800000,
+        "max-length": 1000000,
+        "overflow": "reject-publish"
+      },
+      "priority": 1
+    },
+    {
+      "vhost": "production",
+      "name": "max-length-default",
+      "pattern": "^app\\.",
+      "apply-to": "queues",
+      "definition": {
+        "max-length": 500000,
+        "overflow": "reject-publish-dlx"
+      },
+      "priority": 0
+    },
+    {
+      "vhost": "staging",
+      "name": "staging-ttl",
+      "pattern": ".*",
+      "apply-to": "queues",
+      "definition": {
+        "message-ttl": 86400000,
+        "max-length": 100000,
+        "overflow": "drop-head"
+      },
+      "priority": 0
     }
   ]
 }

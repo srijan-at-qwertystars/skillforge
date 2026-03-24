@@ -2,217 +2,170 @@
 
 ## Table of Contents
 
-- [Dead Letter Exchanges with Retry Chains](#dead-letter-exchanges-with-retry-chains)
-- [Priority Queues](#priority-queues)
+- [Saga / Choreography with RabbitMQ](#saga--choreography-with-rabbitmq)
+- [Consistent Hashing Exchange](#consistent-hashing-exchange)
 - [Delayed Message Exchange Plugin](#delayed-message-exchange-plugin)
-- [Consistent Hash Exchange](#consistent-hash-exchange)
-- [RPC over RabbitMQ](#rpc-over-rabbitmq)
-- [Saga Pattern with RabbitMQ](#saga-pattern-with-rabbitmq)
-- [Competing Consumers](#competing-consumers)
 - [Message Deduplication](#message-deduplication)
-- [Header-Based Routing](#header-based-routing)
-- [Alternate Exchanges](#alternate-exchanges)
-- [Sender Confirms with Batching](#sender-confirms-with-batching)
+- [Exactly-Once Processing Strategies](#exactly-once-processing-strategies)
+- [Consumer Concurrency Tuning](#consumer-concurrency-tuning)
+- [Prefetch Optimization](#prefetch-optimization)
+- [Shovel and Federation](#shovel-and-federation)
+- [Lazy Queues vs Quorum Queues Decision Matrix](#lazy-queues-vs-quorum-queues-decision-matrix)
+- [RabbitMQ Streams for Log-Style Workloads](#rabbitmq-streams-for-log-style-workloads)
 
 ---
 
-## Dead Letter Exchanges with Retry Chains
+## Saga / Choreography with RabbitMQ
 
-### Concept
+### Overview
 
-Dead letter exchanges (DLX) receive messages that are rejected, expired, or overflow from a queue. By chaining multiple DLX-backed queues with escalating TTLs, you build exponential backoff retry logic entirely within RabbitMQ — no application-side delay logic required.
+The saga pattern coordinates distributed transactions across microservices without a centralized orchestrator (choreography) or with one (orchestration). RabbitMQ provides the messaging backbone for both styles.
 
-### How Messages Become Dead-Lettered
+### Choreography Pattern
 
-A message is dead-lettered when any of the following occurs:
+Each service listens for events and publishes the next step. No central coordinator exists — services react to domain events.
 
-1. **Consumer rejects/nacks** with `requeue=False`
-2. **Per-message TTL expires** (`expiration` property)
-3. **Queue-level TTL expires** (`x-message-ttl` argument)
-4. **Queue length limit exceeded** (`x-max-length` or `x-max-length-bytes`) with `x-overflow: reject-publish-dlx` or default drop-head behavior
-5. **Delivery limit reached** (quorum queues with `x-delivery-limit`)
+```
+OrderService --[order.created]--> PaymentService
+PaymentService --[payment.completed]--> InventoryService
+InventoryService --[inventory.reserved]--> ShippingService
+```
 
-### Exponential Backoff Retry Chain
-
-Architecture: source queue → retry-1s → retry-5s → retry-30s → retry-300s → dead-letter (parking lot)
+#### Exchange and Queue Topology
 
 ```python
-import pika
-import json
-import math
+# Each service declares its own exchange for outbound events
+channel.exchange_declare(exchange='order-events', exchange_type='topic', durable=True)
+channel.exchange_declare(exchange='payment-events', exchange_type='topic', durable=True)
+channel.exchange_declare(exchange='inventory-events', exchange_type='topic', durable=True)
 
-def setup_retry_chain(channel, source_exchange, source_queue, routing_key):
-    """Set up exponential backoff retry chain with 4 levels."""
-
-    retry_levels = [
-        ('retry.1s',   1000),    # 1 second
-        ('retry.5s',   5000),    # 5 seconds
-        ('retry.30s',  30000),   # 30 seconds
-        ('retry.300s', 300000),  # 5 minutes
-    ]
-
-    # Final dead letter queue (parking lot for manual inspection)
-    channel.exchange_declare(exchange='dlx.final', exchange_type='direct', durable=True)
-    channel.queue_declare(queue='dead-letters.parking', durable=True, arguments={
-        'x-queue-type': 'quorum'
-    })
-    channel.queue_bind(exchange='dlx.final', queue='dead-letters.parking',
-                       routing_key=routing_key)
-
-    # Build retry chain in reverse so each level DLXes to the source
-    for level_name, ttl in retry_levels:
-        retry_exchange = f'dlx.{level_name}'
-        retry_queue = f'{source_queue}.{level_name}'
-
-        channel.exchange_declare(exchange=retry_exchange, exchange_type='direct', durable=True)
-        channel.queue_declare(queue=retry_queue, durable=True, arguments={
-            'x-message-ttl': ttl,
-            'x-dead-letter-exchange': source_exchange,
-            'x-dead-letter-routing-key': routing_key,
-            'x-queue-type': 'quorum'
-        })
-        channel.queue_bind(exchange=retry_exchange, queue=retry_queue,
-                           routing_key=routing_key)
-
-    # Source queue DLXes to first retry level
-    channel.exchange_declare(exchange=source_exchange, exchange_type='direct', durable=True)
-    channel.queue_declare(queue=source_queue, durable=True, arguments={
-        'x-queue-type': 'quorum',
-        'x-dead-letter-exchange': 'dlx.retry.1s',
-        'x-dead-letter-routing-key': routing_key,
-        'x-delivery-limit': 20
-    })
-    channel.queue_bind(exchange=source_exchange, queue=source_queue,
-                       routing_key=routing_key)
-
-
-def get_death_count(properties):
-    """Extract total death count from x-death header."""
-    if not properties.headers or 'x-death' not in properties.headers:
-        return 0
-    return sum(entry.get('count', 0) for entry in properties.headers['x-death'])
-
-
-def on_message_with_retry(ch, method, properties, body):
-    """Consumer that routes to appropriate retry level based on death count."""
-    death_count = get_death_count(properties)
-    max_retries = 15
-
-    try:
-        process_message(json.loads(body))
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    except TransientError:
-        if death_count >= max_retries:
-            # Exhausted all retries — send to parking lot
-            ch.basic_publish(
-                exchange='dlx.final',
-                routing_key=method.routing_key,
-                body=body,
-                properties=pika.BasicProperties(
-                    delivery_mode=2,
-                    headers={**(properties.headers or {}),
-                             'x-final-rejection-reason': 'max-retries-exceeded',
-                             'x-total-attempts': death_count + 1}
-                )
-            )
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-        else:
-            # Select retry level based on death count (exponential)
-            retry_exchange = select_retry_level(death_count)
-            ch.basic_publish(
-                exchange=retry_exchange,
-                routing_key=method.routing_key,
-                body=body,
-                properties=properties
-            )
-            ch.basic_ack(delivery_tag=method.delivery_tag)
-    except PermanentError:
-        # Non-retryable — straight to parking lot
-        ch.basic_publish(exchange='dlx.final', routing_key=method.routing_key,
-                         body=body, properties=properties)
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-
-
-def select_retry_level(death_count):
-    """Exponential backoff: escalate retry level based on failure count."""
-    if death_count < 3:
-        return 'dlx.retry.1s'
-    elif death_count < 6:
-        return 'dlx.retry.5s'
-    elif death_count < 10:
-        return 'dlx.retry.30s'
-    else:
-        return 'dlx.retry.300s'
+# PaymentService subscribes to order events
+channel.queue_declare(queue='payment.order-listener', durable=True,
+    arguments={'x-queue-type': 'quorum'})
+channel.queue_bind(exchange='order-events', queue='payment.order-listener',
+    routing_key='order.created')
 ```
 
-### x-death Header Structure
+#### Compensating Transactions
 
-RabbitMQ automatically appends `x-death` headers on dead-lettering. The header is a list of tables:
+When a step fails, publish a compensation event to undo prior steps:
 
-```json
-[
-  {
-    "count": 3,
-    "reason": "rejected",
-    "queue": "order.processing",
-    "time": 1700000000,
-    "exchange": "orders",
-    "routing-keys": ["order.created"]
-  }
-]
+```python
+def handle_payment_failed(ch, method, properties, body):
+    event = json.loads(body)
+    # Publish compensation event
+    ch.basic_publish(
+        exchange='payment-events',
+        routing_key='payment.failed',
+        body=json.dumps({
+            'order_id': event['order_id'],
+            'reason': 'insufficient_funds',
+            'compensate': True
+        }),
+        properties=pika.BasicProperties(delivery_mode=2)
+    )
+    ch.basic_ack(delivery_tag=method.delivery_tag)
 ```
 
-Fields: `count` (cumulative per queue+reason), `reason` (`rejected`, `expired`, `maxlen`, `delivery_limit`), `queue`, `time`, `exchange`, `routing-keys`, `original-expiration` (if TTL-expired).
+### Orchestration Pattern
+
+A central saga orchestrator sends commands and listens for replies:
+
+```python
+# Orchestrator sends commands via direct exchange
+channel.basic_publish(exchange='saga-commands', routing_key='payment.process',
+    body=json.dumps({'saga_id': saga_id, 'order_id': order_id, 'amount': 99.99}),
+    properties=pika.BasicProperties(
+        reply_to='saga-replies',
+        correlation_id=saga_id,
+        delivery_mode=2
+    ))
+
+# Orchestrator listens for replies
+channel.basic_consume(queue='saga-replies', on_message_callback=handle_saga_reply)
+```
+
+### Best Practices
+
+- Use `correlation_id` to track the saga across services
+- Store saga state in a database (not in messages) for recovery
+- Set message TTLs on saga commands to prevent stale sagas
+- Implement idempotent handlers — messages may be delivered more than once
+- Use quorum queues for saga queues to prevent message loss
+- Add a `saga_timeout` mechanism to detect and compensate stuck sagas
 
 ---
 
-## Priority Queues
+## Consistent Hashing Exchange
+
+### Overview
+
+The `x-consistent-hash` exchange type distributes messages across bound queues using consistent hashing on the routing key (or message header). This provides sticky routing: the same routing key always maps to the same queue, enabling ordered processing per key while distributing load.
+
+### Installation
+
+```bash
+rabbitmq-plugins enable rabbitmq_consistent_hash_exchange
+```
 
 ### Setup
 
-Classic queues support message priority (quorum queues do not). Declare the queue with `x-max-priority` to enable.
+```python
+# Declare consistent hash exchange
+channel.exchange_declare(
+    exchange='order-partitioned',
+    exchange_type='x-consistent-hash',
+    durable=True
+)
+
+# Bind queues with weight (routing key = weight as string)
+for i in range(4):
+    queue_name = f'order-partition-{i}'
+    channel.queue_declare(queue=queue_name, durable=True,
+        arguments={'x-queue-type': 'quorum'})
+    channel.queue_bind(
+        exchange='order-partitioned',
+        queue=queue_name,
+        routing_key='100'  # weight: higher = more messages
+    )
+```
+
+### Publishing
 
 ```python
-# Priority range 0-10 (keep small — each level uses separate internal queue)
-channel.queue_declare(queue='tasks.prioritized', durable=True, arguments={
-    'x-max-priority': 10
-})
-
-# Publish with priority
+# Messages with the same routing key always go to the same queue
 channel.basic_publish(
-    exchange='',
-    routing_key='tasks.prioritized',
-    body=json.dumps(task),
-    properties=pika.BasicProperties(
-        delivery_mode=2,
-        priority=7  # Higher = delivered first
-    )
+    exchange='order-partitioned',
+    routing_key=str(customer_id),  # hash key
+    body=json.dumps(order)
 )
 ```
 
-### Priority Best Practices
+### Hashing on Headers
 
-- **Keep max-priority small** (5-10). Each priority level creates an internal sub-queue. High values waste memory.
-- **Priority only works when messages accumulate.** If consumers keep up, priority has no effect (messages are delivered immediately).
-- **Unset priority defaults to 0** (lowest). Explicitly set priority on every message.
-- **Not available on quorum queues.** Use classic queues for priority workloads.
-- **Consumer prefetch interacts with priority.** Lower prefetch gives the broker more opportunities to reorder by priority.
-
-### Priority with Competing Consumers
+To hash on a header instead of routing key:
 
 ```python
-# Low prefetch ensures broker can prioritize effectively
-channel.basic_qos(prefetch_count=1)
-
-def on_priority_message(ch, method, properties, body):
-    task = json.loads(body)
-    print(f"Processing priority={properties.priority} task={task['id']}")
-    process(task)
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-
-channel.basic_consume(queue='tasks.prioritized',
-                      on_message_callback=on_priority_message)
+channel.exchange_declare(
+    exchange='header-partitioned',
+    exchange_type='x-consistent-hash',
+    durable=True,
+    arguments={'hash-header': 'tenant-id'}
+)
 ```
+
+### Use Cases
+
+- Per-customer ordering guarantees without single-queue bottleneck
+- Partitioning workloads across consumer groups
+- Sharding by tenant in multi-tenant systems
+- Session-affinity routing
+
+### Caveats
+
+- Adding/removing queues causes key redistribution (some keys move to new queues)
+- Not suitable when strict global ordering is required
+- Monitor queue depth skew — hash distribution is statistical, not perfectly even
 
 ---
 
@@ -220,712 +173,572 @@ channel.basic_consume(queue='tasks.prioritized',
 
 ### Overview
 
-The `rabbitmq_delayed_message_exchange` plugin adds native support for delayed message delivery without TTL/DLX workarounds. Messages are stored in a Mnesia table on the node and published to the target exchange after the delay expires.
+The `rabbitmq_delayed_message_exchange` plugin enables scheduling messages for future delivery. Messages are held by the exchange (not a queue) and delivered after the specified delay.
 
 ### Installation
 
 ```bash
-# Download the plugin matching your RabbitMQ version
+# Download the plugin .ez file for your RabbitMQ version
+# Place in /usr/lib/rabbitmq/plugins/
 rabbitmq-plugins enable rabbitmq_delayed_message_exchange
 ```
 
-### Usage
-
-```python
-# Declare a delayed exchange (wraps another exchange type)
-channel.exchange_declare(
-    exchange='delayed.tasks',
-    exchange_type='x-delayed-message',
-    durable=True,
-    arguments={'x-delayed-type': 'direct'}  # Underlying exchange type
-)
-
-channel.queue_declare(queue='scheduled.tasks', durable=True)
-channel.queue_bind(exchange='delayed.tasks', queue='scheduled.tasks',
-                   routing_key='execute')
-
-# Publish with delay in milliseconds
-channel.basic_publish(
-    exchange='delayed.tasks',
-    routing_key='execute',
-    body=json.dumps({'task': 'send_reminder', 'user_id': 42}),
-    properties=pika.BasicProperties(
-        delivery_mode=2,
-        headers={'x-delay': 60000}  # Deliver after 60 seconds
-    )
-)
-```
-
-### Limitations and Caveats
-
-- **Not replicated.** Delayed messages are stored per-node in Mnesia. Node failure loses pending delayed messages.
-- **Performance at scale.** Millions of delayed messages degrade performance. Use an external scheduler (e.g., cron + publish) for very large volumes.
-- **Max delay.** The maximum delay is 2^32 - 1 milliseconds (~49.7 days).
-- **Cluster behavior.** The delay timer runs on the node where the message was published. If that node goes down before the delay expires, the message is lost.
-- **Monitoring.** Delayed messages don't appear in queue metrics until delivered. Use the management UI plugin tab to see pending delayed messages.
-
-### Alternative: TTL/DLX Delay (No Plugin)
-
-If you can't install the plugin, use TTL queues as delay buffers:
-
-```python
-# Delay queue — messages sit here for the TTL then route to the target
-channel.queue_declare(queue='delay.60s', durable=True, arguments={
-    'x-message-ttl': 60000,
-    'x-dead-letter-exchange': 'tasks',
-    'x-dead-letter-routing-key': 'execute'
-})
-
-# Publish to the delay queue
-channel.basic_publish(exchange='', routing_key='delay.60s',
-                      body=json.dumps(task),
-                      properties=pika.BasicProperties(delivery_mode=2))
-```
-
-Drawback: you need a separate queue per distinct delay duration.
-
----
-
-## Consistent Hash Exchange
-
-### Overview
-
-The `rabbitmq_consistent_hash_exchange` plugin distributes messages across queues based on a hash of the routing key (or a message header/property). This provides sticky partitioning — messages with the same key always route to the same queue — enabling ordered processing per partition.
-
 ### Setup
 
-```bash
-rabbitmq-plugins enable rabbitmq_consistent_hash_exchange
-```
-
 ```python
-# Declare consistent hash exchange
+# Declare delayed exchange — wraps another exchange type
 channel.exchange_declare(
-    exchange='events.partitioned',
-    exchange_type='x-consistent-hash',
-    durable=True
-)
-
-# Bind queues with weight (routing key = weight as string)
-for i in range(4):
-    queue_name = f'events.partition.{i}'
-    channel.queue_declare(queue=queue_name, durable=True, arguments={
-        'x-queue-type': 'quorum'
-    })
-    # Weight "10" — equal distribution across 4 queues
-    channel.queue_bind(exchange='events.partitioned', queue=queue_name,
-                       routing_key='10')
-
-# Publish — routing key is used as hash input
-channel.basic_publish(
-    exchange='events.partitioned',
-    routing_key='user-12345',  # Messages for same user → same partition
-    body=json.dumps(event)
-)
-```
-
-### Hash on Header Instead of Routing Key
-
-```python
-channel.exchange_declare(
-    exchange='events.header-hash',
-    exchange_type='x-consistent-hash',
+    exchange='delayed',
+    exchange_type='x-delayed-message',
     durable=True,
-    arguments={'hash-header': 'tenant-id'}  # Hash on header value
+    arguments={'x-delayed-type': 'direct'}  # underlying routing type
 )
 
+channel.queue_declare(queue='scheduled-tasks', durable=True,
+    arguments={'x-queue-type': 'quorum'})
+channel.queue_bind(exchange='delayed', queue='scheduled-tasks',
+    routing_key='task.scheduled')
+```
+
+### Publishing with Delay
+
+```python
+# Delay in milliseconds via x-delay header
 channel.basic_publish(
-    exchange='events.header-hash',
-    routing_key='ignored',  # Routing key ignored when hash-header is set
-    body=json.dumps(event),
+    exchange='delayed',
+    routing_key='task.scheduled',
+    body=json.dumps({'task': 'send_reminder', 'user_id': 123}),
     properties=pika.BasicProperties(
-        headers={'tenant-id': 'tenant-42'}
+        headers={'x-delay': 300000},  # 5-minute delay
+        delivery_mode=2
     )
 )
 ```
 
-### Use Cases
-
-- **Per-user ordering**: Hash on user ID ensures all events for a user go to the same consumer.
-- **Per-tenant isolation**: Hash on tenant ID for multi-tenant workloads.
-- **Sharded processing**: Distribute work across N consumers with affinity.
-
-### Rebalancing
-
-Adding/removing queues triggers consistent hash ring rebalancing. Only a fraction of keys are remapped (unlike modulo hashing). Expect brief reordering during rebalance.
-
----
-
-## RPC over RabbitMQ
-
-### Request-Reply Pattern
-
-Use a dedicated reply queue per client, `correlation_id` for matching, and `reply_to` for the callback queue.
+### Retry with Exponential Backoff
 
 ```python
-# === RPC Client ===
-import uuid
+def retry_with_backoff(channel, message, attempt, max_attempts=5):
+    if attempt >= max_attempts:
+        # Route to DLQ
+        channel.basic_publish(exchange='dlx', routing_key='failed',
+            body=message)
+        return
 
-class RpcClient:
-    def __init__(self, channel, exchange='rpc', routing_key='rpc.server'):
-        self.channel = channel
-        self.exchange = exchange
-        self.routing_key = routing_key
-        self.pending = {}
-
-        # Exclusive auto-delete reply queue
-        result = channel.queue_declare(queue='', exclusive=True)
-        self.reply_queue = result.method.queue
-        channel.basic_consume(queue=self.reply_queue,
-                              on_message_callback=self._on_reply, auto_ack=True)
-
-    def call(self, request, timeout=30):
-        corr_id = str(uuid.uuid4())
-        future = {'result': None, 'event': threading.Event()}
-        self.pending[corr_id] = future
-
-        self.channel.basic_publish(
-            exchange=self.exchange,
-            routing_key=self.routing_key,
-            body=json.dumps(request),
-            properties=pika.BasicProperties(
-                reply_to=self.reply_queue,
-                correlation_id=corr_id,
-                expiration=str(timeout * 1000),
-                content_type='application/json'
-            )
+    delay_ms = min(1000 * (2 ** attempt), 60000)  # max 60s
+    channel.basic_publish(
+        exchange='delayed',
+        routing_key='task.retry',
+        body=message,
+        properties=pika.BasicProperties(
+            headers={'x-delay': delay_ms, 'x-retry-attempt': attempt + 1},
+            delivery_mode=2
         )
-
-        if not future['event'].wait(timeout):
-            del self.pending[corr_id]
-            raise TimeoutError(f'RPC call timed out after {timeout}s')
-
-        return future['result']
-
-    def _on_reply(self, ch, method, properties, body):
-        corr_id = properties.correlation_id
-        if corr_id in self.pending:
-            self.pending[corr_id]['result'] = json.loads(body)
-            self.pending[corr_id]['event'].set()
-
-
-# === RPC Server ===
-def rpc_server(channel):
-    channel.queue_declare(queue='rpc.requests', durable=True)
-    channel.basic_qos(prefetch_count=10)
-
-    def on_request(ch, method, properties, body):
-        request = json.loads(body)
-        try:
-            result = process_request(request)
-            response = {'status': 'ok', 'result': result}
-        except Exception as e:
-            response = {'status': 'error', 'message': str(e)}
-
-        ch.basic_publish(
-            exchange='',
-            routing_key=properties.reply_to,
-            body=json.dumps(response),
-            properties=pika.BasicProperties(
-                correlation_id=properties.correlation_id,
-                content_type='application/json'
-            )
-        )
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-
-    channel.basic_consume(queue='rpc.requests', on_message_callback=on_request)
-    channel.start_consuming()
-```
-
-### RPC Best Practices
-
-- **Always set expiration** on RPC requests. Orphaned requests accumulate in the server queue.
-- **Use exclusive reply queues** (auto-delete) to avoid queue leaks when clients disconnect.
-- **Consider Direct Reply-to** (`reply_to='amq.rabbitmq.reply-to'`) for lower overhead — no queue declaration needed. The reply is delivered directly to the waiting consumer.
-- **Don't use RPC for fire-and-forget.** Use one-way messaging instead.
-- **Handle server unavailability.** Implement client-side timeouts and circuit breakers.
-
-### Direct Reply-to (Pseudo-Queue)
-
-```python
-# Client uses the special pseudo-queue — no queue declaration needed
-channel.basic_publish(
-    exchange='',
-    routing_key='rpc.requests',
-    body=json.dumps(request),
-    properties=pika.BasicProperties(
-        reply_to='amq.rabbitmq.reply-to',
-        correlation_id=str(uuid.uuid4())
     )
-)
 ```
 
----
+### Alternative: TTL Queue Chain
 
-## Saga Pattern with RabbitMQ
-
-### Overview
-
-The saga pattern coordinates distributed transactions across microservices using a sequence of local transactions with compensating actions. RabbitMQ serves as the message bus carrying saga commands and events.
-
-### Choreography-Based Saga
-
-Each service listens for events and publishes the next event or a compensation event on failure. No central coordinator.
-
-```
-OrderService → order.created → PaymentService → payment.charged → InventoryService
-                                    ↓ (failure)
-                              payment.failed → OrderService (compensate: cancel order)
-```
+If you cannot use the plugin, chain TTL queues for fixed delays:
 
 ```python
-# Payment service — choreography participant
-def handle_order_created(ch, method, properties, body):
-    order = json.loads(body)
-    try:
-        charge_result = charge_payment(order['user_id'], order['total'])
-        ch.basic_publish(
-            exchange='saga.events',
-            routing_key='payment.charged',
-            body=json.dumps({
-                'saga_id': order['saga_id'],
-                'order_id': order['id'],
-                'payment_id': charge_result['id']
-            }),
-            properties=pika.BasicProperties(delivery_mode=2)
-        )
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    except PaymentError as e:
-        ch.basic_publish(
-            exchange='saga.events',
-            routing_key='payment.failed',
-            body=json.dumps({
-                'saga_id': order['saga_id'],
-                'order_id': order['id'],
-                'reason': str(e)
-            }),
-            properties=pika.BasicProperties(delivery_mode=2)
-        )
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-```
-
-### Orchestration-Based Saga
-
-A central saga orchestrator sends commands and tracks state. More complex but easier to reason about.
-
-```python
-class SagaOrchestrator:
-    """Saga orchestrator that manages step execution and compensation."""
-
-    def __init__(self, channel, saga_id):
-        self.channel = channel
-        self.saga_id = saga_id
-        self.steps = []
-        self.completed_steps = []
-
-    def add_step(self, command_exchange, command_key, compensate_exchange, compensate_key):
-        self.steps.append({
-            'command': (command_exchange, command_key),
-            'compensate': (compensate_exchange, compensate_key)
-        })
-
-    def execute(self, context):
-        for i, step in enumerate(self.steps):
-            exchange, key = step['command']
-            self.channel.basic_publish(
-                exchange=exchange,
-                routing_key=key,
-                body=json.dumps({
-                    'saga_id': self.saga_id,
-                    'step': i,
-                    'context': context
-                }),
-                properties=pika.BasicProperties(
-                    delivery_mode=2,
-                    reply_to='saga.replies',
-                    correlation_id=f'{self.saga_id}:{i}'
-                )
-            )
-            self.completed_steps.append(step)
-
-    def compensate(self, failed_step, context):
-        """Compensate all completed steps in reverse order."""
-        for step in reversed(self.completed_steps[:failed_step]):
-            exchange, key = step['compensate']
-            self.channel.basic_publish(
-                exchange=exchange,
-                routing_key=key,
-                body=json.dumps({
-                    'saga_id': self.saga_id,
-                    'context': context
-                }),
-                properties=pika.BasicProperties(delivery_mode=2)
-            )
-```
-
-### Saga Considerations
-
-- **Idempotency is critical.** Every saga step and compensation must be idempotent since messages may be delivered more than once.
-- **Timeout handling.** Use per-message TTL on saga commands. If a step times out, trigger compensation.
-- **State persistence.** The orchestrator should persist saga state (e.g., in a database) to survive restarts.
-- **Poison messages.** Use DLQ for saga messages that fail repeatedly. Alert operators for manual intervention.
-
----
-
-## Competing Consumers
-
-### Pattern
-
-Multiple consumers share a single queue for horizontal scaling. RabbitMQ distributes messages round-robin. Use prefetch to control work distribution.
-
-```python
-# Worker process (run N instances)
-channel.basic_qos(prefetch_count=5)
-
-def worker(ch, method, properties, body):
-    task = json.loads(body)
-    result = process_task(task)
-    ch.basic_ack(delivery_tag=method.delivery_tag)
-
-channel.basic_consume(queue='tasks', on_message_callback=worker)
-channel.start_consuming()
-```
-
-### Fair Dispatch vs Round-Robin
-
-By default, RabbitMQ dispatches round-robin regardless of consumer busyness. This leads to uneven load when tasks take variable time.
-
-**Fair dispatch**: Set `prefetch_count` to limit unacknowledged messages per consumer. A busy consumer won't receive new messages until it acks, so messages flow to idle consumers.
-
-```python
-# Fair dispatch — each consumer gets at most 1 unacked message
-channel.basic_qos(prefetch_count=1)
-```
-
-### Single Active Consumer
-
-For ordered processing with failover, use single-active-consumer on quorum queues:
-
-```python
-channel.queue_declare(queue='ordered.tasks', durable=True, arguments={
-    'x-queue-type': 'quorum',
-    'x-single-active-consumer': True
+# Retry queue with TTL that DLXs back to the work exchange
+channel.queue_declare(queue='retry-30s', durable=True, arguments={
+    'x-message-ttl': 30000,
+    'x-dead-letter-exchange': 'work-exchange',
+    'x-dead-letter-routing-key': 'task.retry',
+    'x-queue-type': 'quorum'
 })
-# Multiple consumers can subscribe, but only one receives messages.
-# If the active consumer disconnects, the next one takes over.
 ```
 
-### Consumer Scaling Guidelines
+### Limitations
 
-| Queue Depth Trend | Action |
-|-------------------|--------|
-| Steady near zero  | Right-sized — no change needed |
-| Growing slowly    | Add 1-2 consumers |
-| Growing fast      | Add consumers + investigate processing bottlenecks |
-| Always zero       | Over-provisioned — reduce consumers to save resources |
+- Delayed messages are stored in Mnesia (node-local) — not replicated across cluster in older versions
+- Maximum delay is ~49 days (2^32 ms)
+- High volumes of delayed messages increase memory and disk usage on the node
+- Plugin must be installed on every node in the cluster
 
 ---
 
 ## Message Deduplication
 
-### Problem
+### Overview
 
-Network issues, publisher retries, and consumer redeliveries can produce duplicate messages. RabbitMQ does not deduplicate natively.
+RabbitMQ does not provide built-in exactly-once delivery. Duplicate messages can occur due to publisher retries, network issues, or consumer redelivery. Deduplication must be implemented at the application level.
 
-### Application-Level Deduplication
+### Strategy 1: Idempotency Keys in Consumer
 
 ```python
 import redis
 
-redis_client = redis.Redis()
-DEDUP_TTL = 86400  # 24 hours
+r = redis.Redis()
 
-def on_message_dedup(ch, method, properties, body):
+def deduplicated_handler(ch, method, properties, body):
     msg_id = properties.message_id
     if not msg_id:
-        ch.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
         return
 
-    # Check and set atomically
-    dedup_key = f'dedup:{msg_id}'
-    if not redis_client.set(dedup_key, '1', nx=True, ex=DEDUP_TTL):
-        # Duplicate — ack and discard
+    # Atomic check-and-set with TTL
+    if not r.set(f'dedup:{msg_id}', '1', nx=True, ex=86400):
+        # Already processed — ack and discard
         ch.basic_ack(delivery_tag=method.delivery_tag)
         return
 
     try:
-        process(json.loads(body))
+        process(body)
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception:
-        redis_client.delete(dedup_key)  # Allow retry
+        r.delete(f'dedup:{msg_id}')  # allow retry
         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 ```
 
-### Deduplication Plugin
-
-The `rabbitmq-message-deduplication` community plugin adds broker-level deduplication:
+### Strategy 2: Database Unique Constraint
 
 ```python
-# Declare exchange with deduplication
+def deduplicated_handler(ch, method, properties, body):
+    msg = json.loads(body)
+    try:
+        with db.transaction():
+            # Unique constraint on message_id prevents duplicates
+            db.execute(
+                "INSERT INTO processed_messages (message_id, processed_at) VALUES (%s, NOW())",
+                [properties.message_id]
+            )
+            process(msg)
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except UniqueViolation:
+        ch.basic_ack(delivery_tag=method.delivery_tag)  # already processed
+    except Exception:
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+```
+
+### Strategy 3: RabbitMQ Deduplication Plugin
+
+The community `rabbitmq-message-deduplication` plugin provides exchange-level and queue-level deduplication:
+
+```python
+# Declare deduplication exchange
 channel.exchange_declare(
-    exchange='dedup.exchange',
+    exchange='dedup-exchange',
     exchange_type='x-message-deduplication',
     durable=True,
     arguments={
-        'x-cache-size': 1000000,    # Max entries in dedup cache
-        'x-cache-ttl': 60000,       # TTL for cache entries (ms)
+        'x-cache-size': 1000000,
+        'x-cache-ttl': 60000,  # 60s dedup window
         'x-cache-persistence': 'disk'
     }
 )
 
-# Publish with dedup header
+# Publish with deduplication header
 channel.basic_publish(
-    exchange='dedup.exchange',
-    routing_key='tasks',
-    body=json.dumps(task),
+    exchange='dedup-exchange',
+    routing_key='orders',
+    body=json.dumps(order),
     properties=pika.BasicProperties(
-        headers={'x-deduplication-header': f'task-{task["id"]}'}
+        headers={'x-deduplication-header': order_id}
     )
 )
 ```
 
-### Idempotent Consumer Pattern
+### Publisher-Side Deduplication
 
-The most robust approach — make processing idempotent regardless of duplicates:
-
-```python
-def idempotent_process_order(order):
-    """Process order idempotently using database constraints."""
-    try:
-        db.execute("""
-            INSERT INTO processed_orders (order_id, status, processed_at)
-            VALUES (%s, 'processed', NOW())
-            ON CONFLICT (order_id) DO NOTHING
-        """, (order['id'],))
-
-        if db.rowcount == 0:
-            return  # Already processed — idempotent no-op
-
-        fulfill_order(order)
-    except Exception:
-        db.rollback()
-        raise
-```
-
----
-
-## Header-Based Routing
-
-### Headers Exchange
-
-Route messages based on header key-value pairs instead of routing keys. Supports `x-match: all` (all headers must match) or `x-match: any` (any header matches).
+Always set `message_id` on published messages:
 
 ```python
-channel.exchange_declare(exchange='events.headers', exchange_type='headers', durable=True)
-
-# Bind with header matching
-channel.queue_declare(queue='us.critical.events', durable=True)
-channel.queue_bind(
-    exchange='events.headers',
-    queue='us.critical.events',
-    routing_key='',  # Ignored for headers exchange
-    arguments={
-        'x-match': 'all',
-        'region': 'us',
-        'severity': 'critical'
-    }
-)
-
-# Bind with any-match
-channel.queue_declare(queue='alert.events', durable=True)
-channel.queue_bind(
-    exchange='events.headers',
-    queue='alert.events',
-    routing_key='',
-    arguments={
-        'x-match': 'any',
-        'severity': 'critical',
-        'alert': 'true'
-    }
-)
-
-# Publish with headers
 channel.basic_publish(
-    exchange='events.headers',
-    routing_key='',
-    body=json.dumps(event),
-    properties=pika.BasicProperties(
-        headers={
-            'region': 'us',
-            'severity': 'critical',
-            'service': 'payment'
-        }
-    )
-)
-```
-
-### When to Use Headers vs Topic
-
-| Criteria | Headers Exchange | Topic Exchange |
-|----------|-----------------|----------------|
-| Routing dimensions | Multi-dimensional (multiple independent attributes) | Single-dimensional (dot-separated hierarchy) |
-| Flexibility | Arbitrary key-value pairs | Fixed routing key structure |
-| Performance | Slower (header inspection) | Faster (string matching) |
-| Typical use | Complex filtering (region + severity + type) | Hierarchical events (`order.created.us`) |
-
-### Headers with Enumerated Values
-
-```python
-# Route to different queues based on content type and priority
-bindings = [
-    ('queue.pdf.high',   {'x-match': 'all', 'content-type': 'pdf', 'priority': 'high'}),
-    ('queue.pdf.low',    {'x-match': 'all', 'content-type': 'pdf', 'priority': 'low'}),
-    ('queue.image.any',  {'x-match': 'all', 'content-type': 'image'}),
-]
-
-for queue_name, headers in bindings:
-    channel.queue_declare(queue=queue_name, durable=True)
-    channel.queue_bind(exchange='events.headers', queue=queue_name,
-                       routing_key='', arguments=headers)
-```
-
----
-
-## Alternate Exchanges
-
-### Concept
-
-An alternate exchange (AE) captures messages that are unroutable from the primary exchange (no matching bindings). This prevents silent message loss.
-
-```python
-# Step 1: Declare the alternate exchange and its capture queue
-channel.exchange_declare(exchange='unrouted', exchange_type='fanout', durable=True)
-channel.queue_declare(queue='unrouted.messages', durable=True, arguments={
-    'x-queue-type': 'quorum'
-})
-channel.queue_bind(exchange='unrouted', queue='unrouted.messages')
-
-# Step 2: Declare the primary exchange with alternate-exchange argument
-channel.exchange_declare(
     exchange='orders',
-    exchange_type='topic',
-    durable=True,
-    arguments={'alternate-exchange': 'unrouted'}
+    routing_key='new',
+    body=json.dumps(order),
+    properties=pika.BasicProperties(
+        message_id=f'{order_id}-{uuid.uuid4()}',
+        delivery_mode=2
+    )
 )
 ```
 
-### Alternate Exchange vs Mandatory Flag
+---
 
-| Feature | Alternate Exchange | Mandatory Flag |
-|---------|-------------------|----------------|
-| Handling | Broker routes to AE automatically | Broker returns `basic.return` to publisher |
-| Publisher awareness | Publisher unaware | Publisher must handle returns |
-| Message persistence | Messages stored in AE queue | Publisher must re-publish |
-| Cluster-safe | Yes | Yes |
+## Exactly-Once Processing Strategies
 
-Use alternate exchanges for operational safety (catch unroutable messages for debugging). Use mandatory flag when the publisher needs to know about routing failures.
+True exactly-once is impossible in distributed systems. Instead, aim for **effectively-once** via idempotent consumers.
 
-### Chaining Alternate Exchanges
+### Pattern: Transactional Outbox
 
-You can chain multiple levels — each exchange can have its own alternate exchange. The chain terminates when a message finds a matching binding or the last AE has no bindings (message is dropped).
+1. Write the business event and outbox record in a single database transaction
+2. A separate process reads the outbox and publishes to RabbitMQ
+3. Consumer processes idempotently using the event's unique ID
+
+```python
+# Producer side — single transaction
+with db.transaction():
+    db.execute("INSERT INTO orders (...) VALUES (...)")
+    db.execute("""INSERT INTO outbox (id, exchange, routing_key, payload, published)
+                  VALUES (%s, 'orders', 'order.created', %s, FALSE)""",
+               [event_id, json.dumps(order)])
+
+# Outbox publisher (separate process)
+def publish_outbox():
+    rows = db.query("SELECT * FROM outbox WHERE published = FALSE ORDER BY id LIMIT 100")
+    for row in rows:
+        channel.basic_publish(exchange=row.exchange, routing_key=row.routing_key,
+            body=row.payload,
+            properties=pika.BasicProperties(message_id=row.id, delivery_mode=2))
+        db.execute("UPDATE outbox SET published = TRUE WHERE id = %s", [row.id])
+```
+
+### Pattern: Claim Check
+
+For large messages, store the payload externally and send only a reference:
+
+```python
+# Publisher
+blob_id = s3.put_object(Bucket='messages', Key=msg_id, Body=large_payload)
+channel.basic_publish(exchange='data', routing_key='large',
+    body=json.dumps({'claim_check': msg_id, 'bucket': 'messages'}),
+    properties=pika.BasicProperties(delivery_mode=2))
+
+# Consumer
+msg = json.loads(body)
+payload = s3.get_object(Bucket=msg['bucket'], Key=msg['claim_check'])
+```
+
+### Pattern: Idempotent Consumer with Version Tracking
+
+```python
+def handle_order_update(ch, method, properties, body):
+    event = json.loads(body)
+    result = db.execute(
+        """UPDATE orders SET status = %s, version = %s
+           WHERE id = %s AND version < %s""",
+        [event['status'], event['version'], event['order_id'], event['version']]
+    )
+    if result.rowcount == 0:
+        pass  # stale or duplicate — safe to ignore
+    ch.basic_ack(delivery_tag=method.delivery_tag)
+```
 
 ---
 
-## Sender Confirms with Batching
+## Consumer Concurrency Tuning
 
-### Individual Confirms (Simple, Slow)
+### Single-Threaded Consumers (Python/pika)
 
-```python
-channel.confirm_delivery()
+pika's `BlockingConnection` is single-threaded. Scale by running multiple processes:
 
-for msg in messages:
-    channel.basic_publish(
-        exchange='events', routing_key='event.created',
-        body=json.dumps(msg),
-        properties=pika.BasicProperties(delivery_mode=2)
-    )
-# Each publish waits for confirm — high latency
+```bash
+# Run N consumer processes
+for i in $(seq 1 $NUM_WORKERS); do
+    python consumer.py &
+done
 ```
 
-### Batch Confirms (Balanced)
+### Multi-Threaded Consumers (Java)
 
-Publish a batch, then wait for all confirms at once. Better throughput than individual confirms.
-
-```python
-channel.confirm_delivery()
-
-batch_size = 100
-for i, msg in enumerate(messages):
-    channel.basic_publish(
-        exchange='events', routing_key='event.created',
-        body=json.dumps(msg),
-        properties=pika.BasicProperties(delivery_mode=2)
-    )
-
-    if (i + 1) % batch_size == 0:
-        channel.get_waiting_message_count()  # Process pending confirms
-        # With pika, confirms are handled synchronously per-publish
-        # For true batching, use async confirms
-```
-
-### Async Confirms (Maximum Throughput)
-
-```javascript
-// Node.js amqplib — async publisher confirms
-const amqplib = require('amqplib');
-
-async function publishWithAsyncConfirms(messages) {
-  const conn = await amqplib.connect('amqp://localhost');
-  const ch = await conn.createConfirmChannel();
-
-  const pending = new Map();
-  let deliveryTag = 0;
-
-  // Track confirms and nacks
-  ch.on('ack', (tag, multiple) => {
-    if (multiple) {
-      for (const [key] of pending) {
-        if (key <= tag) pending.delete(key);
-      }
-    } else {
-      pending.delete(tag);
-    }
-  });
-
-  ch.on('nack', (tag, multiple) => {
-    // Re-publish nacked messages
-    const nacked = [];
-    if (multiple) {
-      for (const [key, msg] of pending) {
-        if (key <= tag) { nacked.push(msg); pending.delete(key); }
-      }
-    } else {
-      nacked.push(pending.get(tag));
-      pending.delete(tag);
-    }
-    nacked.forEach(msg => republish(ch, msg));
-  });
-
-  // Fire-and-forget publishes (confirms arrive asynchronously)
-  for (const msg of messages) {
-    deliveryTag++;
-    pending.set(deliveryTag, msg);
-    ch.publish('events', 'event.created', Buffer.from(JSON.stringify(msg)),
-               { persistent: true });
-  }
-
-  // Wait for all confirms
-  await ch.waitForConfirms();
+```java
+// Java client — configure concurrent consumers
+channel.basicQos(25);  // prefetch per consumer
+ExecutorService executor = Executors.newFixedThreadPool(10);
+for (int i = 0; i < 10; i++) {
+    Channel ch = conn.createChannel();
+    ch.basicQos(25);
+    ch.basicConsume("tasks", false, new WorkerConsumer(ch));
 }
 ```
 
-### Confirm Performance Comparison
+### Spring AMQP Concurrency
 
-| Strategy | Throughput | Latency | Complexity |
-|----------|-----------|---------|------------|
-| Individual sync | ~500 msg/s | High | Low |
-| Batch sync (100) | ~5,000 msg/s | Medium | Medium |
-| Async confirms | ~50,000 msg/s | Low | High |
-| No confirms (fire-and-forget) | ~100,000 msg/s | Lowest | Lowest |
+```yaml
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        concurrency: 5        # minimum consumers
+        max-concurrency: 20   # scale up under load
+        prefetch: 25
+        acknowledge-mode: manual
+```
 
-Choose based on your reliability requirements. Financial transactions warrant individual confirms. Log events may tolerate fire-and-forget.
+### Node.js Concurrency
+
+```javascript
+// amqplib — single channel, single consumer, use prefetch to batch
+const ch = await conn.createChannel();
+await ch.prefetch(50);
+ch.consume('tasks', async (msg) => {
+    await processAsync(msg);
+    ch.ack(msg);
+});
+// Scale with cluster module or multiple processes
+```
+
+### Guidelines
+
+| Workload Type | Recommended Approach |
+|---|---|
+| CPU-bound processing | Multiple processes, prefetch 1–5 |
+| I/O-bound (DB, API calls) | Async consumers, prefetch 20–50 |
+| Mixed workloads | Thread pool with moderate prefetch 10–25 |
+| Very fast processing | Single consumer, high prefetch 50–100 |
+
+---
+
+## Prefetch Optimization
+
+### How Prefetch Works
+
+`basic.qos(prefetch_count=N)` limits unacknowledged messages per consumer. The broker stops sending messages to a consumer until it acks some of the N outstanding messages.
+
+### Tuning Guidelines
+
+```
+prefetch = (average_processing_time × target_throughput) + buffer
+```
+
+| Scenario | Prefetch | Rationale |
+|---|---|---|
+| Fast tasks (<1ms) | 100–500 | Keep consumer busy, reduce round-trips |
+| Moderate tasks (1–100ms) | 10–50 | Balance throughput and fairness |
+| Slow tasks (100ms–1s) | 1–5 | Prevent one consumer hoarding work |
+| Variable-duration tasks | 1 | Fair dispatch (strict round-robin) |
+| Batch processing | Match batch size | Ack entire batch at once |
+
+### Global vs Per-Consumer Prefetch
+
+```python
+# Per-consumer (default in most clients) — recommended
+channel.basic_qos(prefetch_count=25, global_qos=False)
+
+# Global — shared across all consumers on the channel
+channel.basic_qos(prefetch_count=100, global_qos=True)
+```
+
+### Monitoring Prefetch Effectiveness
+
+Watch these metrics:
+- `messages_unacked`: should stay near prefetch × consumer_count
+- Consumer utilization in management UI: should be near 100%
+- Queue depth trend: should be stable or decreasing
+- If `messages_ready` grows while `messages_unacked` is at limit → add consumers
+
+---
+
+## Shovel and Federation
+
+### Shovel
+
+Shovels move messages between brokers (same or different clusters). Use for cross-datacenter replication or migration.
+
+```bash
+# Dynamic shovel via management API
+curl -u admin:secret -X PUT \
+  http://localhost:15672/api/parameters/shovel/%2F/my-shovel \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "value": {
+      "src-protocol": "amqp091",
+      "src-uri": "amqp://source-broker",
+      "src-queue": "source-queue",
+      "dest-protocol": "amqp091",
+      "dest-uri": "amqp://dest-broker",
+      "dest-exchange": "dest-exchange",
+      "dest-exchange-key": "migrated",
+      "ack-mode": "on-confirm",
+      "reconnect-delay": 5
+    }
+  }'
+```
+
+### Federation
+
+Federation replicates exchanges or queues across brokers. Upstream messages are transparently forwarded to downstream consumers.
+
+```bash
+# Enable federation plugin
+rabbitmq-plugins enable rabbitmq_federation rabbitmq_federation_management
+
+# Define upstream
+curl -u admin:secret -X PUT \
+  http://localhost:15672/api/parameters/federation-upstream/%2F/dc-west \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "value": {
+      "uri": "amqp://admin:secret@west-broker",
+      "ack-mode": "on-confirm",
+      "trust-user-id": false
+    }
+  }'
+
+# Apply federation policy to exchanges matching pattern
+curl -u admin:secret -X PUT \
+  http://localhost:15672/api/policies/%2F/federate-events \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pattern": "^events\\.",
+    "definition": {"federation-upstream-set": "all"},
+    "apply-to": "exchanges"
+  }'
+```
+
+### Shovel vs Federation
+
+| Feature | Shovel | Federation |
+|---|---|---|
+| Direction | Explicit point-to-point | Automatic upstream → downstream |
+| Topology | Manual source/dest config | Policy-based, pattern matching |
+| Use case | Migration, DR failover | Multi-site, geo-distributed apps |
+| Message flow | Moves messages (consumed from source) | Copies messages (upstream retains) |
+| Complexity | Simple, single link | More setup, but more flexible |
+
+---
+
+## Lazy Queues vs Quorum Queues Decision Matrix
+
+### Lazy Queues (Classic v2)
+
+Lazy queues write messages to disk as early as possible, minimizing RAM usage. In RabbitMQ 3.12+, classic queues v2 (CQv2) are always lazy — the `x-queue-mode: lazy` argument is a no-op.
+
+### Decision Matrix
+
+| Criteria | Quorum Queue | Classic Queue (CQv2 / Lazy) |
+|---|---|---|
+| **Data safety** | ✅ Raft replication across nodes | ❌ Single-node, no replication |
+| **High availability** | ✅ Survives node failures | ❌ Queue unavailable if node down |
+| **Memory efficiency** | Moderate (in-memory index) | ✅ Minimal RAM, disk-first |
+| **Throughput** | Good (optimized in 4.0) | Higher for non-replicated workloads |
+| **Message ordering** | ✅ Strict FIFO | ✅ Strict FIFO |
+| **Priority support** | 2 levels (4.0) | Up to 255 levels |
+| **Poison message handling** | ✅ Built-in delivery limit | ❌ Manual via DLX |
+| **Non-durable messages** | ❌ Not supported | ✅ Supported |
+| **Single Active Consumer** | ✅ Supported | ✅ Supported |
+| **Cluster requirement** | 3+ nodes recommended | Single node OK |
+| **Use when** | Production, critical data | Dev/test, transient data, high-prio |
+
+### Streams vs Queues
+
+| Criteria | Stream | Quorum Queue | Classic Queue |
+|---|---|---|---|
+| Consumer model | Non-destructive read | Destructive (consume & ack) | Destructive |
+| Replay | ✅ From any offset | ❌ | ❌ |
+| Fan-out | ✅ Efficient (single copy) | ❌ Copy per consumer | ❌ Copy per consumer |
+| Throughput | Very high (append-only) | Good | Higher for transient |
+| Ordering | ✅ Append-only log | ✅ FIFO | ✅ FIFO |
+| Use when | Audit log, replay, many consumers | Work queue, task distribution | Ephemeral, dev/test |
+
+---
+
+## RabbitMQ Streams for Log-Style Workloads
+
+### When to Use Streams
+
+- Multiple consumers need to read the same data independently
+- Consumers need to replay from a specific point in time or offset
+- High-throughput append-only ingestion (100K+ msg/s)
+- Time-based retention is preferred over consume-and-delete
+- Audit logging, event sourcing read models, CDC fan-out
+
+### Stream Architecture
+
+Streams are a replicated, append-only log stored on disk. Consumers track their own offset — messages are never deleted by consumption.
+
+### Advanced Stream Configuration
+
+```python
+channel.queue_declare(queue='audit-stream', durable=True, arguments={
+    'x-queue-type': 'stream',
+    'x-max-length-bytes': 50_000_000_000,  # 50GB retention
+    'x-max-age': '30D',                     # 30-day retention
+    'x-stream-max-segment-size-bytes': 500_000_000,  # 500MB segments
+    'x-initial-cluster-size': 3              # replication factor
+})
+```
+
+### Stream Consumers with Offset Tracking
+
+```python
+# Consume from specific offset
+channel.basic_consume(queue='audit-stream', on_message_callback=handler,
+    arguments={
+        'x-stream-offset': 12345  # exact offset
+    })
+
+# Consume from timestamp
+channel.basic_consume(queue='audit-stream', on_message_callback=handler,
+    arguments={
+        'x-stream-offset': datetime(2024, 1, 1, tzinfo=timezone.utc)
+    })
+```
+
+### Native Stream Protocol (High Performance)
+
+For maximum throughput, use the native stream protocol (port 5552) instead of AMQP:
+
+```java
+// Java stream client
+Environment environment = Environment.builder()
+    .host("localhost").port(5552)
+    .username("admin").password("secret")
+    .build();
+
+Producer producer = environment.producerBuilder()
+    .stream("audit-stream")
+    .batchSize(100)
+    .build();
+
+Consumer consumer = environment.consumerBuilder()
+    .stream("audit-stream")
+    .offset(OffsetSpecification.first())
+    .messageHandler((context, message) -> {
+        process(message.getBodyAsBinary());
+    })
+    .build();
+```
+
+### Stream Filtering (3.13+)
+
+Reduce consumer bandwidth by filtering at the broker:
+
+```java
+Producer producer = environment.producerBuilder()
+    .stream("events")
+    .filterValueExtractor(msg -> msg.getApplicationProperties().get("region").toString())
+    .build();
+
+Consumer consumer = environment.consumerBuilder()
+    .stream("events")
+    .filter()
+        .values("us-east-1", "us-west-2")
+        .postFilter(msg -> true)  // client-side secondary filter
+    .builder()
+    .messageHandler(handler)
+    .build();
+```
+
+### Super Streams (Partitioned Streams)
+
+Super streams partition a logical stream across multiple stream queues for horizontal scaling:
+
+```bash
+# Create super stream with 3 partitions via CLI
+rabbitmq-streams add_super_stream invoices --partitions 3
+
+# Or with explicit routing keys
+rabbitmq-streams add_super_stream invoices \
+  --routing-keys us,eu,apac
+```
+
+```java
+Producer producer = environment.producerBuilder()
+    .superStream("invoices")
+    .routing(msg -> msg.getProperties().getMessageIdAsString())  // hash-based routing
+    .producerBuilder()
+    .build();
+```
+
+### Performance Considerations
+
+- Streams achieve highest throughput with the native protocol (5552) and batched publishing
+- AMQP-based stream consumption is convenient but slower than native protocol
+- Use `x-stream-max-segment-size-bytes` to control segment file sizes for efficient GC
+- Sub-entry batching groups multiple messages into a single log entry for throughput
+- Monitor `rabbitmq_stream_segments` and disk usage — streams retain data by time/size policy

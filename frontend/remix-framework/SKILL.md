@@ -417,3 +417,26 @@ Breaking changes: `json()` removed (return plain objects), `defer()` simplified 
 - Use `shouldRevalidate` export to control which loaders re-run after mutations.
 - Use `useNavigation()` for pending UI, `useNavigate()` for programmatic navigation.
 - Use `invariant()` or explicit null checks before accessing params.
+
+## References
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Optimistic UI with useFetcher, parallel loaders, resource routes, streaming with defer, nested error boundaries, route-level caching, meta function patterns, route groups, pathless layouts, and Remix → React Router v7 bridge patterns.
+- **[troubleshooting.md](references/troubleshooting.md)** — Hydration mismatches, loader/action type inference, cookie session gotchas, CORS with resource routes, Cloudflare Workers & Vercel Edge caveats, Vite plugin conflicts, CSS bundling, form resubmission, CJS-to-ESM migration.
+- **[api-reference.md](references/api-reference.md)** — Quick reference for all Remix/RR7 APIs: loader, action, meta, links, headers, handle, shouldRevalidate, useFetcher, useNavigation, useLoaderData, useActionData, useRouteError, useMatches, useRevalidator, Form, Await, ScrollRestoration, session/cookie APIs, and route configuration.
+
+## Scripts
+
+Automation scripts in `scripts/`:
+
+- **[scaffold-route.sh](scripts/scaffold-route.sh)** — Generate a new route file with boilerplate loader, action, meta, error boundary, and component. Usage: `./scripts/scaffold-route.sh posts.\$postId`. Detects resource routes (api.\* prefix) and generates appropriate template.
+- **[migrate-to-rr7.sh](scripts/migrate-to-rr7.sh)** — Migrate Remix v2 to React Router v7: updates dependencies, renames config, rewrites imports, creates routes.ts. Usage: `./scripts/migrate-to-rr7.sh --dry-run` to preview, then without flag to apply.
+
+## Assets / Templates
+
+Reusable templates in `assets/`:
+
+- **[route-template.tsx](assets/route-template.tsx)** — Full route module template with typed loader, action, meta, headers, links, handle, shouldRevalidate, component, and ErrorBoundary. Copy and rename for new routes.
+- **[auth-session.ts](assets/auth-session.ts)** — Cookie-based session authentication with `createCookieSessionStorage`. Includes requireUser, createUserSession, destroyUserSession, and flash message helpers. Place at `app/services/session.server.ts`.
+- **[vite.config.ts](assets/vite.config.ts)** — Remix/RR7 Vite config template with reactRouter plugin, tsconfigPaths, dev server, build, CSS, SSR, and dependency optimization settings.

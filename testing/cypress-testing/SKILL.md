@@ -426,34 +426,7 @@ Cypress Cloud provides: test replay with time-travel debugging, flake detection,
 
 ## Visual Regression Testing
 
-Use `@percy/cypress` for cloud-based visual diffs:
-
-```bash
-npm install --save-dev @percy/cli @percy/cypress
-```
-
-```js
-// cypress/support/commands.js
-import '@percy/cypress';
-
-// In test
-it('homepage visual check', () => {
-  cy.visit('/');
-  cy.percySnapshot('Homepage');
-});
-```
-
-Run: `npx percy exec -- cypress run`. For local-only snapshots, use `cypress-image-snapshot`:
-
-```js
-import { addMatchImageSnapshotCommand } from 'cypress-image-snapshot/command';
-addMatchImageSnapshotCommand();
-
-it('matches snapshot', () => {
-  cy.visit('/dashboard');
-  cy.get('[data-cy="chart"]').matchImageSnapshot('dashboard-chart');
-});
-```
+Use `@percy/cypress` for cloud-based visual diffs or `cypress-image-snapshot` for local-only comparisons. Install with `npm install --save-dev @percy/cli @percy/cypress` and call `cy.percySnapshot('Name')` in tests. Run via `npx percy exec -- cypress run`.
 
 ## Environment Variables and Configuration
 
@@ -465,35 +438,29 @@ Set env vars (highest to lowest priority):
 
 Access in tests: `Cypress.env('apiUrl')`.
 
-Per-environment config pattern:
-
-```js
-module.exports = defineConfig({
-  e2e: {
-    baseUrl: process.env.BASE_URL || 'http://localhost:3000',
-    env: {
-      apiUrl: process.env.API_URL || 'http://localhost:4000/api',
-    },
-  },
-});
-```
-
 ## API Testing with cy.request
 
-Test APIs directly without browser rendering:
+Use `cy.request()` for direct API testing without browser rendering. Chain with `cy.intercept` to seed data before E2E flows. See `assets/commands.ts` for reusable API helper commands.
 
-```js
-describe('Users API', () => {
-  it('creates a user', () => {
-    cy.request('POST', '/api/users', {
-      name: 'Alice',
-      email: 'alice@example.com',
-    }).then((response) => {
-      expect(response.status).to.eq(201);
-      expect(response.body).to.have.property('id');
-    });
-  });
-});
-```
+## References
 
-Chain `cy.request` with `cy.intercept` to seed data before E2E flows.
+Deep-dive guides for advanced topics:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Custom commands vs queries, page object model, app actions, cy.intercept advanced usage (dynamic responses, delays, error simulation), cy.session, test isolation, clock/timer manipulation, shadow DOM, iframes, multi-domain testing with cy.origin, and component testing architecture.
+- **[Troubleshooting](references/troubleshooting.md)** — Flaky tests (causes and fixes), detached DOM elements, race conditions, cy.intercept not matching, CORS issues, iframe access, slow test optimization, memory leaks, CI-specific failures, and Cypress vs Playwright decision matrix.
+- **[CI Integration](references/ci-integration.md)** — GitHub Actions setup with caching, parallel runs with Cypress Cloud, Docker-based testing, recording and artifacts, retry strategies, test splitting, dashboard integration, and cost optimization.
+
+## Scripts
+
+Automation scripts for common Cypress workflows:
+
+- **[setup-cypress.sh](scripts/setup-cypress.sh)** — Sets up Cypress in an existing project: installs dependencies, creates config, folder structure, and example specs. Supports `--typescript`, `--component`, and `--ci` flags.
+- **[generate-command.sh](scripts/generate-command.sh)** — Generates a new custom Cypress command with TypeScript declarations. Usage: `./generate-command.sh <commandName> <description>`.
+
+## Assets
+
+Ready-to-use templates and configurations:
+
+- **[cypress.config.ts](assets/cypress.config.ts)** — Production-ready Cypress config template with E2E and component testing setup, CI-aware settings, and memory optimization.
+- **[commands.ts](assets/commands.ts)** — Collection of custom commands: login/auth with session caching, API helpers, drag-and-drop, file upload, table assertions, paste, and network idle detection.
+- **[github-actions.yml](assets/github-actions.yml)** — GitHub Actions workflow with dependency caching, parallel runs, path filtering, component and E2E test jobs, artifact upload, and a summary gate job.

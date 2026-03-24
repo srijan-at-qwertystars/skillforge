@@ -431,3 +431,26 @@ Use vhosts to isolate applications: `rabbitmqctl add_vhost /production`.
 **Network partitions**: Use `cluster_partition_handling = pause_minority`. Khepri in 4.0 improves this.
 
 **Slow consumers**: Monitor `messages_unacked`. Scale horizontally or use streams for high fan-out.
+
+## References
+
+Detailed deep-dive documents for advanced topics:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Saga/choreography, consistent hashing exchange, delayed message exchange plugin, message deduplication, exactly-once processing, consumer concurrency tuning, prefetch optimization, shovel & federation, lazy vs quorum queues decision matrix, and RabbitMQ Streams for log-style workloads.
+- **[Troubleshooting Guide](references/troubleshooting.md)** — Connection churn, channel leaks, memory/disk alarms, unacked message buildup, consumer cancellation, queue mirroring lag, network partitions (pause_minority vs autoheal), slow consumers, message ordering guarantees, and cluster recovery procedures.
+- **[API Reference](references/api-reference.md)** — Quick reference for the RabbitMQ management HTTP API with curl examples for exchanges, queues, bindings, connections, channels, users, vhosts, policies, definitions, and health checks.
+
+## Scripts
+
+Ready-to-use operational scripts:
+
+- **[setup-rabbitmq.sh](scripts/setup-rabbitmq.sh)** — Docker-based RabbitMQ setup with management plugin. Creates a vhost, application user, and sample exchanges/queues/bindings. Run: `./scripts/setup-rabbitmq.sh`
+- **[health-check.sh](scripts/health-check.sh)** — RabbitMQ health check that verifies node status, cluster health, resource alarms, queue depths, consumer counts, and message rates. Exit codes: 0=healthy, 1=warning, 2=critical. Run: `./scripts/health-check.sh`
+
+## Assets
+
+Configuration templates and infrastructure-as-code:
+
+- **[docker-compose.yml](assets/docker-compose.yml)** — Production-ready 3-node RabbitMQ cluster with management UI, Prometheus metrics, stream protocol, volume persistence, and health checks.
+- **[rabbitmq.conf](assets/rabbitmq.conf)** — Optimized RabbitMQ configuration template with production settings for resource limits, clustering, TLS, logging, and quorum queues.
+- **[definitions.json](assets/definitions.json)** — RabbitMQ definitions export template with sample users (admin, app_service, monitoring), vhosts (production, staging), exchanges, queues, bindings, and policies.

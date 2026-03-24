@@ -1,197 +1,119 @@
-version: "3.9"
+# RabbitMQ Cluster Docker Compose — Production-Ready Template
+#
+# Features:
+# - 3-node cluster with quorum queue support
+# - Management UI on node1 (port 15672)
+# - Prometheus metrics (port 15692)
+# - Stream protocol (port 5552)
+# - Volume persistence for each node
+# - Shared Erlang cookie for cluster authentication
+# - Custom configuration and definitions
+#
+# Usage:
+#   docker compose up -d
+#   docker compose ps
+#   # Management UI: http://localhost:15672 (admin / rabbitmq_admin_pass)
+#
+# To scale down to a single node for development:
+#   docker compose up -d rabbitmq1
 
-# 3-node RabbitMQ cluster with management UI and HAProxy load balancer
-# Usage: docker compose up -d
-# Management UI: http://localhost:15672 (admin / rabbitmq-secret)
-# AMQP: amqp://localhost:5672
-# HAProxy stats: http://localhost:8404/stats
-# Prometheus: http://localhost:15692/metrics (per-node: 15693, 15694)
-
-x-rabbitmq-defaults: &rabbitmq-defaults
-  image: rabbitmq:3.13-management-alpine
+x-rabbitmq-common: &rabbitmq-common
+  image: rabbitmq:4.0-management
   restart: unless-stopped
   environment: &rabbitmq-env
-    RABBITMQ_ERLANG_COOKIE: "cluster-secret-cookie-change-me"
     RABBITMQ_DEFAULT_USER: admin
-    RABBITMQ_DEFAULT_PASS: rabbitmq-secret
-    RABBITMQ_DEFAULT_VHOST: /production
-    RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+P 1048576 +Q 1048576"
+    RABBITMQ_DEFAULT_PASS: rabbitmq_admin_pass
+    RABBITMQ_ERLANG_COOKIE: "CLUSTER_SECRET_COOKIE_CHANGE_ME"
+    RABBITMQ_DEFAULT_VHOST: /
   networks:
-    - rmq-net
-  deploy:
-    resources:
-      limits:
-        memory: 2G
-      reservations:
-        memory: 1G
+    - rabbitmq-cluster
   healthcheck:
-    test: ["CMD", "rabbitmq-diagnostics", "check_running"]
-    interval: 15s
+    test: ["CMD-SHELL", "rabbitmq-diagnostics check_running && rabbitmq-diagnostics check_local_alarms"]
+    interval: 30s
     timeout: 10s
     retries: 5
-    start_period: 40s
+    start_period: 60s
 
 services:
-  # ─── RabbitMQ Node 1 (seed) ───
-  rabbit1:
-    <<: *rabbitmq-defaults
-    hostname: rabbit1
-    container_name: rabbit1
+  rabbitmq1:
+    <<: *rabbitmq-common
+    hostname: rabbitmq1
+    container_name: rabbitmq1
+    ports:
+      - "5672:5672"       # AMQP
+      - "15672:15672"     # Management UI
+      - "15692:15692"     # Prometheus metrics
+      - "5552:5552"       # Streams
+    volumes:
+      - rabbitmq1-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
     environment:
       <<: *rabbitmq-env
+      RABBITMQ_NODENAME: rabbit@rabbitmq1
+
+  rabbitmq2:
+    <<: *rabbitmq-common
+    hostname: rabbitmq2
+    container_name: rabbitmq2
     ports:
-      - "15692:15692"  # Prometheus metrics
+      - "5673:5672"
+      - "15673:15672"
     volumes:
-      - rabbit1-data:/var/lib/rabbitmq
-      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-custom.conf:ro
-      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
-    configs:
-      - source: rmq-plugins
-        target: /etc/rabbitmq/enabled_plugins
-      - source: rmq-base-conf
-        target: /etc/rabbitmq/conf.d/10-cluster.conf
-
-  # ─── RabbitMQ Node 2 ───
-  rabbit2:
-    <<: *rabbitmq-defaults
-    hostname: rabbit2
-    container_name: rabbit2
+      - rabbitmq2-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    environment:
+      <<: *rabbitmq-env
+      RABBITMQ_NODENAME: rabbit@rabbitmq2
     depends_on:
-      rabbit1:
+      rabbitmq1:
         condition: service_healthy
+    entrypoint: >
+      bash -c "
+        sleep 10 &&
+        docker-entrypoint.sh rabbitmq-server &
+        sleep 30 &&
+        rabbitmqctl stop_app &&
+        rabbitmqctl join_cluster rabbit@rabbitmq1 &&
+        rabbitmqctl start_app &&
+        tail -f /var/log/rabbitmq/*.log
+      "
+
+  rabbitmq3:
+    <<: *rabbitmq-common
+    hostname: rabbitmq3
+    container_name: rabbitmq3
     ports:
-      - "15693:15692"  # Prometheus metrics
+      - "5674:5672"
+      - "15674:15672"
     volumes:
-      - rabbit2-data:/var/lib/rabbitmq
-      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-custom.conf:ro
-      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
-    configs:
-      - source: rmq-plugins
-        target: /etc/rabbitmq/enabled_plugins
-      - source: rmq-base-conf
-        target: /etc/rabbitmq/conf.d/10-cluster.conf
-
-  # ─── RabbitMQ Node 3 ───
-  rabbit3:
-    <<: *rabbitmq-defaults
-    hostname: rabbit3
-    container_name: rabbit3
+      - rabbitmq3-data:/var/lib/rabbitmq
+      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+    environment:
+      <<: *rabbitmq-env
+      RABBITMQ_NODENAME: rabbit@rabbitmq3
     depends_on:
-      rabbit1:
+      rabbitmq1:
         condition: service_healthy
-    ports:
-      - "15694:15692"  # Prometheus metrics
-    volumes:
-      - rabbit3-data:/var/lib/rabbitmq
-      - ./rabbitmq.conf:/etc/rabbitmq/conf.d/20-custom.conf:ro
-      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
-    configs:
-      - source: rmq-plugins
-        target: /etc/rabbitmq/enabled_plugins
-      - source: rmq-base-conf
-        target: /etc/rabbitmq/conf.d/10-cluster.conf
-
-  # ─── HAProxy Load Balancer ───
-  haproxy:
-    image: haproxy:2.9-alpine
-    container_name: rmq-haproxy
-    restart: unless-stopped
-    depends_on:
-      rabbit1:
-        condition: service_healthy
-      rabbit2:
-        condition: service_healthy
-      rabbit3:
-        condition: service_healthy
-    ports:
-      - "5672:5672"     # AMQP (load balanced)
-      - "15672:15672"   # Management UI (load balanced)
-      - "8404:8404"     # HAProxy stats dashboard
-    networks:
-      - rmq-net
-    configs:
-      - source: haproxy-cfg
-        target: /usr/local/etc/haproxy/haproxy.cfg
-
-configs:
-  rmq-plugins:
-    content: |
-      [rabbitmq_management,rabbitmq_prometheus,rabbitmq_shovel,rabbitmq_shovel_management,rabbitmq_federation,rabbitmq_federation_management].
-
-  rmq-base-conf:
-    content: |
-      cluster_formation.peer_discovery_backend = classic_config
-      cluster_formation.classic_config.nodes.1 = rabbit@rabbit1
-      cluster_formation.classic_config.nodes.2 = rabbit@rabbit2
-      cluster_formation.classic_config.nodes.3 = rabbit@rabbit3
-      cluster_partition_handling = pause_minority
-      queue_leader_locator = balanced
-      vm_memory_high_watermark.relative = 0.7
-      disk_free_limit.relative = 1.5
-      consumer_timeout = 1800000
-
-  haproxy-cfg:
-    content: |
-      global
-          log stdout format raw local0
-          maxconn 4096
-
-      defaults
-          log     global
-          mode    tcp
-          option  tcplog
-          option  dontlognull
-          timeout connect 5s
-          timeout client  300s
-          timeout server  300s
-          retries 3
-
-      # AMQP load balancing
-      frontend amqp_frontend
-          bind *:5672
-          default_backend amqp_backend
-
-      backend amqp_backend
-          balance roundrobin
-          option  tcp-check
-          default-server inter 5s rise 2 fall 3
-          server rabbit1 rabbit1:5672 check
-          server rabbit2 rabbit2:5672 check
-          server rabbit3 rabbit3:5672 check
-
-      # Management UI
-      frontend mgmt_frontend
-          bind *:15672
-          mode http
-          default_backend mgmt_backend
-
-      backend mgmt_backend
-          mode http
-          balance roundrobin
-          option httpchk GET /api/health/checks/alarms
-          http-check expect status 200
-          default-server inter 10s rise 2 fall 3
-          server rabbit1 rabbit1:15672 check
-          server rabbit2 rabbit2:15672 check
-          server rabbit3 rabbit3:15672 check
-
-      # HAProxy stats page
-      listen stats
-          bind *:8404
-          mode http
-          stats enable
-          stats uri /stats
-          stats refresh 10s
-          stats show-legends
+    entrypoint: >
+      bash -c "
+        sleep 15 &&
+        docker-entrypoint.sh rabbitmq-server &
+        sleep 30 &&
+        rabbitmqctl stop_app &&
+        rabbitmqctl join_cluster rabbit@rabbitmq1 &&
+        rabbitmqctl start_app &&
+        tail -f /var/log/rabbitmq/*.log
+      "
 
 volumes:
-  rabbit1-data:
+  rabbitmq1-data:
     driver: local
-  rabbit2-data:
+  rabbitmq2-data:
     driver: local
-  rabbit3-data:
+  rabbitmq3-data:
     driver: local
 
 networks:
-  rmq-net:
+  rabbitmq-cluster:
     driver: bridge

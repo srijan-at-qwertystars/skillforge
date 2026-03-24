@@ -1,0 +1,217 @@
+# Cypress E2E Tests — GitHub Actions Workflow
+# Features: dependency caching, parallel runs, artifact upload, retry, path filtering
+name: Cypress Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'cypress/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'cypress.config.*'
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: cypress-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # -------------------------------------------------------------------
+  # Detect changes to skip CI when only docs/config changed
+  # -------------------------------------------------------------------
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should-test: ${{ steps.filter.outputs.testable }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            testable:
+              - 'src/**'
+              - 'cypress/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'cypress.config.*'
+
+  # -------------------------------------------------------------------
+  # Install dependencies (shared across parallel jobs)
+  # -------------------------------------------------------------------
+  install:
+    needs: changes
+    if: needs.changes.outputs.should-test == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Cache node_modules
+      - name: Cache node_modules
+        id: cache-node
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      # Cache Cypress binary
+      - name: Cache Cypress binary
+        id: cache-cypress
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-binary-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Verify Cypress
+        run: npx cypress verify
+
+      # Build the app once (shared via cache)
+      - name: Build application
+        run: npm run build
+
+      - name: Cache build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            .next
+            dist
+            build
+          key: build-${{ runner.os }}-${{ github.sha }}
+
+  # -------------------------------------------------------------------
+  # Component tests (no parallelization needed, fast)
+  # -------------------------------------------------------------------
+  component-tests:
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Restore Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-binary-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Run component tests
+        uses: cypress-io/github-action@v6
+        with:
+          install: false
+          component: true
+
+  # -------------------------------------------------------------------
+  # E2E tests with parallelization
+  # -------------------------------------------------------------------
+  e2e-tests:
+    needs: install
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        containers: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Restore node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Restore Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-binary-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Restore build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            .next
+            dist
+            build
+          key: build-${{ runner.os }}-${{ github.sha }}
+
+      - name: Run E2E tests
+        uses: cypress-io/github-action@v6
+        with:
+          install: false
+          start: npm run start
+          wait-on: 'http://localhost:3000'
+          wait-on-timeout: 180
+          browser: chrome
+          # Cypress Cloud parallelization (requires CYPRESS_RECORD_KEY)
+          record: true
+          parallel: true
+          group: 'e2e-${{ github.ref_name }}'
+          tag: ${{ github.event_name }}
+          ci-build-id: ${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pass environment to Cypress
+          CYPRESS_BASE_URL: http://localhost:3000
+
+      # Upload screenshots on failure
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-screenshots-${{ matrix.containers }}
+          path: cypress/screenshots
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # Upload videos on failure
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-videos-${{ matrix.containers }}
+          path: cypress/videos
+          retention-days: 3
+          if-no-files-found: ignore
+
+  # -------------------------------------------------------------------
+  # Summary gate — single status check for branch protection
+  # -------------------------------------------------------------------
+  test-results:
+    if: always()
+    needs: [component-tests, e2e-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.component-tests.result }}" = "failure" ] || \
+             [ "${{ needs.e2e-tests.result }}" = "failure" ]; then
+            echo "❌ Tests failed"
+            exit 1
+          fi
+          echo "✅ All tests passed"
