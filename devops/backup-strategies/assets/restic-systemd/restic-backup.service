@@ -1,0 +1,38 @@
+[Unit]
+Description=Restic backup service
+Documentation=https://restic.readthedocs.io
+After=network-online.target
+Wants=network-online.target
+# Prevent multiple backup instances from running simultaneously
+ConditionPathExists=!/var/run/restic-backup.lock
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/backup-restic.sh full
+EnvironmentFile=/etc/restic-env
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryMax=2G
+
+# Security hardening
+ProtectSystem=full
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=restic-backup
+
+# Timeout: allow up to 6 hours for large backups
+TimeoutStartSec=21600
+
+# Notify on failure via systemd
+# Configure OnFailure= to trigger an alert service if desired
+# OnFailure=backup-failure-notify@%n.service

@@ -1,0 +1,116 @@
+; ============================================================
+; BIND Zone File Template
+; Domain: example.com
+; ============================================================
+;
+; Usage:
+;   1. Replace all instances of "example.com" with your domain
+;   2. Replace IP addresses with your actual IPs
+;   3. Update SOA serial number (YYYYMMDDNN format) on each change
+;   4. Place file in BIND zone directory (e.g., /etc/bind/zones/)
+;   5. Reference in named.conf:
+;      zone "example.com" { type primary; file "zones/db.example.com"; };
+;
+; Important:
+;   - All FQDNs must end with a trailing dot (.)
+;   - $ORIGIN sets the default domain appended to unqualified names
+;   - $TTL sets the default TTL for records that don't specify one
+;   - Update serial number every time you modify this file
+;
+
+$ORIGIN example.com.
+$TTL 3600       ; Default TTL: 1 hour
+
+; ──── SOA (Start of Authority) ────
+; Format: primary-ns admin-email (serial refresh retry expire minimum)
+@   IN  SOA ns1.example.com. hostmaster.example.com. (
+    2025070101  ; Serial — YYYYMMDDNN (increment on each change)
+    7200        ; Refresh — 2 hours (secondary checks for updates)
+    3600        ; Retry   — 1 hour (retry if refresh fails)
+    1209600     ; Expire  — 14 days (secondary stops serving if no refresh)
+    3600        ; Minimum — 1 hour (negative caching TTL / NXDOMAIN TTL)
+)
+
+; ──── NS (Name Servers) ────
+; Minimum 2 for redundancy. Use high TTL.
+@       86400   IN  NS  ns1.example.com.
+@       86400   IN  NS  ns2.example.com.
+
+; Glue records (required if NS is within this zone)
+ns1     86400   IN  A       10.0.0.1
+ns2     86400   IN  A       10.0.0.2
+
+; ──── A Records (IPv4) ────
+@               IN  A       93.184.216.34       ; Zone apex
+www             IN  A       93.184.216.34       ; www subdomain
+mail            IN  A       93.184.216.35       ; Mail server
+ftp             IN  A       93.184.216.36       ; FTP server
+vpn             IN  A       93.184.216.37       ; VPN endpoint
+
+; ──── AAAA Records (IPv6) ────
+@               IN  AAAA    2606:2800:220:1:248:1893:25c8:1946
+www             IN  AAAA    2606:2800:220:1:248:1893:25c8:1946
+mail            IN  AAAA    2606:2800:220:1:248:1893:25c8:1947
+
+; ──── CNAME Records (Aliases) ────
+; CNAME cannot coexist with other records at the same name
+; CNAME cannot be used at zone apex (@)
+blog            IN  CNAME   hosted-blog.example.net.
+docs            IN  CNAME   docs-hosting.example.net.
+status          IN  CNAME   statuspage.example.net.
+autodiscover    IN  CNAME   autodiscover.outlook.com.     ; Microsoft 365
+
+; ──── MX Records (Mail Exchange) ────
+; Lower priority number = higher preference
+@           IN  MX  10  mail.example.com.
+@           IN  MX  20  mail-backup.example.com.
+
+; ──── TXT Records ────
+; SPF — authorize mail senders (ONE record only)
+@           IN  TXT "v=spf1 ip4:93.184.216.35 include:_spf.google.com -all"
+
+; DKIM — email signing public key
+google._domainkey   IN  TXT ( "v=DKIM1; k=rsa; "
+    "p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA..."
+    "REPLACE_WITH_YOUR_ACTUAL_DKIM_PUBLIC_KEY" )
+
+; DMARC — email authentication policy
+_dmarc      IN  TXT "v=DMARC1; p=reject; rua=mailto:dmarc@example.com; pct=100"
+
+; Domain verification records
+@           IN  TXT "google-site-verification=REPLACE_WITH_VERIFICATION_CODE"
+@           IN  TXT "MS=msREPLACE_WITH_VERIFICATION_CODE"
+
+; ──── SRV Records (Service Locator) ────
+; Format: _service._proto TTL IN SRV priority weight port target
+_sip._tcp       IN  SRV 10 60 5060 sipserver.example.com.
+_xmpp._tcp      IN  SRV 5  0  5222 xmpp.example.com.
+
+; ──── CAA Records (Certificate Authority Authorization) ────
+; Restrict which CAs can issue certificates
+@           IN  CAA 0 issue "letsencrypt.org"
+@           IN  CAA 0 issuewild "letsencrypt.org"
+@           IN  CAA 0 iodef "mailto:security@example.com"
+
+; ──── MTA-STS ────
+_mta-sts    IN  TXT "v=STSv1; id=20250701T000000"
+
+; ──── TLS-RPT ────
+_smtp._tls  IN  TXT "v=TLSRPTv1; rua=mailto:tls-reports@example.com"
+
+; ──── BIMI ────
+default._bimi   IN  TXT "v=BIMI1; l=https://example.com/brand/logo.svg;"
+
+; ──── Wildcard Record ────
+; Catches all undefined subdomains (use with caution)
+; *           IN  A       93.184.216.34
+
+; ──── Internal Services (example) ────
+; db-primary.internal  IN  A    10.0.2.10
+; redis.internal       IN  A    10.0.2.20
+; api.internal         IN  A    10.0.3.5
+
+; ──── PTR Records ────
+; Note: PTR records go in a REVERSE zone file, not here.
+; For IP 93.184.216.34, create a reverse zone for 216.184.93.in-addr.arpa:
+;   34  IN  PTR  example.com.

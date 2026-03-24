@@ -1,0 +1,45 @@
+# Restic environment configuration
+# Copy this file to /etc/restic-env and set permissions:
+#   chmod 600 /etc/restic-env
+#   chown root:root /etc/restic-env
+
+# Repository location (required)
+# Examples:
+#   Local:  RESTIC_REPOSITORY=/backup/restic-repo
+#   S3:     RESTIC_REPOSITORY=s3:s3.amazonaws.com/my-backup-bucket
+#   SFTP:   RESTIC_REPOSITORY=sftp:user@host:/backup/restic-repo
+#   REST:   RESTIC_REPOSITORY=rest:http://backup-server:8000/
+RESTIC_REPOSITORY=s3:s3.amazonaws.com/my-backup-bucket
+
+# Repository password (required — use one of these methods)
+RESTIC_PASSWORD=your-secure-password-here
+# Or use a password file:
+# RESTIC_PASSWORD_FILE=/etc/restic-password
+
+# AWS credentials (for S3 backends)
+AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+AWS_DEFAULT_REGION=us-east-1
+
+# Backup paths (space-separated)
+BACKUP_PATHS=/etc /home /var/lib /opt/app/data
+
+# Exclude patterns (comma-separated)
+BACKUP_EXCLUDES=*.cache,*.tmp,.cache,node_modules,__pycache__,.venv,.git,*.log
+
+# Tags (comma-separated)
+BACKUP_TAGS=production,server-01
+
+# Retention policy
+KEEP_HOURLY=24
+KEEP_DAILY=7
+KEEP_WEEKLY=4
+KEEP_MONTHLY=12
+KEEP_YEARLY=3
+
+# Notifications (optional)
+# SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00/B00/XXXX
+# HEALTHCHECK_URL=https://hc-ping.com/your-uuid-here
+
+# Log directory
+LOG_DIR=/var/log/restic

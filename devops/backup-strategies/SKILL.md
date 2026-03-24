@@ -205,22 +205,7 @@ mongorestore --db=myapp --collection=orders --gzip \
 aws s3 sync /backup/ s3://my-backup-bucket/$(hostname)/ \
   --storage-class STANDARD_IA --sse AES256 --delete
 
-# Create lifecycle policy (JSON)
-cat > lifecycle.json << 'EOF'
-{
-  "Rules": [{
-    "ID": "BackupLifecycle",
-    "Status": "Enabled",
-    "Filter": {"Prefix": ""},
-    "Transitions": [
-      {"Days": 30, "StorageClass": "STANDARD_IA"},
-      {"Days": 90, "StorageClass": "GLACIER"},
-      {"Days": 365, "StorageClass": "DEEP_ARCHIVE"}
-    ],
-    "Expiration": {"Days": 2555}
-  }]
-}
-EOF
+# Apply lifecycle policy (see assets/s3-lifecycle-policy.json for full example)
 aws s3api put-bucket-lifecycle-configuration \
   --bucket my-backup-bucket --lifecycle-configuration file://lifecycle.json
 
@@ -232,7 +217,6 @@ aws s3api put-bucket-versioning --bucket my-backup-bucket \
 ### GCS and Azure Blob
 ```bash
 gsutil -m rsync -r -d /backup/ gs://my-backup-bucket/              # GCS upload
-gsutil lifecycle set lifecycle.json gs://my-backup-bucket/           # GCS lifecycle
 az storage blob upload-batch --destination backups --source /backup/ --tier Cool  # Azure
 ```
 
@@ -306,28 +290,16 @@ velero backup logs prod-backup
 ## Backup Verification and Testing
 
 Untested backups are not backups. Automate verification.
+See [scripts/backup-verify.sh](scripts/backup-verify.sh) for a complete verification suite.
 
 ```bash
-# Verify restic repository integrity
-restic -r /backup/repo check --read-data
+restic -r /backup/repo check --read-data              # Verify restic integrity
+borg check --verify-data /backup/borg-repo             # Verify borg archive
 
-# Verify borg archive
-borg check --verify-data /backup/borg-repo
-
-# PostgreSQL: restore to temp DB and validate row counts
+# PostgreSQL: restore to temp DB and validate
 pg_restore -U postgres -d test_restore mydb.dump
 psql -U postgres -d test_restore -c "SELECT count(*) FROM critical_table;"
 psql -U postgres -c "DROP DATABASE test_restore;"
-
-# MySQL: verify dump is valid SQL
-gunzip < backup.sql.gz | mysql --connect-timeout=5 -u root -p test_restore
-mysql -u root -p -e "DROP DATABASE test_restore;"
-
-# File-level verification script
-#!/bin/bash
-BACKUP_DIR="/backup/latest"
-CHECKSUM_FILE="/backup/checksums.sha256"
-sha256sum -c "$CHECKSUM_FILE" || alert "Backup verification FAILED"
 ```
 
 ## Encryption
@@ -426,34 +398,18 @@ if [ "$AGE_HOURS" -gt "$MAX_AGE_HOURS" ]; then
     -d "{\"text\":\"🚨 Backup STALE on $(hostname): ${AGE_HOURS}h old\"}"
   exit 1
 fi
-# Check backup size (detect empty/truncated backups)
-MIN_SIZE_MB=100
-ACTUAL_SIZE=$(du -sm "$BACKUP_DIR" | cut -f1)
-[ "$ACTUAL_SIZE" -lt "$MIN_SIZE_MB" ] && echo "WARNING: Backup too small" && exit 1
-echo "OK: Backup is ${AGE_HOURS}h old, ${ACTUAL_SIZE}MB"
+echo "OK: Backup is ${AGE_HOURS}h old"
+# See references/troubleshooting.md for Prometheus integration and comprehensive monitoring
 ```
 
 ## Bare-Metal Restore
 
-Procedure for full system recovery:
-1. Boot from live USB/PXE with network access.
-2. Partition and format disks matching original layout. Document partition scheme in backup metadata.
-3. Restore filesystem from backup:
-```bash
-# From restic
-restic -r s3:s3.amazonaws.com/bucket restore latest --target /mnt/restore
+1. Boot from live USB/PXE. Partition disks matching original layout.
+2. Restore filesystem: `restic restore latest --target /mnt/restore` or `borg extract`.
+3. Reinstall bootloader: `grub-install /dev/sda && update-grub` (chroot into restored system).
+4. Verify fstab UUIDs match new disks. Reboot and validate services.
 
-# From borg
-cd /mnt/restore && borg extract /backup/borg-repo::latest
-
-# From tar/dd
-gunzip < /backup/system.img.gz | dd of=/dev/sda bs=1M
-```
-4. Reinstall bootloader: `grub-install /dev/sda && update-grub` (chroot into restored system).
-5. Verify fstab UUIDs match new disk layout.
-6. Reboot and validate all services start.
-
-Store partition layout, package list, and network config alongside backups:
+Store layout metadata alongside backups:
 ```bash
 fdisk -l > /backup/meta/partitions.txt
 dpkg --get-selections > /backup/meta/packages.txt
@@ -462,34 +418,77 @@ ip addr show > /backup/meta/network.txt
 
 ## Example: Complete Backup Script
 
+> A full-featured version is available at [scripts/backup-restic.sh](scripts/backup-restic.sh).
+
 ```bash
 #!/bin/bash
 set -euo pipefail
 REPO="s3:s3.amazonaws.com/company-backups"
 HOSTNAME=$(hostname -s)
-LOG="/var/log/backup-$(date +%F).log"
 
-log() { echo "[$(date -Is)] $*" | tee -a "$LOG"; }
-
-# Filesystem backup
-log "Starting filesystem backup"
 restic -r "$REPO" backup /etc /home /var/lib/postgresql \
-  --tag "$HOSTNAME" --exclude-caches 2>&1 | tee -a "$LOG"
-
-# Database backup
-log "Dumping PostgreSQL"
+  --tag "$HOSTNAME" --exclude-caches
 pg_dump -U postgres -Fc production > /tmp/prod.dump
-restic -r "$REPO" backup /tmp/prod.dump --tag db 2>&1 | tee -a "$LOG"
-rm -f /tmp/prod.dump
-
-# Apply retention
-log "Applying retention policy"
+restic -r "$REPO" backup /tmp/prod.dump --tag db && rm -f /tmp/prod.dump
 restic -r "$REPO" forget --tag "$HOSTNAME" \
-  --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune 2>&1 | tee -a "$LOG"
-
-# Verify
-log "Verifying backup integrity"
-restic -r "$REPO" check 2>&1 | tee -a "$LOG"
-
-log "Backup completed successfully"
+  --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --prune
+restic -r "$REPO" check
 ```
+
+## Additional Resources
+
+### Reference Guides
+
+In-depth reference documents covering advanced topics:
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Advanced backup strategies:
+  deduplication internals (content-defined chunking in restic/borg), backup pipeline orchestration,
+  cross-region replication, immutable backups (S3 Object Lock, WORM, MinIO), microservices backup
+  patterns, etcd backup for Kubernetes, Vault/secrets backup, GitOps state backup, and large
+  dataset strategies (parallel streams, incremental forever, block-level backup).
+
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Backup troubleshooting guide:
+  failed restore diagnosis (restic, borg, databases), corruption detection and repair, slow backup
+  performance analysis (I/O, CPU, memory, network), storage quota management, network optimization
+  (compression comparison, bandwidth scheduling), backup lock contention, incremental chain repair,
+  and backup monitoring with Prometheus/Grafana integration.
+
+- **[references/disaster-recovery.md](references/disaster-recovery.md)** — Disaster recovery planning:
+  RPO/RTO matrix by service tier, DR runbook template (complete with communication plan and
+  escalation), failover testing procedures, data consistency verification, point-in-time recovery
+  workflows (PostgreSQL, MySQL, MongoDB), cross-cloud DR architecture patterns, DR automation with
+  Terraform, tabletop exercise scenarios, and compliance requirements (SOC 2, HIPAA controls with
+  evidence collection).
+
+### Scripts
+
+Production-ready backup scripts (executable, `chmod +x`):
+
+- **[scripts/backup-restic.sh](scripts/backup-restic.sh)** — Complete restic backup lifecycle:
+  `init`, `backup`, `prune`, `check`, and `full` (all-in-one). Includes lock management,
+  Slack/healthcheck notifications, GFS retention policy, and environment file support.
+
+- **[scripts/backup-postgres.sh](scripts/backup-postgres.sh)** — PostgreSQL backup supporting
+  `pg_dump` (custom format, parallel) and `pg_basebackup` with WAL archiving. Includes metadata
+  recording, checksum generation, WAL status checking, and PITR guidance.
+
+- **[scripts/backup-verify.sh](scripts/backup-verify.sh)** — Backup verification suite: repository
+  integrity checks, automated restore testing, database restore validation, row count comparison,
+  and JSON report generation for compliance evidence.
+
+### Assets
+
+Copy-paste ready configurations and templates:
+
+- **[assets/restic-systemd/](assets/restic-systemd/)** — Systemd timer + service pair for automated
+  restic backups. Includes `restic-backup.service` (security-hardened oneshot), `restic-backup.timer`
+  (daily with jitter), and `restic-env.example` (configuration template).
+
+- **[assets/backup-policy-template.md](assets/backup-policy-template.md)** — Organizational backup
+  policy document template covering data classification, backup tiers (RPO/RTO matrix), 3-2-1-1-0
+  rule, encryption, access control, retention schedules, monitoring requirements, and compliance
+  mapping (SOC 2, HIPAA, GDPR, PCI DSS).
+
+- **[assets/s3-lifecycle-policy.json](assets/s3-lifecycle-policy.json)** — AWS S3 lifecycle rules
+  for backup storage tiering: Standard → Standard-IA (30d) → Glacier (90d) → Deep Archive (365d),
+  with noncurrent version handling, compliance retention tags, and multipart upload cleanup.

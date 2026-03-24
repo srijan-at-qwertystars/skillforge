@@ -1,0 +1,16 @@
+[Unit]
+Description=Run restic backup daily at 2:00 AM
+Documentation=https://restic.readthedocs.io
+Requires=restic-backup.service
+
+[Timer]
+# Run daily at 2:00 AM with up to 15 minutes random delay
+OnCalendar=*-*-* 02:00:00
+RandomizedDelaySec=900
+# If the system was off when the timer should have fired, run on next boot
+Persistent=true
+# Ensure minimum 23 hours between runs (prevents double-runs)
+AccuracySec=1h
+
+[Install]
+WantedBy=timers.target

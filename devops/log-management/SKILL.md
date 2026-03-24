@@ -384,3 +384,38 @@ OTEL log record maps: `Timestamp` (when), `SeverityNumber`+`SeverityText` (level
 | Managed, low ops | Datadog or Splunk Cloud |
 | Unified observability | OTEL Collector → any backend |
 | Security/audit | ELK or Splunk with immutable indices |
+
+## Additional Resources
+
+### References
+
+In-depth guides in `references/`:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Distributed tracing correlation, OpenTelemetry Log Bridge API, log-based metrics extraction, structured logging schema design, contextual logging (MDC/context propagation per language), log enrichment pipelines, multi-tenant logging isolation, audit log compliance (SOC2/HIPAA/GDPR), and log analytics query patterns.
+
+- **[Troubleshooting](references/troubleshooting.md)** — Elasticsearch performance (shard sizing, mapping explosions, JVM tuning, slow queries, cluster health), Loki LogQL optimization, Fluent Bit backpressure handling, log loss diagnosis flowchart, timestamp parsing issues, multiline log handling (Java/Python stack traces), high-cardinality label problems, and storage capacity planning with cost estimation.
+
+- **[Stack Comparison](references/stack-comparison.md)** — ELK vs PLG (Loki) vs Datadog vs Splunk: architecture deep-dive, feature matrix, cost models (self-hosted and SaaS), scaling characteristics, query language comparison with examples, operational complexity, and a decision framework for choosing the right stack.
+
+### Scripts
+
+Executable tools in `scripts/`:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `log-setup-elk.sh` | Generate Docker Compose ELK stack with index templates and ILM | `./scripts/log-setup-elk.sh --start` |
+| `log-analyzer.py` | Analyze JSON log files: error rates, top errors, latency percentiles, pattern detection | `./scripts/log-analyzer.py app.log` |
+| `logrotate-setup.sh` | Configure logrotate for apps, Nginx, Docker, journald | `sudo ./scripts/logrotate-setup.sh --nginx --docker` |
+
+### Assets
+
+Ready-to-use configurations in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| `fluent-bit.conf` | Fluent Bit config: tail + K8s inputs, Elasticsearch/Loki outputs, filesystem buffering, Prometheus metrics |
+| `docker-compose-elk.yml` | Production-ready ELK Docker Compose with resource limits, health checks, persistent volumes |
+| `logging-config-examples/nodejs-pino.js` | Pino logger with JSON output, PII redaction, request context middleware |
+| `logging-config-examples/python-structlog.py` | structlog with contextvars, PII redaction, OpenTelemetry injection |
+| `logging-config-examples/go-slog.go` | slog with context handler, PII redaction, HTTP middleware |
+| `logging-config-examples/java-log4j2.xml` | Log4j2 with JsonTemplateLayout, async appenders, MDC filter pattern |

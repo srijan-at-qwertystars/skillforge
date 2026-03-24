@@ -1,0 +1,96 @@
+{
+  "Rules": [
+    {
+      "ID": "BackupTiering-Standard-IA-Glacier",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "backups/"
+      },
+      "Transitions": [
+        {
+          "Days": 30,
+          "StorageClass": "STANDARD_IA"
+        },
+        {
+          "Days": 90,
+          "StorageClass": "GLACIER"
+        },
+        {
+          "Days": 365,
+          "StorageClass": "DEEP_ARCHIVE"
+        }
+      ],
+      "NoncurrentVersionTransitions": [
+        {
+          "NoncurrentDays": 30,
+          "StorageClass": "GLACIER"
+        },
+        {
+          "NoncurrentDays": 90,
+          "StorageClass": "DEEP_ARCHIVE"
+        }
+      ],
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 2555
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    },
+    {
+      "ID": "ExpireOldBackups",
+      "Status": "Enabled",
+      "Filter": {
+        "And": {
+          "Prefix": "backups/",
+          "Tags": [
+            {
+              "Key": "retention",
+              "Value": "standard"
+            }
+          ]
+        }
+      },
+      "Expiration": {
+        "Days": 2555
+      }
+    },
+    {
+      "ID": "LongTermRetention",
+      "Status": "Enabled",
+      "Filter": {
+        "And": {
+          "Prefix": "backups/",
+          "Tags": [
+            {
+              "Key": "retention",
+              "Value": "compliance"
+            }
+          ]
+        }
+      },
+      "Transitions": [
+        {
+          "Days": 90,
+          "StorageClass": "DEEP_ARCHIVE"
+        }
+      ],
+      "Expiration": {
+        "Days": 3650
+      }
+    },
+    {
+      "ID": "CleanupTempUploads",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "tmp/"
+      },
+      "Expiration": {
+        "Days": 7
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    }
+  ]
+}

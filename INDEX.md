@@ -230,6 +230,6 @@
 | security | tls-certificates | TLS certificates — SSL/HTTPS setup, Let's Encrypt, openssl debugging, mTLS, certificate chains | tested |
 | infrastructure | systemd-services | Systemd services — unit files, timers, socket activation, security hardening, resource limits | tested |
 | infrastructure | ssh-tunneling | SSH tunneling — port forwarding, jump hosts, SOCKS proxy, key management, autossh | tested |
-| devops | log-management | Log management — structured logging, ELK/Loki, log rotation, aggregation, correlation IDs | created |
-| devops | backup-strategies | Backup strategies — 3-2-1 rule, rsync/restic/borg, database backups, snapshots, disaster recovery | created |
-| infrastructure | dns-patterns | DNS patterns — record types, DNSSEC, email auth, debugging, GeoDNS, service discovery | created |
+| devops | log-management | Log management — structured logging, ELK/Loki, log rotation, aggregation, correlation IDs | enriched |
+| devops | backup-strategies | Backup strategies — 3-2-1 rule, rsync/restic/borg, database backups, snapshots, disaster recovery | enriched |
+| infrastructure | dns-patterns | DNS patterns — record types, DNSSEC, email auth, debugging, GeoDNS, service discovery | enriched |

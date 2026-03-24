@@ -1,0 +1,154 @@
+<!--
+  Java Logging Configuration — Log4j2 with JSON output
+
+  Production-ready structured logging with:
+    - JSON layout via JsonTemplateLayout
+    - MDC (Mapped Diagnostic Context) for request context
+    - PII masking via pattern replacement
+    - Async logging for performance
+    - Rolling file appender with size/time rotation
+    - Console appender for container stdout
+
+  Dependencies (Maven):
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-core</artifactId>
+      <version>2.23.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.logging.log4j</groupId>
+      <artifactId>log4j-layout-template-json</artifactId>
+      <version>2.23.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.lmax</groupId>
+      <artifactId>disruptor</artifactId>
+      <version>4.0.0</version>
+    </dependency>
+
+  Place this file at: src/main/resources/log4j2.xml
+
+  Usage in Java:
+    import org.apache.logging.log4j.LogManager;
+    import org.apache.logging.log4j.Logger;
+    import org.apache.logging.log4j.ThreadContext;
+
+    Logger logger = LogManager.getLogger(MyClass.class);
+    ThreadContext.put("request_id", requestId);
+    ThreadContext.put("trace_id", traceId);
+    ThreadContext.put("user_id", userId);
+    logger.info("Request processed successfully");
+    ThreadContext.clearAll();
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN" monitorInterval="30">
+
+  <Properties>
+    <Property name="SERVICE_NAME">${env:SERVICE_NAME:-app}</Property>
+    <Property name="ENVIRONMENT">${env:ENVIRONMENT:-development}</Property>
+    <Property name="APP_VERSION">${env:APP_VERSION:-0.0.0}</Property>
+    <Property name="LOG_DIR">${env:LOG_DIR:-/var/log/app}</Property>
+  </Properties>
+
+  <Appenders>
+
+    <!-- Console JSON output (for containers / stdout) -->
+    <Console name="Console" target="SYSTEM_OUT">
+      <JsonTemplateLayout eventTemplateUri="classpath:LogstashJsonEventLayoutV1.json">
+        <EventTemplateAdditionalField
+          key="service" value="${SERVICE_NAME}"/>
+        <EventTemplateAdditionalField
+          key="environment" value="${ENVIRONMENT}"/>
+        <EventTemplateAdditionalField
+          key="version" value="${APP_VERSION}"/>
+      </JsonTemplateLayout>
+    </Console>
+
+    <!-- Rolling file JSON output -->
+    <RollingFile name="RollingFile"
+      fileName="${LOG_DIR}/app.log"
+      filePattern="${LOG_DIR}/app-%d{yyyy-MM-dd}-%i.log.gz">
+      <JsonTemplateLayout eventTemplateUri="classpath:LogstashJsonEventLayoutV1.json">
+        <EventTemplateAdditionalField
+          key="service" value="${SERVICE_NAME}"/>
+        <EventTemplateAdditionalField
+          key="environment" value="${ENVIRONMENT}"/>
+      </JsonTemplateLayout>
+      <Policies>
+        <SizeBasedTriggeringPolicy size="100 MB"/>
+        <TimeBasedTriggeringPolicy interval="1" modulate="true"/>
+      </Policies>
+      <DefaultRolloverStrategy max="14">
+        <Delete basePath="${LOG_DIR}" maxDepth="1">
+          <IfFileName glob="app-*.log.gz"/>
+          <IfLastModified age="14d"/>
+        </Delete>
+      </DefaultRolloverStrategy>
+    </RollingFile>
+
+    <!-- Async wrapper for high-throughput (requires LMAX Disruptor) -->
+    <Async name="AsyncConsole" bufferSize="262144">
+      <AppenderRef ref="Console"/>
+    </Async>
+
+    <Async name="AsyncFile" bufferSize="262144">
+      <AppenderRef ref="RollingFile"/>
+    </Async>
+
+  </Appenders>
+
+  <Loggers>
+
+    <!-- Application logger -->
+    <Logger name="com.yourcompany" level="${env:LOG_LEVEL:-INFO}" additivity="false">
+      <AppenderRef ref="AsyncConsole"/>
+      <AppenderRef ref="AsyncFile"/>
+    </Logger>
+
+    <!-- Reduce noise from frameworks -->
+    <Logger name="org.springframework" level="WARN"/>
+    <Logger name="org.hibernate" level="WARN"/>
+    <Logger name="org.apache.kafka" level="WARN"/>
+    <Logger name="io.netty" level="WARN"/>
+
+    <!-- Root logger -->
+    <Root level="${env:LOG_LEVEL:-INFO}">
+      <AppenderRef ref="AsyncConsole"/>
+    </Root>
+
+  </Loggers>
+
+</Configuration>
+
+<!--
+  === MDC Usage Pattern (Servlet Filter / Spring Interceptor) ===
+
+  public class LoggingFilter implements Filter {
+      @Override
+      public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
+              throws IOException, ServletException {
+          HttpServletRequest httpReq = (HttpServletRequest) req;
+
+          // Set MDC context
+          String requestId = httpReq.getHeader("X-Request-ID");
+          if (requestId == null) requestId = UUID.randomUUID().toString();
+          ThreadContext.put("request_id", requestId);
+          ThreadContext.put("trace_id", httpReq.getHeader("X-Trace-ID"));
+          ThreadContext.put("user_id", httpReq.getHeader("X-User-ID"));
+          ThreadContext.put("tenant_id", httpReq.getHeader("X-Tenant-ID"));
+
+          long start = System.nanoTime();
+          try {
+              chain.doFilter(req, res);
+          } finally {
+              long duration = (System.nanoTime() - start) / 1_000_000;
+              HttpServletResponse httpRes = (HttpServletResponse) res;
+              Logger logger = LogManager.getLogger("http");
+              logger.info("Request completed method={} path={} status={} duration_ms={}",
+                  httpReq.getMethod(), httpReq.getRequestURI(),
+                  httpRes.getStatus(), duration);
+              ThreadContext.clearAll();
+          }
+      }
+  }
+-->

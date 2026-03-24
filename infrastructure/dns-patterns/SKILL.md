@@ -294,29 +294,7 @@ view "external" {
 ### GeoDNS
 Return IPs based on client geographic location. Use for CDN endpoints, regional compliance, data sovereignty.
 
-### Route 53 Geolocation Policy
-```json
-{
-  "Type": "A",
-  "Name": "app.example.com",
-  "SetIdentifier": "europe",
-  "GeoLocation": { "ContinentCode": "EU" },
-  "TTL": 300,
-  "ResourceRecords": [{ "Value": "52.28.0.1" }]
-}
-```
-
-### Route 53 Latency-Based Routing
-```json
-{
-  "Type": "A",
-  "Name": "app.example.com",
-  "SetIdentifier": "us-east-1",
-  "Region": "us-east-1",
-  "TTL": 60,
-  "ResourceRecords": [{ "Value": "54.85.0.1" }]
-}
-```
+Route 53 supports geolocation (`GeoLocation.ContinentCode/CountryCode`) and latency-based (`Region`) routing policies. See `references/advanced-patterns.md` for details.
 
 ## DNS Load Balancing
 
@@ -488,3 +466,29 @@ dig @$(dig +short NS example.com | head -1) example.com A +short
 8. **DNSSEC DS mismatch** — DS at parent must match active KSK. Verify after rollover.
 9. **Wildcard + specific records confusion** — wildcard doesn't override explicit records but catches everything else.
 10. **Not testing from external resolvers** — always verify from 8.8.8.8 and 1.1.1.1, not just local.
+
+## Additional Resources
+
+### Reference Documentation (references/)
+
+| File | Contents |
+|------|----------|
+| `references/advanced-patterns.md` | DNSSEC key management (KSK/ZSK rotation, algorithm rollover), DNS-based service discovery (SRV, Consul, CoreDNS, Kubernetes DNS), split-horizon architectures, DoH/DoT server setup, DNS sinkholing, dynamic DNS (DDNS), DNS load balancing algorithms, anycast DNS, DNS prefetching, EDNS client subnet |
+| `references/troubleshooting.md` | Systematic resolution failure diagnosis, SERVFAIL/NXDOMAIN/NODATA analysis, TTL caching issues, negative caching, DNSSEC validation failures and emergency recovery, DNS amplification attack mitigation, zone transfer problems, split-brain DNS, resolver conflicts (systemd-resolved vs NetworkManager, Docker DNS, WSL DNS) |
+| `references/email-dns-reference.md` | SPF syntax and 10-lookup limit (flattening, macros), DKIM key generation and rotation, DMARC policy progression (none→quarantine→reject), BIMI setup, MTA-STS, TLS-RPT, email deliverability issues, provider-specific setup (Google Workspace, Microsoft 365, AWS SES, Fastmail, Zoho) |
+
+### Scripts (scripts/)
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/dns-audit.sh` | Comprehensive DNS audit — checks all record types, DNSSEC, email auth (SPF/DKIM/DMARC/MTA-STS/TLS-RPT/BIMI) | `./dns-audit.sh [-v] [-r resolver] <domain>` |
+| `scripts/dns-propagation-check.sh` | Check DNS propagation across Google, Cloudflare, Quad9, OpenDNS resolvers | `./dns-propagation-check.sh [-e expected] [-w] <domain> [type]` |
+| `scripts/email-dns-setup.py` | Generate and validate SPF, DKIM, DMARC records with provider presets | `./email-dns-setup.py <domain> [--provider google] [--validate]` |
+
+### Assets (assets/)
+
+| File | Contents |
+|------|----------|
+| `assets/zone-file-template.db` | BIND zone file template with SOA, NS, A, AAAA, CNAME, MX, TXT (SPF/DKIM/DMARC), SRV, CAA, MTA-STS, TLS-RPT, BIMI records — copy and customize |
+| `assets/dig-cheatsheet.md` | dig command reference — basic queries, output control, DNSSEC, reverse DNS, email records, batch scripting, output interpretation (flags, status codes, answer format) |
+| `assets/dns-record-templates.md` | Copy-paste DNS records for: web hosting (GitHub Pages, Netlify, Vercel, S3), email providers (Google, Microsoft 365, AWS SES, Fastmail), domain verification, security records (CAA, MTA-STS), SaaS platforms, SRV records, load balancing |
