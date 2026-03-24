@@ -476,3 +476,4 @@ sudo sysctl -p /etc/sysctl.d/90-network.conf
 # Apply nftables
 sudo nft -f assets/nftables-template.nft
 ```
+<!-- tested: pass -->

@@ -489,3 +489,4 @@ Copy-paste ready templates and setup guides:
   - `rate-limiter.lua` — Sliding window rate limiter using sorted sets
   - `sliding-window-counter.lua` — Fixed+sliding window hybrid (memory-efficient)
   - `distributed-lock.lua` — Safe lock with acquire/release/extend operations
+<!-- tested: needs-fix -->

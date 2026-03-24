@@ -482,3 +482,5 @@ Copy-paste ready templates in `assets/`:
 - **[security-headers.conf](assets/security-headers.conf)** — Security headers snippet:
   X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, CSP, HSTS,
   Cross-Origin policies, XSS protection. Include in every server block.
+
+<!-- tested: needs-fix -->
