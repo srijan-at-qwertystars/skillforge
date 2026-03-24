@@ -236,3 +236,6 @@
 | infrastructure | cron-patterns | Cron patterns — crontab syntax, scheduled tasks, debugging, flock, containers, monitoring | tested |
 | devtools | makefile-patterns | Makefile patterns — GNU Make syntax, automatic variables, functions, modern project templates | tested |
 | devtools | jq-patterns | jq patterns — JSON processing, filters, transformations, API responses, shell scripting | tested |
+| api | openapi-spec | OpenAPI 3.0/3.1 specification patterns, schema composition, security schemes, and API design-first workflows. Use when designing REST APIs, generating API docs, or working with Swagger/OpenAPI tooling. Do NOT use for GraphQL, gRPC, or general HTTP client usage. | created |
+| frontend | htmx-patterns | htmx attributes, swap strategies, OOB swaps, triggers, WebSocket/SSE integration, and server framework patterns. Use when building hypermedia-driven UIs with htmx. Do NOT use for React/Vue/Angular SPAs or general JavaScript frameworks. | created |
+| runtime | deno-runtime | Deno 2.x runtime patterns including permissions, module system, built-in tools, HTTP servers, KV store, Fresh framework, and Node.js migration. Use when working with Deno projects. Do NOT use for Node.js, Bun, or browser JavaScript. | created |
