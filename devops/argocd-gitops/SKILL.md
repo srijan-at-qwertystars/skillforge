@@ -1,180 +1,95 @@
 ---
 name: argocd-gitops
 description: >
-  Use when writing Argo CD Application, ApplicationSet, or AppProject CRDs,
-  configuring sync policies, sync waves, hooks, RBAC, SSO, notifications,
-  multi-cluster management, Helm/Kustomize sources, health checks, or secrets
-  integration (SOPS, Sealed Secrets, External Secrets). Use for argocd CLI
-  commands, repo-server config, HA installation, disaster recovery, or
-  debugging out-of-sync resources. DO NOT use for Argo Workflows, Argo Events,
-  Argo Rollouts, Flux CD, generic Kubernetes manifests without Argo CD context,
-  CI pipeline tools (Jenkins, GitHub Actions), or container image builds.
+  Generate ArgoCD and Argo CD GitOps manifests, Application CRDs, ApplicationSet
+  configs, ArgoCD sync policies, argocd app create commands, and GitOps deployment
+  pipelines. Covers automated/manual sync, hooks, waves, multi-cluster management,
+  SSO/RBAC, notifications, App of Apps, Helm/Kustomize integration, and CI/CD.
+  Triggers: ArgoCD, Argo CD, GitOps, ArgoCD Application, ApplicationSet, ArgoCD sync,
+  argocd app create, GitOps deployment.
+  Does NOT cover: FluxCD, Jenkins CD, Spinnaker, manual kubectl apply,
+  Helm-only deployments without GitOps.
 ---
-
-# Argo CD GitOps Skill
-
-## Architecture
-
-Four core components:
-- **API Server (`argocd-server`)**: Deployment. Web UI, REST/gRPC API, CLI gateway. Handles authn/authz, RBAC. Stateless, scales horizontally.
-- **Repo Server (`argocd-repo-server`)**: Deployment. Clones Git repos, renders manifests (Helm/Kustomize/Jsonnet/YAML). Caches output. Stateless. Custom plugins run here.
-- **Application Controller (`argocd-application-controller`)**: StatefulSet. Reconciliation engine—compares live vs desired state, detects drift, triggers sync, runs hooks. Uses leader election + sharding for HA.
-- **ApplicationSet Controller**: Deployment. Generates Application CRs from templates + generators.
-
-Supporting: **Redis** (cache/queues), **Dex** (optional SSO), **Notifications Controller** (built-in alerts).
-
-## Installation
-
+# ArgoCD GitOps Skill
+## Installation & Setup
+Install ArgoCD into a dedicated namespace:
 ```bash
-# Non-HA (dev/test)
 kubectl create namespace argocd
 kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-
-# HA (production)
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/ha/install.yaml
-
-# Helm (recommended production)
+```
+Install CLI, login, change password:
+```bash
+curl -sSL -o argocd https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+chmod +x argocd && sudo mv argocd /usr/local/bin/
+argocd admin initial-password -n argocd
+argocd login <SERVER> --username admin --password <PASSWORD>
+argocd account update-password
+```
+Expose via Ingress or `kubectl port-forward svc/argocd-server -n argocd 8080:443`.
+Helm install for production:
+```bash
 helm repo add argo https://argoproj.github.io/argo-helm
 helm install argocd argo/argo-cd -n argocd --create-namespace \
-  --set server.replicas=2 --set controller.replicas=2 \
-  --set repoServer.replicas=2 --set redis-ha.enabled=true
-
-# Get initial admin password
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+  --set server.ingress.enabled=true --set server.ingress.hosts[0]=argocd.example.com
 ```
-
 ## Application CRD
-
+Links a Git source to a cluster destination with sync policy.
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: my-app
   namespace: argocd
-  finalizers: [resources-finalizer.argocd.argoproj.io]
 spec:
   project: default
   source:
     repoURL: https://github.com/org/repo.git
-    targetRevision: main
-    path: k8s/overlays/production
+    targetRevision: HEAD
+    path: k8s/overlays/prod
   destination:
     server: https://kubernetes.default.svc
     namespace: my-app
   syncPolicy:
     automated:
-      prune: true
-      selfHeal: true
-    syncOptions: [CreateNamespace=true, PrunePropagationPolicy=foreground, PruneLast=true]
+      prune: true       # Remove resources deleted from Git
+      selfHeal: true    # Revert manual cluster changes
+    syncOptions: [CreateNamespace=true, ApplyOutOfSyncOnly=true]
     retry:
       limit: 5
       backoff: { duration: 5s, factor: 2, maxDuration: 3m }
 ```
+Key fields: `source.repoURL`, `source.path`, `source.targetRevision`, `source.helm`, `source.kustomize`, `destination.server`, `destination.namespace`, `syncPolicy.automated`.
 
-Key fields: `project` scopes RBAC. `targetRevision` accepts branch/tag/SHA. `finalizers` cascade-delete cluster resources on Application deletion. Use `https://kubernetes.default.svc` for in-cluster destination.
-
-## Sync Strategies
-
-| Strategy | Config | Behavior |
-|----------|--------|----------|
-| Manual | Omit `syncPolicy.automated` | Sync only on explicit trigger |
-| Auto | `automated: {}` | Sync on Git change |
-| Self-heal | `automated.selfHeal: true` | Revert manual cluster drift |
-| Prune | `automated.prune: true` | Delete resources removed from Git |
-| Selective | `syncOptions: [ApplyOutOfSyncOnly=true]` | Only apply drifted resources |
-
-Always enable `selfHeal` + `prune` in production. Set `retry` with backoff for transient failures.
-
-## Source Types
-
-### Helm
+Multi-source (Helm chart + values from separate repo):
 ```yaml
-source:
-  repoURL: https://charts.example.com  # or oci://registry.example.com/charts
-  chart: my-chart
-  targetRevision: 1.2.3
-  helm:
-    releaseName: my-release
-    valueFiles: [values-production.yaml]
-    values: |
-      replicaCount: 3
-    parameters:
-      - name: service.type
-        value: ClusterIP
-```
-Set `chart` (not `path`) for Helm repos. Use `valueFiles` for repo-local files, `values` for inline, `parameters` for individual overrides.
-
-### Kustomize
-```yaml
-source:
-  repoURL: https://github.com/org/repo.git
-  path: k8s/overlays/staging
-  kustomize:
-    namePrefix: staging-
-    images: [{name: myapp, newTag: v2.0.0}]
-    commonLabels: {env: staging}
-```
-
-## ApplicationSet
-
-### Git Directory Generator (mono-repo)
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: ApplicationSet
-metadata:
-  name: cluster-apps
-  namespace: argocd
 spec:
-  generators:
-    - git:
-        repoURL: https://github.com/org/gitops-repo.git
-        revision: main
-        directories: [{path: apps/*}]
-  template:
-    metadata:
-      name: '{{path.basename}}'
-    spec:
-      project: default
-      source:
-        repoURL: https://github.com/org/gitops-repo.git
-        targetRevision: main
-        path: '{{path}}'
-      destination:
-        server: https://kubernetes.default.svc
-        namespace: '{{path.basename}}'
-      syncPolicy:
-        automated: {prune: true, selfHeal: true}
+  sources:
+    - repoURL: https://charts.example.com
+      chart: my-chart
+      targetRevision: 1.2.0
+      helm:
+        valueFiles: [$values/envs/prod/values.yaml]
+    - repoURL: https://github.com/org/config.git
+      targetRevision: HEAD
+      ref: values
 ```
+## Sync Strategies
+**Automated**: Set `syncPolicy.automated` with `prune: true`, `selfHeal: true`. Polls Git every 3min or use webhooks.
 
-### Cluster Generator (multi-cluster)
-```yaml
-generators:
-  - clusters:
-      selector:
-        matchLabels: {env: production}
-template:
-  metadata:
-    name: 'app-{{name}}'
-  spec:
-    destination:
-      server: '{{server}}'
-      namespace: my-app
+**Manual**: Omit `syncPolicy.automated`. Trigger via CLI:
+```bash
+argocd app sync my-app --prune --force
+argocd app sync my-app --resource apps:Deployment:my-deploy  # selective
 ```
-
-### Matrix Generator — combines two generators (e.g., clusters × directories). Other generators: List, Pull Request, SCM Provider, Merge.
-
-## Sync Waves and Hooks
-
-Annotate resources with `argocd.argoproj.io/sync-wave: "<number>"`. Lower numbers sync first; default is 0; deletions reverse order.
-
+**Sync waves** — control ordering. Lower wave numbers deploy first:
 ```yaml
-# Wave -1: Namespace → Wave 0: ConfigMaps (default) → Wave 1: Deployments → Wave 2: Ingress
 metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 ```
+Order: Phase (PreSync→Sync→PostSync) → Wave (lowest first) → Kind → Name.
 
-### Hooks — run Jobs at lifecycle phases:
+**Sync hooks** — run Jobs at lifecycle phases:
 ```yaml
 apiVersion: batch/v1
 kind: Job
@@ -182,96 +97,160 @@ metadata:
   name: db-migrate
   annotations:
     argocd.argoproj.io/hook: PreSync
-    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
 spec:
   template:
     spec:
       containers:
         - name: migrate
-          image: myapp:latest
+          image: org/migrator:latest
           command: ["./migrate.sh"]
       restartPolicy: Never
 ```
+Hook phases: `PreSync`, `Sync`, `PostSync`, `SyncFail`, `Skip`, `PreDelete`, `PostDelete`.
+Delete policies: `HookSucceeded`, `HookFailed`, `BeforeHookCreation`.
+## ApplicationSet Generators
+Generate multiple Applications from a single spec.
 
-Phases: `PreSync` (migrations, backups), `Sync` (with sync), `PostSync` (smoke tests), `SyncFail` (alerts, rollback). Delete policies: `HookSucceeded`, `HookFailed`, `BeforeHookCreation`. Always set a delete policy.
-
-## Repository Management
-
-```bash
-# HTTPS
-argocd repo add https://github.com/org/repo.git --username git --password $TOKEN
-# SSH
-argocd repo add git@github.com:org/repo.git --ssh-private-key-path ~/.ssh/id_ed25519
-```
-
-Declarative (credential template for all repos under an org):
+**List** — explicit enumeration:
 ```yaml
-apiVersion: v1
-kind: Secret
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
 metadata:
-  name: github-creds
+  name: my-app-envs
   namespace: argocd
-  labels:
-    argocd.argoproj.io/secret-type: repo-creds
-stringData:
-  type: git
-  url: https://github.com/org
-  username: git
-  password: ghp_xxxxxxxxxxxx
+spec:
+  generators:
+    - list:
+        elements:
+          - env: dev
+            cluster: https://dev-k8s.example.com
+          - env: prod
+            cluster: https://prod-k8s.example.com
+  template:
+    metadata:
+      name: 'my-app-{{env}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/org/repo.git
+        path: 'overlays/{{env}}'
+        targetRevision: HEAD
+      destination:
+        server: '{{cluster}}'
+        namespace: my-app
+      syncPolicy:
+        automated: { prune: true, selfHeal: true }
 ```
-
-## RBAC and SSO
-
-RBAC in `argocd-rbac-cm`:
+**Git directory** — auto-discover from repo structure:
 ```yaml
-data:
-  policy.default: role:readonly
-  policy.csv: |
-    p, role:dev, applications, get, */*, allow
-    p, role:dev, applications, sync, */*, allow
-    p, role:ops, applications, *, */*, allow
-    g, my-github-org:dev-team, role:dev
-    g, my-github-org:ops-team, role:ops
+generators:
+  - git:
+      repoURL: https://github.com/org/services.git
+      revision: HEAD
+      directories:
+        - path: 'services/*'
+        - path: 'services/legacy'
+          exclude: true
 ```
+Template uses `{{path}}` and `{{path.basename}}`.
 
-SSO via OIDC in `argocd-cm`:
+**Git file** — read params from config files in repo:
+```yaml
+generators:
+  - git:
+      repoURL: https://github.com/org/config.git
+      revision: HEAD
+      files:
+        - path: 'envs/*/config.json'
+```
+**Cluster** — one Application per registered cluster:
+```yaml
+generators:
+  - clusters:
+      selector:
+        matchLabels: { env: production }
+```
+Template uses `{{name}}`, `{{server}}`, and cluster metadata.
+
+**Matrix** — Cartesian product of two generators:
+```yaml
+generators:
+  - matrix:
+      generators:
+        - git:
+            repoURL: https://github.com/org/apps.git
+            revision: HEAD
+            directories: [{ path: 'apps/*' }]
+        - clusters:
+            selector:
+              matchLabels: { tier: frontend }
+```
+**Merge** — combine and override parameters:
+```yaml
+generators:
+  - merge:
+      mergeKeys: [server]
+      generators:
+        - clusters: {}
+        - list:
+            elements:
+              - server: https://prod.example.com
+                replicas: "5"
+```
+## Multi-Cluster Management
+Register and label external clusters:
+```bash
+argocd cluster add <CONTEXT_NAME> --name prod-cluster
+argocd cluster set prod-cluster --label env=production --label region=us-east-1
+argocd cluster list
+```
+Credentials stored as Secrets in `argocd` namespace. Use ApplicationSet cluster generator to deploy across all clusters. Isolate ArgoCD control plane in a management cluster.
+## SSO and RBAC
+OIDC in `argocd-cm` ConfigMap:
 ```yaml
 data:
   url: https://argocd.example.com
   oidc.config: |
     name: Okta
-    issuer: https://example.okta.com
-    clientID: xxxxxxxxxx
+    issuer: https://org.okta.com
+    clientID: <CLIENT_ID>
     clientSecret: $oidc.okta.clientSecret
     requestedScopes: ["openid", "profile", "email", "groups"]
 ```
-Store `clientSecret` in `argocd-secret`, reference with `$oidc.okta.clientSecret`.
-
-## Health Checks
-
-Built-in health for Deployment, StatefulSet, DaemonSet, Ingress, Service, PVC. Custom health in `argocd-cm` using Lua:
+Store `clientSecret` in `argocd-secret`. RBAC in `argocd-rbac-cm`:
 ```yaml
 data:
-  resource.customizations.health.certmanager.io_Certificate: |
-    hs = {}
-    if obj.status ~= nil and obj.status.conditions ~= nil then
-      for i, condition in ipairs(obj.status.conditions) do
-        if condition.type == "Ready" and condition.status == "True" then
-          hs.status = "Healthy"
-          hs.message = condition.message
-          return hs
-        end
-      end
-    end
-    hs.status = "Progressing"
-    hs.message = "Waiting for certificate"
-    return hs
+  policy.default: role:readonly
+  policy.csv: |
+    p, role:developer, applications, get, */*, allow
+    p, role:developer, applications, sync, dev-project/*, allow
+    p, role:admin, applications, *, */*, allow
+    g, okta-admins, role:admin
+    g, okta-devs, role:developer
+  scopes: '[groups]'
 ```
-Return `{ status = "Healthy"|"Degraded"|"Progressing"|"Suspended", message = "..." }`.
+Format: `p, <subject>, <resource>, <action>, <object>, <effect>`. Resources: `applications`, `repositories`, `clusters`, `projects`, `logs`, `exec`. Actions: `get`, `create`, `update`, `delete`, `sync`, `override`, `action`.
 
-## Notifications
-
-Configure in `argocd-notifications-cm` + `argocd-notifications-secret`:
+AppProject for team isolation:
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: team-alpha
+  namespace: argocd
+spec:
+  sourceRepos: ['https://github.com/org/team-alpha-*']
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: 'team-alpha-*'
+  roles:
+    - name: deployer
+      policies: ['p, proj:team-alpha:deployer, applications, sync, team-alpha/*, allow']
+      groups: [alpha-deployers]
+```
+## Notifications and Webhooks
+Configure `argocd-notifications-cm`:
 ```yaml
 data:
   service.slack: |
@@ -279,186 +258,172 @@ data:
   trigger.on-sync-succeeded: |
     - when: app.status.operationState.phase in ['Succeeded']
       send: [app-sync-succeeded]
+  trigger.on-sync-failed: |
+    - when: app.status.operationState.phase in ['Error', 'Failed']
+      send: [app-sync-failed]
   template.app-sync-succeeded: |
-    message: "App {{.app.metadata.name}} synced. Rev: {{.app.status.sync.revision}}"
+    slack:
+      attachments: |
+        [{"color":"#18be52","title":"{{.app.metadata.name}} synced","text":"Rev {{.app.status.sync.revision}}"}]
 ```
-
-Subscribe apps via annotation: `notifications.argoproj.io/subscribe.on-sync-succeeded.slack: my-channel`. Supported: Slack, Teams, Email, Webhook, PagerDuty, Opsgenie, Telegram.
-
-## Multi-Cluster
-
-```bash
-argocd cluster add my-production-context --name production
-argocd cluster list
-```
-Declarative:
+Store token in `argocd-notifications-secret`. Subscribe apps via annotation:
 ```yaml
-apiVersion: v1
-kind: Secret
 metadata:
-  name: production-cluster
-  namespace: argocd
-  labels: {argocd.argoproj.io/secret-type: cluster}
-stringData:
-  name: production
-  server: https://prod-k8s.example.com
-  config: |
-    {"bearerToken":"eyJhbGci...","tlsClientConfig":{"insecure":false,"caData":"LS0tLS1..."}}
+  annotations:
+    notifications.argoproj.io/subscribe.on-sync-succeeded.slack: my-channel
 ```
-
-## Secrets Management
-
-- **Sealed Secrets**: Encrypt with `kubeseal --format yaml < secret.yaml > sealed-secret.yaml`. Commit encrypted SealedSecret to Git. Controller decrypts in-cluster.
-- **External Secrets Operator**: Commit ExternalSecret CRDs referencing AWS Secrets Manager/Vault/GCP. ESO syncs real secrets into cluster. Argo CD never sees plaintext.
-```yaml
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: app-secrets
-spec:
-  refreshInterval: 1h
-  secretStoreRef: {name: aws-sm, kind: ClusterSecretStore}
-  target: {name: app-secrets}
-  data:
-    - secretKey: db-password
-      remoteRef: {key: prod/myapp/db, property: password}
-```
-- **SOPS**: Encrypt manifests, decrypt at sync via custom repo-server plugin. Secrets appear in cache—prefer ESO/Sealed Secrets instead.
-
-## CLI Quick Reference
-
-```bash
-argocd login argocd.example.com --sso
-argocd app create my-app --repo URL --path k8s --dest-server https://kubernetes.default.svc --dest-namespace default
-argocd app sync my-app [--prune] [--force]
-argocd app get my-app
-argocd app diff my-app
-argocd app history my-app
-argocd app rollback my-app <history-id>
-argocd app delete my-app --cascade
-argocd app wait my-app --health --timeout 300
-argocd repo list / argocd repo add URL
-argocd cluster add CONTEXT / argocd cluster list / argocd cluster rm URL
-argocd proj create my-project -d https://kubernetes.default.svc,ns -s https://github.com/org/repo.git
-```
-
-## Disaster Recovery
-
-```bash
-# Backup
-argocd app list -o yaml > apps-backup.yaml
-kubectl get appprojects -n argocd -o yaml > projects-backup.yaml
-kubectl get secrets -n argocd -l argocd.argoproj.io/secret-type -o yaml > secrets-backup.yaml
-
-# Restore: reinstall Argo CD, then apply backups in order: projects → secrets → apps
-```
-Git repos are the source of truth. ApplicationSets can regenerate all Applications. Automate backups with CronJob.
-
-## Additional Resources
-
-### Reference Guides (`references/`)
-
-| Guide | Description |
-|-------|-------------|
-| [advanced-patterns.md](references/advanced-patterns.md) | ApplicationSet generators (git, list, cluster, matrix, merge, PR), sync waves, custom Lua health checks, CMP plugins, App of Apps, multi-tenancy, progressive delivery with Rollouts, GitOps repo structures |
-| [troubleshooting.md](references/troubleshooting.md) | Diagnosing OutOfSync/Syncing, hook failures, ComparisonError, repo access issues, namespace gotchas, resource tracking conflicts, performance tuning, disaster recovery |
-| [security-guide.md](references/security-guide.md) | RBAC policies, SSO/OIDC setup (Azure AD, Okta, Dex), secrets management (Sealed Secrets, ESO, SOPS, Vault), network policies, audit logging, supply chain security |
-
-### Scripts (`scripts/`)
-
-| Script | Description |
-|--------|-------------|
-| [install-argocd.sh](scripts/install-argocd.sh) | Install Argo CD (Helm or manifests, HA or non-HA, configurable namespace/version) |
-| [backup-restore.sh](scripts/backup-restore.sh) | Backup and restore Argo CD config (apps, projects, repos, clusters, configmaps, secrets) |
-| [app-health-check.sh](scripts/app-health-check.sh) | Check health/sync status of all apps, report degraded ones (table/json/summary output) |
-
-### Asset Templates (`assets/`)
-
-| Template | Description |
-|----------|-------------|
-| [application.yaml](assets/application.yaml) | Application manifest with all common options commented |
-| [applicationset.yaml](assets/applicationset.yaml) | ApplicationSet with git generator and other generator examples |
-| [project.yaml](assets/project.yaml) | AppProject with RBAC roles, sync windows, resource restrictions |
-| [argocd-values.yaml](assets/argocd-values.yaml) | Production Helm values (HA, SSO, RBAC, notifications, metrics) |
-
-## Pitfalls and Best Practices
-
-1. **Never store plain secrets in Git.** Use Sealed Secrets, External Secrets, or SOPS.
-2. **Always set finalizer** `resources-finalizer.argocd.argoproj.io` on Applications.
-3. **Set resource limits on repo-server** — Helm rendering is CPU/memory intensive.
-4. **Use AppProjects** to scope team access. Block `kube-system` and `argocd` namespaces.
-5. **Pin `targetRevision`** to branches, not `HEAD`.
-6. **Enable `ServerSideApply=true`** for large CRDs to avoid annotation size limits.
-7. **Ignore controller-managed fields** (e.g., HPA replicas):
-   ```yaml
-   spec:
-     ignoreDifferences:
-       - group: apps
-         kind: Deployment
-         jsonPointers: [/spec/replicas]
-   ```
-8. **Use `PruneLast=true`** — delete removed resources only after new ones are healthy.
-9. **Use sync windows** in AppProject to restrict production sync times.
-10. **Monitor with Prometheus** — alert on `argocd_app_info{sync_status="OutOfSync"}`.
-
-## Examples
-
-**Input**: "Deploy a Helm chart from a private OCI registry"
-**Output**:
+Set Git webhooks to `https://argocd.example.com/api/webhook` for instant sync on push.
+## App of Apps Pattern
+Parent Application manages child Application YAMLs in Git:
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: my-oci-app
+  name: root
   namespace: argocd
-  finalizers: [resources-finalizer.argocd.argoproj.io]
 spec:
   project: default
   source:
-    repoURL: oci://registry.example.com/charts
-    chart: my-chart
-    targetRevision: 2.0.0
-    helm:
-      valueFiles: [values-prod.yaml]
+    repoURL: https://github.com/org/platform.git
+    path: apps/
+    targetRevision: HEAD
   destination:
     server: https://kubernetes.default.svc
-    namespace: my-oci-app
+    namespace: argocd
   syncPolicy:
-    automated: {prune: true, selfHeal: true}
+    automated: { prune: true, selfHeal: true }
+```
+Place child Application YAMLs in `apps/`. Use Helm/Kustomize to template per env. Prefer ApplicationSet over App of Apps for >50 apps or cross-cluster.
+## Helm and Kustomize Integration
+**Helm**:
+```yaml
+source:
+  repoURL: https://charts.example.com
+  chart: nginx
+  targetRevision: 15.0.0
+  helm:
+    releaseName: nginx-prod
+    values: |
+      replicaCount: 3
+    parameters:
+      - name: image.tag
+        value: "1.25"
+    valueFiles: [values-prod.yaml]
+```
+**Kustomize**:
+```yaml
+source:
+  repoURL: https://github.com/org/repo.git
+  path: k8s/overlays/prod
+  kustomize:
+    namePrefix: prod-
+    commonLabels: { env: production }
+    images: [{ name: org/app, newTag: v2.1.0 }]
+```
+## Diff Customization and Resource Tracking
+Ignore expected diffs (HPA replicas, webhook CA bundles):
+```yaml
+spec:
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers: [/spec/replicas]
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions: ['.webhooks[]?.clientConfig.caBundle']
+```
+System-level in `argocd-cm`:
+```yaml
+data:
+  resource.customizations.ignoreDifferences.all: |
+    jsonPointers: [/metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration]
+```
+Resource tracking modes (`argocd-cm`): `label` (default, uses `app.kubernetes.io/instance`), `annotation` (uses `argocd.argoproj.io/tracking-id`, preferred when labels conflict), `annotation+label`.
+```yaml
+data:
+  application.resourceTrackingMethod: annotation
+```
+## CI/CD Pipeline Integration
+Pattern: CI builds image → pushes to registry → updates Git manifest → ArgoCD syncs.
+```yaml
+# GitHub Actions step
+- name: Update manifests
+  run: |
+    cd config-repo
+    kustomize edit set image org/app=org/app:${{ github.sha }}
+    git commit -am "deploy: org/app:${{ github.sha }}" && git push
+```
+ArgoCD Image Updater — watches registries, auto-commits tag updates:
+```yaml
+metadata:
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=org/app
+    argocd-image-updater.argoproj.io/app.update-strategy: semver
+    argocd-image-updater.argoproj.io/write-back-method: git
+```
+CLI for CI pipelines:
+```bash
+argocd app create my-app --repo https://github.com/org/repo.git \
+  --path k8s/prod --dest-server https://kubernetes.default.svc \
+  --dest-namespace my-app --sync-policy automated --auto-prune --self-heal
+argocd app sync my-app --timeout 300
+argocd app wait my-app --health --timeout 300
+```
+## Patterns and Anti-Patterns
+**DO**: Separate config repos from app source repos. Use `syncPolicy.retry` for transient failures. Set `ServerSideApply=true` for large CRDs. Use `RespectIgnoreDifferences=true`. Enforce least-privilege via AppProject. Pin `targetRevision` to branch/tag. Enable `selfHeal`. Use sync windows to restrict prod deploys.
+
+**DON'T**: Store secrets in plain Git (use Sealed Secrets, SOPS, External Secrets). Use `Replace=true` (causes downtime). Put Application CRDs with workloads in monorepos (circular sync). Disable pruning in prod. Rely solely on polling (configure webhooks).
+## Examples
+**Input**: "Create an ArgoCD Application for a Helm chart deployed to staging."
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app-staging
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://charts.example.com
+    chart: my-app
+    targetRevision: 2.0.0
+    helm:
+      valueFiles: [values-staging.yaml]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: staging
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
     syncOptions: [CreateNamespace=true]
 ```
-
-**Input**: "Create ApplicationSet deploying to all clusters labeled env=staging"
-**Output**:
+**Input**: "ApplicationSet deploying to all clusters labeled env=prod."
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: staging-apps
+  name: prod-deploy
   namespace: argocd
 spec:
   generators:
     - clusters:
         selector:
-          matchLabels: {env: staging}
+          matchLabels: { env: prod }
   template:
     metadata:
-      name: 'myapp-{{name}}'
+      name: 'app-{{name}}'
     spec:
       project: default
       source:
         repoURL: https://github.com/org/repo.git
+        path: k8s/prod
         targetRevision: main
-        path: k8s/overlays/staging
       destination:
         server: '{{server}}'
-        namespace: myapp
+        namespace: app
       syncPolicy:
-        automated: {prune: true, selfHeal: true}
+        automated: { prune: true, selfHeal: true }
 ```
-
-**Input**: "Run a database migration before deploying"
-**Output**:
+**Input**: "PreSync database migration hook."
 ```yaml
 apiVersion: batch/v1
 kind: Job
@@ -467,16 +432,14 @@ metadata:
   annotations:
     argocd.argoproj.io/hook: PreSync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   template:
     spec:
       containers:
         - name: migrate
-          image: myapp:latest
+          image: org/db-migrator:latest
           command: ["python", "manage.py", "migrate"]
-          envFrom: [{secretRef: {name: db-credentials}}]
       restartPolicy: Never
   backoffLimit: 1
 ```
-
-<!-- tested: pass -->
