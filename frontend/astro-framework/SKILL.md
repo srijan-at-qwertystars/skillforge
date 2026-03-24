@@ -429,3 +429,5 @@ Reusable templates in `assets/`:
 - **`assets/content-config.ts`** — Content Collection config with schemas for blog posts (full metadata, SEO, image optimization), documentation pages (sidebar ordering, navigation), and authors (JSON data file with social links). Includes commented-out portfolio and changelog schemas.
 
 - **`assets/base-layout.astro`** — Full-featured base layout with complete SEO meta tags (Open Graph, Twitter Cards), View Transitions, responsive navigation with mobile hamburger menu, dark mode persistence, skip-to-content accessibility link, named slots (head, before-content, after-content), and CSS custom properties for theming.
+
+<!-- tested: pass -->

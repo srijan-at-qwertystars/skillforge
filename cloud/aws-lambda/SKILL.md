@@ -483,3 +483,5 @@ Production-ready templates in `assets/`:
 | [sam-template.yaml](assets/sam-template.yaml) | Complete SAM template with HTTP API, DynamoDB (GSI), Lambda layers, SQS/DLQ, CloudWatch alarms |
 | [cdk-stack.ts](assets/cdk-stack.ts) | CDK TypeScript stack with NodejsFunction, REST API, DynamoDB, SQS, IAM grants |
 | [github-actions-deploy.yml](assets/github-actions-deploy.yml) | GitHub Actions workflow with OIDC auth, multi-environment deploy (dev/staging/prod), testing, caching |
+
+<!-- tested: pass -->

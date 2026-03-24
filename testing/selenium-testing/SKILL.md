@@ -485,3 +485,5 @@ Ready-to-use templates in `assets/`. Copy and customize for your project.
 - **`assets/base_page.py`** — Python Page Object base class with 30+ helper methods: `find`, `click`, `type`, `select_by_text`, `hover`, `drag_and_drop`, `scroll_to`, `wait_for_text`, `wait_for_invisible`, `switch_to_frame`, `accept_alert`, `take_screenshot`, `disable_animations`, `upload_file`, and more. Extend for each page.
 
 - **`assets/github-actions-selenium.yml`** — GitHub Actions workflow with Selenium Grid as service containers (hub + Chrome/Firefox nodes), pytest execution with parallel workers, Allure reporting, artifact upload, and JUnit result publishing.
+
+<!-- tested: pass -->
