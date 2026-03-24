@@ -497,3 +497,4 @@ Fastest restart + minimal data loss. Use this for production deployments.
 - **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose: standalone, Sentinel (`--profile sentinel`), cluster (`--profile cluster`), monitoring.
 - **[connection-template.ts](assets/connection-template.ts)** — TypeScript/ioredis: standalone, Sentinel, cluster, Pub/Sub with retry and graceful shutdown.
 - **[rate-limiter.lua](assets/rate-limiter.lua)** — Sliding window rate limiter (Lua) returning allowed/denied, remaining, retry-after.
+<!-- tested: pass -->

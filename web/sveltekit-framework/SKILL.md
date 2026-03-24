@@ -493,3 +493,4 @@ Production-ready templates and configs in `assets/`. Copy into your project and 
 | `assets/route-template.svelte` | Complete route with load data, form actions, error handling, SEO, streaming |
 | `assets/hooks.server.ts` | Production hooks: auth, rate limiting, request logging, security headers, error handling |
 | `assets/docker-compose.yml` | Docker Compose for dev: SvelteKit + PostgreSQL + Redis + Adminer + Mailpit |
+<!-- tested: pass -->

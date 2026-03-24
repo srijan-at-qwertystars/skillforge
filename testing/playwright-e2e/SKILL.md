@@ -497,3 +497,5 @@ test.describe('Checkout flow', () => {
   });
 });
 ```
+
+<!-- tested: pass -->
