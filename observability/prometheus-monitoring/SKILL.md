@@ -52,7 +52,7 @@ http_request_duration_seconds_sum 250.5
 ```
 
 ### Summary
-Calculates quantiles client-side. Cannot be aggregated across instances. Prefer histograms unless you need exact quantiles on a single instance.
+Calculates quantiles client-side. Cannot be aggregated across instances. Prefer histograms.
 
 ## Naming Conventions
 
@@ -62,10 +62,7 @@ Follow `<namespace>_<subsystem>_<name>_<unit>` pattern:
 - Append unit suffix: `_seconds`, `_bytes`, `_ratio`
 - Use `_bucket`, `_count`, `_sum` for histograms (auto-generated)
 
-**Label rules:**
-- Use labels for dimensions, not metric name parts: `http_requests_total{method="GET"}` not `http_get_requests_total`
-- Keep cardinality bounded — never use user_id, request_id, or unbounded values as labels
-- Normalize URL paths to route templates: `/users/{id}` not `/users/12345`
+**Label rules:** Use labels for dimensions, not metric name parts. Keep cardinality bounded — never use user_id, request_id, or unbounded values. Normalize URL paths to route templates.
 
 ## Instrumentation
 
@@ -333,13 +330,7 @@ inhibit_rules:
     equal: ['alertname', 'cluster', 'service']
 ```
 
-**Key concepts:**
-- `group_by` — combine alerts sharing these labels into one notification
-- `group_wait` — wait time before sending first notification for a new group
-- `group_interval` — wait before sending updates to an existing group
-- `repeat_interval` — re-send interval for unresolved alerts
-- `inhibit_rules` — suppress warnings when critical fires for same resource
-- Silences — create via Alertmanager UI for maintenance windows
+**Key concepts:** `group_by` combines alerts into one notification. `group_wait`/`group_interval`/`repeat_interval` control notification timing. `inhibit_rules` suppress warnings when critical fires. Silences via UI for maintenance.
 
 ## Prometheus Server Configuration
 
@@ -471,22 +462,35 @@ Federate only recording rules and aggregated metrics. Avoid federating raw high-
 
 ## Grafana Integration
 
-Configure Prometheus as a data source in Grafana:
-- **URL:** `http://prometheus:9090`
-- **Access:** Server (proxy)
-- Use PromQL in panels. Set `$__rate_interval` as the range for `rate()` to auto-adjust with scrape interval.
-- Use template variables: `label_values(http_requests_total, service)` for dynamic dropdowns.
-- Dashboard JSON can be version-controlled and provisioned via Grafana's provisioning API.
+Configure Prometheus as data source: URL `http://prometheus:9090`, access Server (proxy). Use `$__rate_interval` for `rate()`. Use template variables: `label_values(http_requests_total, service)`. Dashboard JSON can be version-controlled via provisioning API.
 
 ## Best Practices
 
 1. **Instrument the four golden signals:** latency, traffic, errors, saturation (per Google SRE)
-2. **Use recording rules** for any query used in dashboards or alerts — never put expensive raw queries in alerts
+2. **Use recording rules** for any query used in dashboards or alerts
 3. **Set `for` on all alerts** — minimum 3–5 minutes to prevent flapping
-4. **Control cardinality** — monitor `prometheus_tsdb_head_series` and alert when it grows unexpectedly
+4. **Control cardinality** — monitor `prometheus_tsdb_head_series` and alert on growth
 5. **Use `relabel_configs`** to drop unnecessary labels/targets before ingestion
-6. **Separate rule files** by team or domain for maintainability
-7. **Validate config changes:** `promtool check config prometheus.yml` and `promtool check rules rules/*.yml`
-8. **Use Pushgateway only for batch jobs** — never for long-running services
-9. **Set appropriate scrape intervals** — 15s default; increase for high-cardinality jobs
-10. **Monitor Prometheus itself:** track `prometheus_tsdb_head_series`, `prometheus_rule_evaluation_duration_seconds`, `prometheus_notifications_dropped_total`
+6. **Validate configs:** `promtool check config prometheus.yml` and `promtool check rules rules/*.yml`
+7. **Use Pushgateway only for batch jobs** — never for long-running services
+8. **Monitor Prometheus itself:** `prometheus_tsdb_head_series`, `prometheus_rule_evaluation_duration_seconds`
+
+## References
+
+- **`references/promql-cookbook.md`** — Vector matching, subqueries, rate/irate/increase, histogram_quantile, label_replace/join, absent, anti-patterns, optimization, ready-made queries.
+- **`references/troubleshooting.md`** — High cardinality, OOM, slow queries, scrape failures, staleness, WAL corruption, Alertmanager routing, federation, remote write.
+- **`references/alerting-patterns.md`** — SLO-based alerts, multi-window burn-rate, routing trees, inhibition, silencing, templates, PagerDuty/Slack/webhook, fatigue prevention.
+
+## Scripts
+
+- **`scripts/setup-prometheus-stack.sh`** — Generate Docker Compose stack (Prometheus + Alertmanager + Grafana + Node Exporter + cAdvisor).
+- **`scripts/check-cardinality.sh`** — Analyze TSDB cardinality: top series, label pairs, storage growth.
+- **`scripts/validate-rules.sh`** — Validate recording/alerting rules with `promtool check rules`.
+
+## Assets
+
+- **`assets/prometheus.yml`** — Production config with service discovery, relabeling, remote write, TLS.
+- **`assets/alertmanager.yml`** — Routing tree, Slack/PagerDuty/email/webhook receivers, inhibition rules.
+- **`assets/recording-rules.yml`** — CPU, memory, disk, network, HTTP rates/latency, SLO burn rate windows.
+- **`assets/alerting-rules.yml`** — Multi-window burn-rate SLO alerts, node health, disk prediction, self-monitoring.
+- **`assets/docker-compose.yml`** — Full monitoring stack with health checks and persistent volumes.

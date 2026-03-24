@@ -1,0 +1,318 @@
+# Production Alerting Rules
+# Includes SLO burn rates, infrastructure health, and Prometheus self-monitoring.
+# Docs: https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+
+groups:
+  # ──────────────────────────────────────────────────────────────────────────
+  # SLO: Availability (multi-window multi-burn-rate)
+  # For 99.9% SLO → error budget = 0.001
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: slo_availability_alerts
+    rules:
+      # 14.4x burn rate — budget exhausted in ~2 hours → page
+      - alert: SLOAvailabilityBurn_Critical_Fast
+        expr: |
+          slo:http_error_ratio:rate1h > (14.4 * 0.001)
+          and
+          slo:http_error_ratio:rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+          burn_window: fast
+        annotations:
+          summary: "{{ $labels.service }} error budget burning at 14.4x rate"
+          description: "1h error ratio: {{ $value | humanizePercentage }}. Budget consumed in ~2h at current rate."
+          runbook_url: "https://runbooks.example.com/slo-budget-burn"
+          dashboard_url: "https://grafana.example.com/d/slo-overview?var-service={{ $labels.service }}"
+
+      # 6x burn rate — budget exhausted in ~5 hours → page
+      - alert: SLOAvailabilityBurn_Critical_Slow
+        expr: |
+          slo:http_error_ratio:rate6h > (6 * 0.001)
+          and
+          slo:http_error_ratio:rate30m > (6 * 0.001)
+        for: 5m
+        labels:
+          severity: critical
+          slo: availability
+          burn_window: slow
+        annotations:
+          summary: "{{ $labels.service }} error budget burning at 6x rate"
+          description: "6h error ratio: {{ $value | humanizePercentage }}. Budget consumed in ~5h."
+          runbook_url: "https://runbooks.example.com/slo-budget-burn"
+
+      # 3x burn rate — budget exhausted in ~10 days → ticket
+      - alert: SLOAvailabilityBurn_Warning
+        expr: |
+          slo:http_error_ratio:rate1d > (3 * 0.001)
+          and
+          slo:http_error_ratio:rate2h > (3 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          slo: availability
+          burn_window: medium
+        annotations:
+          summary: "{{ $labels.service }} error budget burning at 3x rate"
+          description: "1d error ratio: {{ $value | humanizePercentage }}. Budget consumed in ~10d."
+
+      # 1x burn rate — budget on track to exhaust at end of window → info
+      - alert: SLOAvailabilityBurn_Info
+        expr: |
+          slo:http_error_ratio:rate3d > (1 * 0.001)
+          and
+          slo:http_error_ratio:rate6h > (1 * 0.001)
+        for: 30m
+        labels:
+          severity: info
+          slo: availability
+          burn_window: baseline
+        annotations:
+          summary: "{{ $labels.service }} steady error budget consumption"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SLO: Latency (99.5% of requests under 300ms)
+  # Error budget = 0.005
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: slo_latency_alerts
+    rules:
+      - alert: SLOLatencyBurn_Critical
+        expr: |
+          (
+            1 - (
+              sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[1h]))
+              / sum by (service) (rate(http_request_duration_seconds_count[1h]))
+            )
+          ) > (14.4 * 0.005)
+          and
+          (
+            1 - (
+              sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[5m]))
+              / sum by (service) (rate(http_request_duration_seconds_count[5m]))
+            )
+          ) > (14.4 * 0.005)
+        for: 2m
+        labels:
+          severity: critical
+          slo: latency
+        annotations:
+          summary: "{{ $labels.service }} latency SLO burning at 14.4x"
+          runbook_url: "https://runbooks.example.com/slo-latency-burn"
+
+      - alert: SLOLatencyBurn_Warning
+        expr: |
+          (
+            1 - (
+              sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[1d]))
+              / sum by (service) (rate(http_request_duration_seconds_count[1d]))
+            )
+          ) > (3 * 0.005)
+          and
+          (
+            1 - (
+              sum by (service) (rate(http_request_duration_seconds_bucket{le="0.3"}[2h]))
+              / sum by (service) (rate(http_request_duration_seconds_count[2h]))
+            )
+          ) > (3 * 0.005)
+        for: 15m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "{{ $labels.service }} latency SLO burning at 3x"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Node / Infrastructure Health
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: node_health_alerts
+    rules:
+      - alert: NodeDown
+        expr: up{job="node-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.instance }} is unreachable"
+          runbook_url: "https://runbooks.example.com/node-down"
+
+      - alert: NodeHighCPU
+        expr: instance:node_cpu_utilization:ratio > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU utilization above 90% on {{ $labels.instance }}"
+          description: "Current CPU utilization: {{ $value | humanizePercentage }}"
+
+      - alert: NodeHighMemory
+        expr: instance:node_memory_utilization:ratio > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory utilization above 90% on {{ $labels.instance }}"
+          description: "Current memory utilization: {{ $value | humanizePercentage }}"
+
+      - alert: NodeHighMemoryCritical
+        expr: instance:node_memory_utilization:ratio > 0.95
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memory utilization above 95% on {{ $labels.instance }}"
+          runbook_url: "https://runbooks.example.com/high-memory"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Disk Space
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: disk_alerts
+    rules:
+      - alert: DiskSpaceLow
+        expr: instance_mountpoint:node_filesystem_utilization:ratio > 0.85
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk usage above 85% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+
+      - alert: DiskSpaceCritical
+        expr: instance_mountpoint:node_filesystem_utilization:ratio > 0.95
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk usage above 95% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+          runbook_url: "https://runbooks.example.com/disk-full"
+
+      - alert: DiskWillFillIn4Hours
+        expr: |
+          predict_linear(
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h],
+            4 * 3600
+          ) < 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk on {{ $labels.instance }} ({{ $labels.mountpoint }}) predicted to fill within 4 hours"
+          runbook_url: "https://runbooks.example.com/disk-full-predicted"
+
+      - alert: InodeUsageHigh
+        expr: (1 - (node_filesystem_files_free / node_filesystem_files)) > 0.9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Inode usage above 90% on {{ $labels.instance }} ({{ $labels.mountpoint }})"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Target Health
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: target_health_alerts
+    rules:
+      - alert: TargetDown
+        expr: up == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.instance }} (job={{ $labels.job }}) is down"
+          runbook_url: "https://runbooks.example.com/target-down"
+
+      - alert: TargetScrapeSlow
+        expr: scrape_duration_seconds > 15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scrape of {{ $labels.instance }} taking {{ $value | humanize }}s"
+
+      - alert: TargetMissing
+        expr: absent(up{job="critical-service"})
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No targets found for job=critical-service"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Prometheus Self-Monitoring
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: prometheus_self_alerts
+    rules:
+      - alert: PrometheusHighCardinality
+        expr: prometheus_tsdb_head_series > 2000000
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus has {{ $value | humanize }} active series"
+          description: "High cardinality increases memory and query latency."
+
+      - alert: PrometheusCardinalitySpike
+        expr: |
+          rate(prometheus_tsdb_head_series_created_total[5m]) > 1000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus series churn rate is {{ $value | humanize }}/sec"
+
+      - alert: PrometheusRuleEvaluationSlow
+        expr: prometheus_rule_evaluation_duration_seconds{quantile="0.99"} > 30
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Rule evaluation taking {{ $value | humanize }}s (P99)"
+
+      - alert: PrometheusRuleEvaluationFailures
+        expr: rate(prometheus_rule_evaluation_failures_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus rule evaluation failures detected"
+
+      - alert: PrometheusNotificationsDropped
+        expr: rate(prometheus_notifications_dropped_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager is dropping notifications"
+          runbook_url: "https://runbooks.example.com/alertmanager-notifications-dropped"
+
+      - alert: PrometheusRemoteWriteFailing
+        expr: rate(prometheus_remote_storage_samples_failed_total[5m]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Remote write is failing at {{ $value | humanize }} samples/sec"
+
+      - alert: PrometheusRemoteWriteBackpressure
+        expr: prometheus_remote_storage_samples_pending > 50000
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Remote write queue has {{ $value | humanize }} pending samples"
+
+      - alert: PrometheusWALCorruption
+        expr: prometheus_tsdb_wal_corruptions_total > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus WAL corruption detected"
+          runbook_url: "https://runbooks.example.com/wal-corruption"
+
+      - alert: PrometheusTSDBCompactionsFailing
+        expr: increase(prometheus_tsdb_compactions_failed_total[6h]) > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "TSDB compaction failures detected"

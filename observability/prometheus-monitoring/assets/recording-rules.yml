@@ -1,0 +1,215 @@
+# Recording Rules — Precomputed metrics for dashboards and alerting
+# Naming convention: level:metric:operations
+# Docs: https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/
+
+groups:
+  # ──────────────────────────────────────────────────────────────────────────
+  # CPU metrics
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: cpu_recording_rules
+    interval: 30s
+    rules:
+      # CPU utilization per instance (0-1 ratio)
+      - record: instance:node_cpu_utilization:ratio
+        expr: |
+          1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))
+
+      # CPU utilization per mode per instance
+      - record: instance_mode:node_cpu:rate5m
+        expr: |
+          sum by (instance, mode) (rate(node_cpu_seconds_total[5m]))
+
+      # CPU iowait ratio per instance
+      - record: instance:node_cpu_iowait:ratio
+        expr: |
+          avg by (instance) (rate(node_cpu_seconds_total{mode="iowait"}[5m]))
+
+      # CPU count per instance
+      - record: instance:node_cpu_count:sum
+        expr: |
+          count by (instance) (node_cpu_seconds_total{mode="idle"})
+
+      # Load average normalized by CPU count
+      - record: instance:node_load1_normalized:ratio
+        expr: |
+          node_load1
+          / on(instance) instance:node_cpu_count:sum
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Memory metrics
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: memory_recording_rules
+    interval: 30s
+    rules:
+      # Memory utilization per instance (0-1 ratio)
+      - record: instance:node_memory_utilization:ratio
+        expr: |
+          1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+
+      # Swap utilization per instance (0-1 ratio)
+      - record: instance:node_swap_utilization:ratio
+        expr: |
+          1 - (node_memory_SwapFree_bytes / node_memory_SwapTotal_bytes)
+
+      # Available memory in bytes
+      - record: instance:node_memory_available:bytes
+        expr: |
+          node_memory_MemAvailable_bytes
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Disk / filesystem metrics
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: disk_recording_rules
+    interval: 30s
+    rules:
+      # Filesystem utilization per instance+mountpoint (0-1 ratio)
+      - record: instance_mountpoint:node_filesystem_utilization:ratio
+        expr: |
+          1 - (
+            node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}
+          )
+
+      # Disk I/O utilization per instance+device (0-1 ratio)
+      - record: instance_device:node_disk_io_utilization:ratio
+        expr: |
+          rate(node_disk_io_time_seconds_total[5m])
+
+      # Disk read throughput (bytes/sec)
+      - record: instance_device:node_disk_read:rate5m
+        expr: |
+          rate(node_disk_read_bytes_total[5m])
+
+      # Disk write throughput (bytes/sec)
+      - record: instance_device:node_disk_written:rate5m
+        expr: |
+          rate(node_disk_written_bytes_total[5m])
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Network metrics
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: network_recording_rules
+    interval: 30s
+    rules:
+      # Network receive throughput (bytes/sec)
+      - record: instance_device:node_network_receive:rate5m
+        expr: |
+          rate(node_network_receive_bytes_total{device!~"lo|veth.*|docker.*|br-.*"}[5m])
+
+      # Network transmit throughput (bytes/sec)
+      - record: instance_device:node_network_transmit:rate5m
+        expr: |
+          rate(node_network_transmit_bytes_total{device!~"lo|veth.*|docker.*|br-.*"}[5m])
+
+      # Network errors rate
+      - record: instance_device:node_network_errors:rate5m
+        expr: |
+          rate(node_network_receive_errs_total[5m])
+          + rate(node_network_transmit_errs_total[5m])
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # HTTP request metrics
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: http_recording_rules
+    interval: 30s
+    rules:
+      # Total request rate per job
+      - record: job:http_requests:rate5m
+        expr: |
+          sum by (job) (rate(http_requests_total[5m]))
+
+      # Request rate per service
+      - record: service:http_requests:rate5m
+        expr: |
+          sum by (service) (rate(http_requests_total[5m]))
+
+      # Request rate per service and status code
+      - record: service_status:http_requests:rate5m
+        expr: |
+          sum by (service, status) (rate(http_requests_total[5m]))
+
+      # Error rate per service (5xx)
+      - record: service:http_errors:rate5m
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
+
+      # Error ratio per service (0-1)
+      - record: service:http_error_ratio:rate5m
+        expr: |
+          service:http_errors:rate5m
+          / service:http_requests:rate5m
+
+      # Error ratio per job (0-1)
+      - record: job:http_error_ratio:rate5m
+        expr: |
+          sum by (job) (rate(http_requests_total{status=~"5.."}[5m]))
+          / sum by (job) (rate(http_requests_total[5m]))
+
+      # P50 latency per service
+      - record: service:http_request_duration_seconds:p50
+        expr: |
+          histogram_quantile(0.50,
+            sum by (le, service) (rate(http_request_duration_seconds_bucket[5m]))
+          )
+
+      # P90 latency per service
+      - record: service:http_request_duration_seconds:p90
+        expr: |
+          histogram_quantile(0.90,
+            sum by (le, service) (rate(http_request_duration_seconds_bucket[5m]))
+          )
+
+      # P99 latency per service
+      - record: service:http_request_duration_seconds:p99
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, service) (rate(http_request_duration_seconds_bucket[5m]))
+          )
+
+      # Average request duration per service
+      - record: service:http_request_duration_seconds:avg
+        expr: |
+          sum by (service) (rate(http_request_duration_seconds_sum[5m]))
+          / sum by (service) (rate(http_request_duration_seconds_count[5m]))
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # SLO burn rate recording rules
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: slo_burn_rate_rules
+    interval: 30s
+    rules:
+      # Error ratios at multiple windows for multi-window burn rate alerting
+      - record: slo:http_error_ratio:rate5m
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
+          / sum by (service) (rate(http_requests_total[5m]))
+
+      - record: slo:http_error_ratio:rate30m
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[30m]))
+          / sum by (service) (rate(http_requests_total[30m]))
+
+      - record: slo:http_error_ratio:rate1h
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[1h]))
+          / sum by (service) (rate(http_requests_total[1h]))
+
+      - record: slo:http_error_ratio:rate2h
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[2h]))
+          / sum by (service) (rate(http_requests_total[2h]))
+
+      - record: slo:http_error_ratio:rate6h
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[6h]))
+          / sum by (service) (rate(http_requests_total[6h]))
+
+      - record: slo:http_error_ratio:rate1d
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[1d]))
+          / sum by (service) (rate(http_requests_total[1d]))
+
+      - record: slo:http_error_ratio:rate3d
+        expr: |
+          sum by (service) (rate(http_requests_total{status=~"5.."}[3d]))
+          / sum by (service) (rate(http_requests_total[3d]))

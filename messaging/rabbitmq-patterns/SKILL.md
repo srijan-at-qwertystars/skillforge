@@ -435,3 +435,37 @@ curl http://rabbitmq:15692/metrics
 8. Size Erlang VM: `RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS="+P 1048576"` for high connection count.
 9. Pin queue leaders across nodes: `queue_leader_locator = balanced`.
 10. Monitor and alert on memory/disk watermarks before they trigger.
+
+## References
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Dead letter exchanges with exponential backoff retry chains, priority queues, delayed message exchange plugin, consistent hash exchange, RPC over RabbitMQ, saga pattern (choreography + orchestration), competing consumers, message deduplication, header-based routing, alternate exchanges, sender confirms with batching (individual, batch, async).
+
+- **[troubleshooting.md](references/troubleshooting.md)** — Diagnosing and resolving: memory alarms and flow control, unacknowledged message buildup, channel churn, connection leaks, split-brain in clusters, network partition handling strategies (autoheal vs pause_minority vs pause_if_all_down), queue length growing unbounded, low consumer utilization, TLS handshake failures, disk alarms. Includes diagnostic command reference.
+
+- **[clustering-guide.md](references/clustering-guide.md)** — Quorum queues (Raft consensus internals, leader placement, disk usage), classic mirrored queue deprecation and migration path, cluster formation, peer discovery backends (DNS, AWS, K8s, Consul, etcd), rolling upgrades with feature flags, cluster sizing guidelines, cross-datacenter replication with Federation and Shovel, stream replication and super streams.
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+- **[setup-rabbitmq-cluster.sh](scripts/setup-rabbitmq-cluster.sh)** — Generate and optionally start a 3-node RabbitMQ cluster with Docker Compose, HAProxy load balancer, management plugins, and test topology. Usage: `./scripts/setup-rabbitmq-cluster.sh [--start]`
+
+- **[rabbitmq-health-check.sh](scripts/rabbitmq-health-check.sh)** — Comprehensive health check: node status, cluster state, memory/disk usage, alarms, queue depths, consumer counts, connection summary. Supports CLI mode (rabbitmqctl) and remote API mode. Usage: `./scripts/rabbitmq-health-check.sh [--api URL]`
+
+- **[purge-queues.sh](scripts/purge-queues.sh)** — Safely purge queues by vhost and name pattern with confirmation prompt. Supports dry-run, minimum message threshold, and force mode. Usage: `./scripts/purge-queues.sh --vhost /production --pattern "^dead-letter" --dry-run`
+
+## Assets
+
+Templates, configs, and boilerplate in `assets/`:
+
+- **[rabbitmq.conf](assets/rabbitmq.conf)** — Production-ready RabbitMQ configuration with memory/disk limits, TLS (commented, ready to enable), clustering, logging rotation, and tuning parameters.
+
+- **[docker-compose.yml](assets/docker-compose.yml)** — 3-node RabbitMQ cluster with management UI, Prometheus metrics, HAProxy load balancer, health checks, and resource limits.
+
+- **[python-producer-consumer.py](assets/python-producer-consumer.py)** — Python (pika) producer/consumer with publisher confirms, retry logic, manual acks, DLQ setup, and graceful SIGINT/SIGTERM shutdown.
+
+- **[node-producer-consumer.js](assets/node-producer-consumer.js)** — Node.js (amqplib) producer/consumer with confirm channels, channel pooling, exponential backoff reconnection, and graceful shutdown.
+
+- **[definitions.json](assets/definitions.json)** — RabbitMQ definitions export with vhosts (/production, /staging, /test), per-service users with granular permissions, topic permissions, exchanges (orders, payments, notifications, DLX, unrouted), quorum queues with DLX and retry chains, bindings, and policies (TTL, delivery limits).

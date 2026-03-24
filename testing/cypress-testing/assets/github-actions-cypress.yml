@@ -1,0 +1,141 @@
+name: Cypress Tests
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-progress runs for the same branch
+concurrency:
+  group: cypress-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─── E2E Tests ──────────────────────────────────────────────────
+  e2e-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        containers: [1, 2, 3]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-binary-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            cypress-binary-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run Cypress E2E tests
+        uses: cypress-io/github-action@v7
+        with:
+          install: false
+          start: npm start
+          wait-on: 'http://localhost:3000'
+          wait-on-timeout: 120
+          browser: chrome
+          record: true
+          parallel: true
+          group: 'e2e-chrome'
+          ci-build-id: ${{ github.run_id }}-${{ github.run_attempt }}
+        env:
+          CI: true
+          CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-screenshots-e2e-${{ matrix.containers }}
+          path: cypress/screenshots
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload videos
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-videos-e2e-${{ matrix.containers }}
+          path: cypress/videos
+          if-no-files-found: ignore
+          retention-days: 3
+
+  # ─── Component Tests ────────────────────────────────────────────
+  component-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Cache Cypress binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/Cypress
+          key: cypress-binary-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            cypress-binary-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Cypress Component tests
+        uses: cypress-io/github-action@v7
+        with:
+          install: false
+          component: true
+          browser: chrome
+        env:
+          CI: true
+
+      - name: Upload component test screenshots
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: cypress-screenshots-component
+          path: cypress/screenshots
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ─── Status Check ───────────────────────────────────────────────
+  cypress-status:
+    runs-on: ubuntu-latest
+    needs: [e2e-tests, component-tests]
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [[ "${{ needs.e2e-tests.result }}" == "failure" || "${{ needs.component-tests.result }}" == "failure" ]]; then
+            echo "❌ Cypress tests failed"
+            exit 1
+          fi
+          echo "✅ All Cypress tests passed"

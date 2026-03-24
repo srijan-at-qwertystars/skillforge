@@ -410,3 +410,35 @@ Choose **Playwright** instead when:
 - Need multi-tab, multi-origin, or mobile device emulation
 - Require free parallel execution without a cloud service
 - Team uses Python, C#, or Java alongside JS
+
+## References
+
+In-depth guides in `references/`:
+
+| Document | Topics |
+|---|---|
+| [advanced-patterns.md](references/advanced-patterns.md) | Custom commands with TypeScript, auth flows, iframes, cy.origin, file uploads/downloads, WebSockets, drag-and-drop, cy.session, retry-ability internals, shadow DOM, visual regression (Percy/Applitools) |
+| [troubleshooting.md](references/troubleshooting.md) | Flaky tests, detached DOM elements, cy.intercept mismatches, CORS, iframe issues, memory leaks, slow tests, CI failures (Docker/headless), screenshot/video debugging, app state conflicts |
+| [component-testing-guide.md](references/component-testing-guide.md) | Component testing setup for React/Vue/Angular/Svelte, mounting with providers, mocking props/stores/APIs, testing hooks, styled components, code coverage, Storybook comparison |
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+| Script | Purpose |
+|---|---|
+| [setup-cypress-project.sh](scripts/setup-cypress-project.sh) | Bootstrap Cypress in an existing project — installs deps, creates config, scaffolds folders, adds TypeScript, creates first spec. Flags: `--component`, `--framework`, `--bundler` |
+| [cypress-ci-setup.sh](scripts/cypress-ci-setup.sh) | Generate CI workflow for GitHub Actions, GitLab CI, or CircleCI with caching, parallelization, and artifact upload. Flags: `--provider`, `--parallel` |
+| [cleanup-test-data.sh](scripts/cleanup-test-data.sh) | Remove screenshots, videos, coverage reports, and optionally reset test DB. Flags: `--all`, `--artifacts`, `--db`, `--cache`, `--dry-run` |
+
+## Assets
+
+Reusable templates in `assets/`:
+
+| Asset | Description |
+|---|---|
+| [cypress.config.ts](assets/cypress.config.ts) | Production-ready config with retries, timeouts, env vars, memory management, code coverage hooks |
+| [commands.ts](assets/commands.ts) | Custom commands: `getByCy`, `getByTestId`, `login`, `loginAs`, `apiRequest`, `waitForLoad`, `paste`, `shouldHaveCss` |
+| [github-actions-cypress.yml](assets/github-actions-cypress.yml) | GitHub Actions workflow with parallel E2E (3 containers), component tests, caching, artifact upload, status check |
+| [e2e-spec-template.cy.ts](assets/e2e-spec-template.cy.ts) | E2E spec template: auth setup, API stubbing, happy path, error handling, edge cases, retry patterns |
+| [component-spec-template.cy.tsx](assets/component-spec-template.cy.tsx) | React component test template: rendering, callbacks, API interactions, a11y, responsive, visual snapshots |
