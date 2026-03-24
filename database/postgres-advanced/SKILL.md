@@ -496,3 +496,4 @@ Check available: `SELECT * FROM pg_available_extensions WHERE name LIKE 'pg_%';`
 - **[assets/pgbouncer.ini](assets/pgbouncer.ini)** — PgBouncer template with transaction pooling, pool sizing formulas, auth, TLS, and admin console.
 - **[assets/monitoring-queries.sql](assets/monitoring-queries.sql)** — 10-section diagnostic SQL: cache ratio, bloat, locks, replication, sizes, sessions, vacuum, checkpoints, WAL, config.
 - **[assets/partitioning-template.sql](assets/partitioning-template.sql)** — Range/list/hash/sub-partitioning templates with auto-creation functions, monitoring, and pg_cron scheduling.
+<!-- tested: pass -->

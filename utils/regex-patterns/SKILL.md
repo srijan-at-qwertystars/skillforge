@@ -488,3 +488,5 @@ Copy-paste-ready reference files:
   regex flags across JavaScript, Python, Go, Rust, Java, PCRE, Ruby, and .NET.
   Covers inline flag syntax, flag combinations, global mode per language,
   verbose mode comparison, and Unicode flag details.
+
+<!-- tested: pass -->

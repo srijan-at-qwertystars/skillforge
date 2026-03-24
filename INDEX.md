@@ -221,6 +221,6 @@
 | cloud | gcp-cloud-run | Google Cloud Run — serverless containers, services/jobs, autoscaling, VPC, Eventarc, multi-region | tested |
 | patterns | microservices-patterns | Microservices patterns — saga, circuit breaker, API gateway, BFF, outbox, service mesh | tested |
 | backend | ruby-on-rails | Ruby on Rails 7/8 — Active Record, Hotwire, Solid Queue/Cache, authentication, API mode | tested |
-| utils | regex-patterns | Regex patterns across languages — syntax, common patterns, lookaround, Unicode, ReDoS prevention, debugging | enriched |
-| devtools | git-advanced | Advanced Git techniques — interactive rebase, bisect, reflog, worktrees, hooks, history rewriting, signing | enriched |
-| database | postgres-advanced | Advanced PostgreSQL — query optimization, indexing, partitioning, CTEs, JSONB, FTS, replication, RLS | enriched |
+| utils | regex-patterns | Regex patterns across languages — syntax, common patterns, lookaround, Unicode, ReDoS prevention, debugging | tested |
+| devtools | git-advanced | Advanced Git techniques — interactive rebase, bisect, reflog, worktrees, hooks, history rewriting, signing | tested |
+| database | postgres-advanced | Advanced PostgreSQL — query optimization, indexing, partitioning, CTEs, JSONB, FTS, replication, RLS | tested |

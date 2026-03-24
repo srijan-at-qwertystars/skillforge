@@ -446,3 +446,5 @@ Copy-paste ready templates in `assets/`:
 | [`assets/hooks/pre-commit`](assets/hooks/pre-commit) | Production pre-commit hook: lint staged files, format check, secrets detection, large file check, debug statement detection |
 | [`assets/hooks/commit-msg`](assets/hooks/commit-msg) | Conventional Commits enforcement hook: validates type(scope): description format, subject length, blank line separator |
 | [`assets/gitattributes-template`](assets/gitattributes-template) | `.gitattributes` template with LFS patterns, custom diff drivers, merge strategies for lock files, export-ignore, linguist overrides |
+
+<!-- tested: pass -->
