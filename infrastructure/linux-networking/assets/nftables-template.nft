@@ -1,0 +1,187 @@
+#!/usr/sbin/nft -f
+# =============================================================================
+# nftables-template.nft — Production nftables Ruleset Template
+# =============================================================================
+# Usage: sudo nft -f nftables-template.nft
+#    or: sudo cp nftables-template.nft /etc/nftables.conf && sudo nft -f /etc/nftables.conf
+#
+# Features:
+#   - Default deny INPUT/FORWARD, allow OUTPUT
+#   - Anti-spoofing with named sets
+#   - SYN flood protection via rate limiting
+#   - SSH brute-force protection with dynamic set
+#   - ICMP rate limiting
+#   - Logging for dropped packets
+#   - Separate chains for organization
+#   - Connection offload via flowtable (optional)
+#
+# Customize the defines and sets below before applying.
+# =============================================================================
+
+# ── Variables ────────────────────────────────────────────────────────────────
+
+define EXT_IFACE = eth0
+define SSH_PORT  = 22
+define WEB_PORTS = { 80, 443 }
+define MGMT_NET  = 10.0.0.0/8
+
+# ── Flush ────────────────────────────────────────────────────────────────────
+
+flush ruleset
+
+# ── Filter table ─────────────────────────────────────────────────────────────
+
+table inet filter {
+
+  # Anti-spoofing: RFC 1918 and bogon addresses not expected on external
+  set bogon_v4 {
+    type ipv4_addr
+    flags interval
+    elements = {
+      0.0.0.0/8,
+      127.0.0.0/8,
+      169.254.0.0/16,
+      224.0.0.0/4,
+      240.0.0.0/4
+    }
+  }
+
+  # Management networks allowed for restricted services
+  set mgmt_nets {
+    type ipv4_addr
+    flags interval
+    elements = { $MGMT_NET }
+  }
+
+  # Dynamic set for SSH brute-force tracking
+  set ssh_bruteforce {
+    type ipv4_addr
+    flags dynamic, timeout
+    timeout 10m
+  }
+
+  # ── Connection offload (optional — uncomment for high-throughput) ──────
+  # flowtable ft {
+  #   hook ingress priority 0
+  #   devices = { $EXT_IFACE }
+  # }
+
+  # ── Input chain ────────────────────────────────────────────────────────
+
+  chain input {
+    type filter hook input priority 0; policy drop;
+
+    # Loopback
+    iif lo accept
+
+    # Connection tracking
+    ct state established,related accept
+    ct state invalid drop
+
+    # Anti-spoofing on external interface
+    iifname $EXT_IFACE ip saddr @bogon_v4 drop
+
+    # ICMP — allow essential types, rate-limit echo
+    ip protocol icmp icmp type {
+      destination-unreachable,
+      time-exceeded,
+      parameter-problem
+    } accept
+
+    ip protocol icmp icmp type echo-request limit rate 5/second burst 10 packets accept
+
+    # ICMPv6 — allow essential types
+    ip6 nexthdr icmpv6 icmpv6 type {
+      destination-unreachable,
+      packet-too-big,
+      time-exceeded,
+      parameter-problem,
+      echo-request,
+      echo-reply,
+      nd-neighbor-solicit,
+      nd-neighbor-advert,
+      nd-router-solicit,
+      nd-router-advert
+    } accept
+
+    # Jump to service chains
+    jump input_ssh
+    jump input_web
+    jump input_mgmt
+
+    # Log and drop
+    limit rate 5/minute burst 10 packets log prefix "NFT-INPUT-DROP: " level warn
+    counter drop
+  }
+
+  # ── SSH rules ──────────────────────────────────────────────────────────
+
+  chain input_ssh {
+    tcp dport $SSH_PORT ct state new \
+      add @ssh_bruteforce { ip saddr limit rate over 4/minute burst 6 packets } \
+      log prefix "NFT-SSH-BRUTE: " level warn drop
+
+    tcp dport $SSH_PORT ct state new accept
+  }
+
+  # ── Web rules ──────────────────────────────────────────────────────────
+
+  chain input_web {
+    tcp dport $WEB_PORTS ct state new \
+      limit rate 200/second burst 500 packets accept
+  }
+
+  # ── Management rules (restricted source) ───────────────────────────────
+
+  chain input_mgmt {
+    # Add management services here
+    # ip saddr @mgmt_nets tcp dport 9090 accept   # Prometheus
+    # ip saddr @mgmt_nets tcp dport 3306 accept   # MySQL
+    # ip saddr @mgmt_nets tcp dport 5432 accept   # PostgreSQL
+  }
+
+  # ── Forward chain ──────────────────────────────────────────────────────
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+
+    ct state established,related accept
+    ct state invalid drop
+
+    # Uncomment for connection offload:
+    # ct state established flow add @ft
+
+    # Log dropped forwards
+    limit rate 5/minute burst 10 packets log prefix "NFT-FWD-DROP: " level warn
+    counter drop
+  }
+
+  # ── Output chain ──────────────────────────────────────────────────────
+
+  chain output {
+    type filter hook output priority 0; policy accept;
+
+    # Optional: restrict outbound (uncomment and customize)
+    # ct state established,related accept
+    # tcp dport { 53, 80, 443, 853 } accept
+    # udp dport { 53, 123, 443 } accept
+    # ip protocol icmp accept
+    # counter reject
+  }
+}
+
+# ── NAT table (uncomment if needed) ──────────────────────────────────────────
+
+# table ip nat {
+#   chain prerouting {
+#     type nat hook prerouting priority -100; policy accept;
+#     # DNAT example:
+#     # iifname $EXT_IFACE tcp dport 8080 dnat to 192.168.1.10:80
+#   }
+#
+#   chain postrouting {
+#     type nat hook postrouting priority 100; policy accept;
+#     # Masquerade outbound
+#     # oifname $EXT_IFACE masquerade
+#   }
+# }

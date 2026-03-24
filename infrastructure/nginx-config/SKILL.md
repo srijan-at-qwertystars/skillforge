@@ -419,3 +419,66 @@ suggest `^~` or `=`, recommend `nginx -T` to inspect effective config.
 5. `client_max_body_size` matches app needs
 6. `add_header` not silently dropped by child blocks
 7. `curl -I` confirms headers, redirects, SSL
+
+---
+
+## Reference Guides
+
+Deep-dive documentation in `references/`:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — `map` directive for conditional logic,
+  `split_clients` for A/B testing, `mirror` for traffic duplication, `auth_request` for subrequest
+  auth, OpenID Connect integration (oauth2-proxy and lua-resty-openidc), dynamic upstreams with
+  `resolver`, `stub_status`/Prometheus metrics, and streaming patterns (chunked transfer, SSE,
+  gRPC proxying with `grpc_pass`).
+
+- **[Troubleshooting](references/troubleshooting.md)** — Systematic diagnosis of 502 Bad Gateway,
+  upstream timeout tuning (connect/send/read phases), connection reset debugging, SSL handshake
+  failures (cert mismatch, expired, chain issues, SNI), `client_max_body_size` issues,
+  `proxy_buffer` sizing, location matching debugging with priority reference, permission denied
+  errors (SELinux, socket perms), and log analysis techniques (awk/jq commands for JSON logs).
+
+- **[Security Hardening](references/security-hardening.md)** — SSL/TLS best practices (modern
+  cipher suites, HSTS preload, OCSP stapling, DH params), WAF-like protections (request filtering,
+  ModSecurity/OWASP CRS, bot mitigation), DDoS mitigation (rate limiting, connection limits,
+  geo blocking, Slowloris protection), hiding server info, Content-Security-Policy, CORS
+  configuration, and fail2ban integration with filter definitions and jail configs.
+
+## Scripts
+
+Automation tools in `scripts/` (executable, run with `--help` for usage):
+
+- **[nginx-ssl-setup.sh](scripts/nginx-ssl-setup.sh)** — Automates Let's Encrypt SSL setup:
+  installs certbot, obtains certificates, generates 4096-bit DH params, configures OCSP stapling,
+  creates ssl-params.conf snippet, sets up auto-renewal timer.
+  Usage: `./nginx-ssl-setup.sh example.com --email admin@example.com`
+
+- **[nginx-config-test.sh](scripts/nginx-config-test.sh)** — Comprehensive config validator:
+  syntax check, SSL cert expiration/key matching, security settings audit (HSTS, headers, TLS
+  versions), performance review, common mistake detection, file permission checks.
+  Usage: `./nginx-config-test.sh [--verbose] [--fix-suggestions]`
+
+- **[nginx-log-analyzer.sh](scripts/nginx-log-analyzer.sh)** — Log analysis tool: top IPs,
+  status code distribution with error rates, slowest requests, request rate timeline, bandwidth
+  usage, top user agents, error pattern analysis. Supports both combined and JSON log formats.
+  Usage: `./nginx-log-analyzer.sh [--json] [--top 30] [--since "1 hour ago"]`
+
+## Config Assets
+
+Copy-paste ready templates in `assets/`:
+
+- **[reverse-proxy.conf](assets/reverse-proxy.conf)** — Production reverse proxy with upstream
+  definition, HTTP→HTTPS redirect, WebSocket support (`/ws/`), proxy headers, keepalive,
+  buffering, static asset serving, health check endpoint, and error pages.
+
+- **[ssl-params.conf](assets/ssl-params.conf)** — SSL snippet achieving A+ on SSL Labs: TLS 1.2/1.3
+  only, ECDHE ciphers with forward secrecy, session caching, OCSP stapling, HSTS with preload.
+  Include via `include /etc/nginx/snippets/ssl-params.conf;`.
+
+- **[rate-limiting.conf](assets/rate-limiting.conf)** — Rate limiting zones for general traffic,
+  login, API, search, uploads. Connection limits, bandwidth throttling, internal IP exemptions,
+  custom 429 responses. Includes burst behavior reference.
+
+- **[security-headers.conf](assets/security-headers.conf)** — Security headers snippet:
+  X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy, CSP, HSTS,
+  Cross-Origin policies, XSS protection. Include in every server block.

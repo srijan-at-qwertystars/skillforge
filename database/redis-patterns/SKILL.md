@@ -156,19 +156,7 @@ def update_user(user_id, data):
 - **Refresh-ahead**: proactively refresh hot keys before TTL expires
 
 ### Cache Stampede Prevention
-
-```python
-def get_with_lock(key):
-    val = redis.get(key)
-    if val: return val
-    if redis.set(f"lock:{key}", "1", nx=True, ex=10):
-        val = db.query(...)
-        redis.setex(key, 300, val)
-        redis.delete(f"lock:{key}")
-        return val
-    time.sleep(0.05)
-    return redis.get(key)
-```
+Use lock-based fetch: `SET lock:{key} 1 NX EX 10`, first caller populates, others retry.
 
 ## Pub/Sub Messaging
 
@@ -178,20 +166,13 @@ Fire-and-forget broadcast. No persistence, no acknowledgement. Subscribers must 
 SUBSCRIBE channel:notifications       # consumer blocks
 PUBLISH channel:notifications "hello"  # → delivers to all subscribers
 PSUBSCRIBE channel:*                   # pattern subscribe
-```
-
-Use for: real-time notifications, cache invalidation broadcasts, live dashboards.
-Do NOT use for: reliable message delivery, event sourcing, job queues.
-
-### Sharded Pub/Sub (Redis 7+)
-Routes messages to the shard owning the channel's hash slot. Reduces cross-node traffic in clusters.
-
-```redis
+# Sharded Pub/Sub (Redis 7+) — routes to owning shard, reduces cross-node traffic:
 SSUBSCRIBE channel:orders             # shard-aware subscribe
 SPUBLISH channel:orders '{"id":1}'    # only hits relevant shard
 ```
 
-No pattern subscriptions (`PSUBSCRIBE`) for sharded channels.
+Use for: real-time notifications, cache invalidation broadcasts, live dashboards.
+Do NOT use for: reliable message delivery, event sourcing, job queues.
 
 ## Redis Streams (Reliable Messaging)
 
@@ -256,24 +237,7 @@ EXEC
 # → nil if another client modified inventory:widget
 ```
 
-```python
-# Python retry pattern
-def decrement_inventory(item, qty):
-    while True:
-        pipe = redis.pipeline(True)
-        pipe.watch(f"inventory:{item}")
-        current = int(pipe.get(f"inventory:{item}"))
-        if current < qty:
-            pipe.unwatch()
-            raise InsufficientStock()
-        pipe.multi()
-        pipe.decrby(f"inventory:{item}", qty)
-        try:
-            pipe.execute()
-            return
-        except redis.WatchError:
-            continue  # retry on conflict
-```
+In Python, use `pipe.watch()` + `pipe.multi()` + `pipe.execute()`, catch `WatchError` to retry.
 
 ## Lua Scripting
 
@@ -328,28 +292,16 @@ Expect 5-10x throughput improvement over sequential commands. Combine with MULTI
 
 ## Session Store
 
-```python
-import secrets, json
+Store sessions as JSON strings with `SETEX` + sliding expiration via `EXPIRE` on access.
+Use hashes for sessions needing field-level access. Set `maxmemory-policy volatile-lru`
+to auto-evict expired sessions under memory pressure.
 
-def create_session(user_id, ttl=3600):
-    sid = secrets.token_urlsafe(32)
-    redis.setex(f"session:{sid}", ttl, json.dumps({
-        "user_id": user_id, "created": time.time()
-    }))
-    return sid
-
-def get_session(sid):
-    data = redis.get(f"session:{sid}")
-    if data:
-        redis.expire(f"session:{sid}", 3600)  # sliding expiration
-        return json.loads(data)
-    return None
-
-def destroy_session(sid):
-    redis.delete(f"session:{sid}")
+```redis
+SETEX session:abc123 3600 '{"user_id":1001,"created":1700000000}'
+GET session:abc123           # read session
+EXPIRE session:abc123 3600   # sliding expiration on access
+DEL session:abc123           # destroy
 ```
-
-Use hashes for sessions needing field-level access. Set `maxmemory-policy volatile-lru` to auto-evict expired sessions under memory pressure.
 
 ## Rate Limiting
 
@@ -365,37 +317,12 @@ def is_allowed(user_id, limit=100, window=60):
 ```
 
 ### Sliding Window (Sorted Set)
-
-```python
-def is_allowed_sliding(user_id, limit=100, window=60):
-    key = f"rate:sliding:{user_id}"
-    now = time.time()
-    pipe = redis.pipeline()
-    pipe.zremrangebyscore(key, 0, now - window)
-    pipe.zadd(key, {str(now): now})
-    pipe.zcard(key)
-    pipe.expire(key, window)
-    _, _, count, _ = pipe.execute()
-    return count <= limit
-```
+Use ZADD with timestamp as score, ZREMRANGEBYSCORE to prune, ZCARD to count.
+See `assets/lua-scripts/rate-limiter.lua` for atomic Lua implementation.
 
 ### Token Bucket (Lua)
-
-```redis
-EVAL "
-local tokens = tonumber(redis.call('GET', KEYS[1]) or ARGV[1])
-local last = tonumber(redis.call('GET', KEYS[2]) or ARGV[3])
-local now = tonumber(ARGV[3])
-local rate = tonumber(ARGV[2])
-tokens = math.min(tonumber(ARGV[1]), tokens + (now - last) * rate)
-if tokens >= 1 then
-  redis.call('SET', KEYS[1], tokens - 1)
-  redis.call('SET', KEYS[2], now)
-  return 1
-end
-return 0
-" 2 bucket:user:1:tokens bucket:user:1:ts 10 0.5 1700000000
-```
+Track tokens and last-refill timestamp in two keys. Refill based on elapsed time.
+See `assets/lua-scripts/sliding-window-counter.lua` for hybrid counter approach.
 
 ## Distributed Locks
 
@@ -497,3 +424,68 @@ maxmemory-policy allkeys-lru    # evict least recently used (any key)
 - Enable `activedefrag yes` for long-running instances
 - Use `UNLINK` instead of `DEL` for async non-blocking deletion
 - Avoid storing large values (>100KB); chunk or use external storage
+
+## Additional Resources
+
+### Reference Guides (`references/`)
+
+Deep-dive documentation for advanced topics, troubleshooting, and performance:
+
+- **`advanced-patterns.md`** — Redis modules (RediSearch, RedisJSON, RedisTimeSeries,
+  RedisGraph, RedisBloom), Redis Functions (Redis 7+ replacement for EVAL), sharded
+  pub/sub, client-side caching with RESP3, keyspace notifications, Redis as primary
+  database patterns, event sourcing with streams, RESP3 protocol features.
+
+- **`troubleshooting.md`** — Production debugging: SLOWLOG configuration and analysis,
+  latency monitoring (LATENCY DOCTOR/LATEST/HISTORY), memory fragmentation diagnosis,
+  big key and hot key detection, connection issues (maxclients, timeouts), replication
+  lag and buffer overflow, cluster split-brain and slot migration, AOF rewrite failures,
+  RDB fork issues, eviction policy behavior, full diagnostic command reference.
+
+- **`performance-tuning.md`** — Performance optimization: pipelining vs MULTI/EXEC,
+  connection pooling and multiplexing, memory optimization (listpack/intset thresholds,
+  hash bucketing, bitmaps), maxmemory policy selection guide, persistence impact on
+  latency, fork() overhead table, io-threads multi-threading (Redis 6+), TCP/network
+  tuning, kernel tuning (vm.overcommit_memory, THP, file descriptors, CPU affinity),
+  benchmarking methodology, production checklist.
+
+### Executable Scripts (`scripts/`)
+
+Production-ready diagnostic and analysis tools:
+
+- **`redis-health-check.sh`** — Comprehensive health check: memory usage and fragmentation,
+  connected clients vs maxclients, cache hit ratio, throughput stats, replication status
+  with lag detection, persistence status, slow log entries, big keys scan. Usage:
+  `./redis-health-check.sh [-h HOST] [-p PORT] [-a PASSWORD]`
+
+- **`redis-benchmark-suite.sh`** — Benchmark suite: tests GET/SET/LPUSH/ZADD/streams,
+  compares pipeline sizes (1/8/16/32/64), measures data size impact, reports throughput
+  with pipeline speedup ratio. Usage:
+  `./redis-benchmark-suite.sh [-h HOST] [-p PORT] [-n REQUESTS] [-c CLIENTS]`
+
+- **`redis-key-analyzer.py`** — Key namespace analyzer (Python/redis-py): distribution
+  by prefix, TTL analysis (with/without TTL counts, avg/min/max), memory usage per
+  prefix with biggest key identification, idle time stats, encoding distribution.
+  Production-safe SCAN-based. Usage:
+  `./redis-key-analyzer.py [-H HOST] [-p PORT] [--prefix-depth 2] [--sample-size 100000]`
+
+### Configuration Assets (`assets/`)
+
+Copy-paste ready templates and setup guides:
+
+- **`redis.conf`** — Production Redis 7+ configuration template with security (ACLs,
+  renamed commands), persistence (hybrid AOF+RDB), memory management (eviction, defrag,
+  lazy freeing), encoding thresholds, I/O threads, slow log, and latency monitoring.
+
+- **`sentinel.conf`** — Redis Sentinel HA configuration with monitoring, failover tuning,
+  notification scripts, and client connection examples (Python, Node.js).
+
+- **`redis-cluster-setup.md`** — Step-by-step 6-node cluster deployment: architecture,
+  per-node configuration, cluster creation command, verification, client configuration
+  (Python/Node.js/Java), operations (failover, resharding, rebalancing), adding/removing
+  nodes, monitoring, and troubleshooting.
+
+- **`lua-scripts/`** — Atomic Lua scripts for common patterns:
+  - `rate-limiter.lua` — Sliding window rate limiter using sorted sets
+  - `sliding-window-counter.lua` — Fixed+sliding window hybrid (memory-efficient)
+  - `distributed-lock.lua` — Safe lock with acquire/release/extend operations

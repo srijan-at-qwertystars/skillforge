@@ -224,6 +224,6 @@
 | utils | regex-patterns | Regex patterns across languages — syntax, common patterns, lookaround, Unicode, ReDoS prevention, debugging | tested |
 | devtools | git-advanced | Advanced Git techniques — interactive rebase, bisect, reflog, worktrees, hooks, history rewriting, signing | tested |
 | database | postgres-advanced | Advanced PostgreSQL — query optimization, indexing, partitioning, CTEs, JSONB, FTS, replication, RLS | tested |
-| infrastructure | nginx-config | Nginx configuration — server blocks, reverse proxy, SSL/TLS, load balancing, caching, rate limiting | created |
-| database | redis-patterns | Redis patterns — data structures, caching, pub/sub, streams, distributed locks, Lua scripting | created |
-| infrastructure | linux-networking | Linux networking — interfaces, firewall, TCP debugging, DNS, VPN, routing, SSH tunneling | created |
+| infrastructure | nginx-config | Nginx configuration — server blocks, reverse proxy, SSL/TLS, load balancing, caching, rate limiting | enriched |
+| database | redis-patterns | Redis patterns — data structures, caching, pub/sub, streams, distributed locks, Lua scripting | enriched |
+| infrastructure | linux-networking | Linux networking — interfaces, firewall, TCP debugging, DNS, VPN, routing, SSH tunneling | enriched |

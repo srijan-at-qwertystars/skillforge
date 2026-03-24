@@ -407,3 +407,72 @@ resolvectl status                         # systemd-resolved state
 dig @1.1.1.1 example.com                  # test explicit nameserver
 ss -ulnp | grep :53                       # port 53 conflict?
 ```
+
+---
+
+## Reference Guides
+
+In-depth references in `references/`:
+
+### Advanced Networking Patterns — `references/advanced-patterns.md`
+Network namespaces deep dive, veth pairs, bridges (STP/VLAN filtering),
+macvlan vs ipvlan, traffic control (tc/HTB/netem), eBPF/XDP packet processing,
+nftables sets/maps/flowtables, policy routing with multiple tables,
+GRE/VXLAN tunnels, multipath routing (ECMP), network bonding modes (all 7).
+
+### Network Troubleshooting — `references/troubleshooting.md`
+OSI layer-by-layer methodology, ARP issues, DNS resolution failures,
+MTU/fragmentation (PMTUD, MSS clamping, tunnel overhead table),
+tcpdump BPF filters and TCP flag filters, tshark display filters and field extraction,
+TCP debugging (SYN floods, TIME_WAIT, RST analysis, retransmissions),
+firewall debugging (iptables TRACE, nftables monitor), routing conflicts,
+performance diagnosis, quick diagnostic checklists.
+
+### Security Hardening — `references/security-hardening.md`
+Firewall best practices (default deny, rate limiting, logging), fail2ban setup,
+port knocking (knockd + iptables-based), TCP Wrappers, sysctl hardening
+(rp_filter, tcp_syncookies, ICMP, redirects, martians), SSH hardening
+(key-only, sshd_config, jump hosts, certificate-based auth),
+TLS certificate management (Let's Encrypt, self-signed CA, monitoring),
+VPN comparison: WireGuard vs OpenVPN vs IPsec (feature table, setup).
+
+---
+
+## Scripts
+
+Executable diagnostic and setup scripts in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/net-diagnostics.sh` | Comprehensive network diagnostic (interfaces, routes, DNS, ports, connections, firewall, latency). Supports `--full`, `--quick`, `--section <name>` modes. |
+| `scripts/firewall-setup.sh` | Interactive firewall setup supporting iptables/nftables/ufw with presets (minimal, web, database, docker). Supports `--dry-run` for preview. |
+| `scripts/bandwidth-test.sh` | Bandwidth testing with iperf3 — server/client modes, multi-stream progressive testing, UDP mode, result reporting. |
+
+```bash
+# Quick examples
+sudo ./scripts/net-diagnostics.sh --quick
+sudo ./scripts/firewall-setup.sh --dry-run --preset web --backend nftables
+./scripts/bandwidth-test.sh client 10.0.0.1 --multi --report results.txt
+```
+
+---
+
+## Assets (Copy-Paste Templates)
+
+Production-ready configuration templates in `assets/`:
+
+| Asset | Purpose |
+|-------|---------|
+| `assets/iptables-template.sh` | Production iptables ruleset: anti-spoofing, SYN flood protection, rate-limited SSH, web chains, logging, NAT support. |
+| `assets/nftables-template.nft` | Equivalent nftables ruleset: named sets, dynamic SSH brute-force tracking, flowtable support, organized chains. |
+| `assets/sysctl-network.conf` | Network sysctl parameters for security (rp_filter, syncookies, redirects) and performance (buffers, keepalive, congestion). |
+| `assets/wireguard-template.conf` | WireGuard templates: server config, full-tunnel client, split-tunnel client, site-to-site example. |
+
+```bash
+# Apply sysctl
+sudo cp assets/sysctl-network.conf /etc/sysctl.d/90-network.conf
+sudo sysctl -p /etc/sysctl.d/90-network.conf
+
+# Apply nftables
+sudo nft -f assets/nftables-template.nft
+```
