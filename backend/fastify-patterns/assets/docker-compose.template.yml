@@ -1,0 +1,95 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Fastify + PostgreSQL + Redis — Development Environment
+#
+# Usage:
+#   cp docker-compose.template.yml docker-compose.yml
+#   docker compose up -d
+#   docker compose logs -f app
+#
+# Services:
+#   app       — Fastify app (hot-reload with tsx watch)
+#   postgres  — PostgreSQL 16 with persistent volume
+#   redis     — Redis 7 for caching/sessions
+#
+# Ports:
+#   3000 — Fastify API
+#   5432 — PostgreSQL (host access for DB tools)
+#   6379 — Redis (host access for redis-cli)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+      - "9229:9229"  # Node.js inspector
+    volumes:
+      - ./src:/app/src:cached
+      - ./package.json:/app/package.json
+      - ./tsconfig.json:/app/tsconfig.json
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      NODE_ENV: development
+      LOG_LEVEL: debug
+      DATABASE_URL: postgresql://fastify:fastify@postgres:5432/fastify_dev
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev-secret-change-in-production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npx tsx watch --inspect=0.0.0.0:9229 src/server.ts
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: fastify
+      POSTGRES_PASSWORD: fastify
+      POSTGRES_DB: fastify_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Mount init scripts (optional)
+      # - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastify -d fastify_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Dockerfile.dev (create alongside this file)
+# ─────────────────────────────────────────────────────────────────────────────
+# FROM node:22-alpine
+# WORKDIR /app
+# COPY package*.json ./
+# RUN npm ci
+# COPY . .
+# EXPOSE 3000 9229
+# CMD ["npx", "tsx", "watch", "src/server.ts"]
+# ─────────────────────────────────────────────────────────────────────────────

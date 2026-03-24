@@ -1,10 +1,26 @@
 ---
 name: sqlalchemy-patterns
 description: >
-  SQLAlchemy 2.0 ORM and database toolkit patterns. Use when: writing SQLAlchemy models, ORM queries, session management, relationship mapping (one-to-many, many-to-many), Alembic migrations, async SQLAlchemy with AsyncSession, SQLAlchemy 2.0 style with Mapped/mapped_column, database engine configuration, hybrid properties, event listeners, connection pooling, custom types, bulk operations, eager/lazy loading. Do NOT use for: Django ORM, Prisma, Drizzle, TypeORM, Sequelize, raw SQL without SQLAlchemy context, MongoDB or NoSQL databases, database administration tasks without ORM context, SQLAlchemy versions before 1.4.
+  SQLAlchemy 2.0 ORM and database toolkit patterns. Use when: writing SQLAlchemy models, ORM queries, session management, relationship mapping (one-to-many, many-to-many), Alembic migrations, async SQLAlchemy with AsyncSession, SQLAlchemy 2.0 style with Mapped/mapped_column, database engine configuration, hybrid properties, event listeners, connection pooling, custom types, bulk operations, eager/lazy loading, polymorphic inheritance, association proxies, write-only relationships, multi-tenancy, soft delete, versioning, troubleshooting N+1 queries, session pitfalls, connection pool issues. Do NOT use for: Django ORM, Prisma, Drizzle, TypeORM, Sequelize, raw SQL without SQLAlchemy context, MongoDB or NoSQL databases, database administration tasks without ORM context, SQLAlchemy versions before 1.4.
 ---
 
 # SQLAlchemy 2.0 Patterns
+
+## Resources
+
+### Reference Docs (`references/`)
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Polymorphic inheritance (single/joined/concrete table), custom types, composite columns, association proxies, hybrid attributes deep-dive, event system (mapper/session/attribute/engine events), versioning (optimistic locking, history tables), soft delete mixins with auto-filtering, multi-tenancy (schema-based, row-based), write-only relationships
+- **[troubleshooting.md](references/troubleshooting.md)** — N+1 query detection (4 methods) and fixes, session management pitfalls (detached instances, identity map, flush vs commit), lazy loading in async context, connection pool exhaustion diagnosis, migration conflicts (multiple heads, autogenerate limitations), slow query debugging, memory issues with large result sets, common error messages reference table
+- **[api-reference.md](references/api-reference.md)** — Session API (add/flush/commit/expire/refresh/merge), select() patterns (filters, joins, subqueries, CTEs, DML), Column types (standard + PostgreSQL), relationship() options (lazy modes, cascade), mapped_column() options (all parameters), engine configuration, pool configuration and sizing, query API migration table (1.x → 2.0)
+
+### Scripts (`scripts/`)
+- **[init-sqlalchemy.sh](scripts/init-sqlalchemy.sh)** — Bootstrap a SQLAlchemy + Alembic project with directory structure, models, engine config, session deps, and test fixtures. Supports `--async` and `--db postgres|sqlite|mysql`.
+- **[migration-ops.sh](scripts/migration-ops.sh)** — Alembic workflow: create, create-empty, upgrade, downgrade, history, current, heads, stamp, merge, check, diff, branches.
+
+### Templates (`assets/`)
+- **[base-model.template.py](assets/base-model.template.py)** — Base model with TimestampMixin, SoftDeleteMixin, auto-repr, to_dict(), and annotated type shortcuts.
+- **[alembic-env.template.py](assets/alembic-env.template.py)** — Alembic env.py with async support, multi-database, table filtering, compare_type, and render_as_batch for SQLite.
+- **[conftest.template.py](assets/conftest.template.py)** — pytest fixtures: sync/async sessions with transaction rollback, model factory, and QueryCounter for N+1 detection.
 
 ## Installation
 ```bash

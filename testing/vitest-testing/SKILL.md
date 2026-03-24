@@ -1,17 +1,39 @@
 ---
 name: vitest-testing
 description: >
-  Guide for writing and configuring tests with Vitest, the Vite-native testing framework.
-  USE when: setting up Vitest, writing unit/component tests with Vite, configuring vitest.config.ts,
-  mocking modules with vi.mock/vi.fn/vi.spyOn, snapshot testing, coverage setup (v8/istanbul),
-  workspace/monorepo testing, browser mode with Playwright, benchmark tests with vitest bench,
-  type testing with expectTypeOf, test filtering, watch mode, concurrent tests, in-source testing,
-  environment config (jsdom/happy-dom), lifecycle hooks, custom matchers, reporters.
+  Comprehensive guide for writing, configuring, and debugging tests with Vitest (v3+), the
+  Vite-native testing framework. Covers setup, unit/component/integration testing, advanced
+  mocking (vi.mock/vi.fn/vi.spyOn/vi.hoisted/module factories/class mocking), snapshot testing,
+  coverage (v8/istanbul), workspace/monorepo configs, browser mode (Playwright/WebDriverIO),
+  benchmarking, type testing (expectTypeOf), test context and fixtures (test.extend), custom
+  matchers, snapshot serializers, concurrent tests, in-source testing, environment config
+  (jsdom/happy-dom/node), lifecycle hooks, reporters, CI integration, and troubleshooting.
+  Includes reference docs, helper scripts, and production templates.
+  USE when: setting up Vitest, writing any kind of Vitest test, configuring vitest.config.ts,
+  mocking modules or dependencies, debugging test failures, setting up coverage or CI pipelines,
+  optimizing slow test suites, configuring workspace/monorepo testing, using browser mode,
+  writing benchmarks or type tests, creating custom matchers or snapshot serializers.
   DO NOT USE when: answering Jest-specific questions without Vitest context, configuring Playwright
   or Cypress for e2e testing, non-JavaScript/TypeScript testing, configuring Mocha/Jasmine/Karma,
   or general Vite build questions unrelated to testing.
 ---
 # Vitest Testing Framework
+
+## Skill Resources
+
+### Reference Documentation
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Module factory mocking, vi.hoisted, partial mocks, class mocking, automocking, custom matchers, snapshot serializers, test context/fixtures, workspace deep-dive, browser mode setup, type testing, benchmarking API, concurrent control
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Module resolution errors, ESM/CJS issues, transform errors, slow test diagnosis, memory leaks, watch mode problems, coverage gaps, CI-specific issues, debugging with VS Code and Chrome DevTools, pool/worker issues
+- **[references/api-reference.md](references/api-reference.md)** — Complete API: test/describe variants, lifecycle hooks, vi object methods, expect matchers, asymmetric matchers, mock properties, test context API, snapshot API, type testing API, benchmarking API, full configuration reference
+
+### Scripts
+- **[scripts/setup-vitest.sh](scripts/setup-vitest.sh)** — Auto-detect framework (React/Vue/Svelte), install deps, generate config and setup files
+- **[scripts/coverage-check.sh](scripts/coverage-check.sh)** — Run coverage, check against thresholds, output summary table with per-file breakdown
+
+### Templates
+- **[assets/vitest.config.template.ts](assets/vitest.config.template.ts)** — Production config with coverage, reporters, path aliases, CI-aware settings, pool config
+- **[assets/test-utils.template.ts](assets/test-utils.template.ts)** — Mock factories, fetch stubs, timer helpers, assertion utilities, console capture, env helpers
+- **[assets/ci-workflow.template.yml](assets/ci-workflow.template.yml)** — GitHub Actions workflow with matrix testing, coverage upload, artifact storage
 ## Installation
 ```bash
 npm install -D vitest

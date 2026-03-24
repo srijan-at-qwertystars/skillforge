@@ -471,22 +471,21 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 }
 ```
 
-**Dockerfile:**
-```dockerfile
-FROM node:22-alpine AS build
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-FROM node:22-alpine
-WORKDIR /app
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/node_modules ./node_modules
-COPY package*.json ./
-ENV NODE_ENV=production
-EXPOSE 3000
-CMD ["node", "dist/server.js"]
-```
+Bind `0.0.0.0` (not localhost). Set `trustProxy` behind load balancers. Node.js v20+ required for Fastify v5. See `assets/` for Dockerfile and Docker Compose templates.
 
-Bind `0.0.0.0` (not localhost). Set `trustProxy` behind load balancers. Use PM2/systemd/Docker for process management. Node.js v20+ required for Fastify v5.
+## References
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Plugin encapsulation deep-dive, dependency injection, graceful shutdown, custom serializers, content type parsers, route constraints, API versioning, multitenancy, streaming, SSE, request lifecycle flow
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Common errors (plugin order, decorator scope, schema failures), performance, memory leaks, TypeScript issues, Express migration, production debugging
+- **[references/api-reference.md](references/api-reference.md)** — Full API: server options, request/reply objects, all lifecycle hooks, decorators, plugins, schemas, error handling, parsers, serializers
+
+## Scripts
+
+- **[scripts/init-fastify.sh](scripts/init-fastify.sh)** — Scaffold Fastify + TypeScript project with autoload, ESLint, Dockerfile. Usage: `./init-fastify.sh my-api`
+- **[scripts/generate-plugin.sh](scripts/generate-plugin.sh)** — Generate typed plugin (shared or encapsulated). Usage: `./generate-plugin.sh database` or `./generate-plugin.sh admin-routes --encapsulated`
+
+## Templates
+
+- **[assets/fastify-app.template.ts](assets/fastify-app.template.ts)** — Production app: factory pattern, graceful shutdown, error handling, health check, autoload, tracing
+- **[assets/plugin.template.ts](assets/plugin.template.ts)** — Plugin: typed options, service class, decorators, hooks, declaration merging
+- **[assets/docker-compose.template.yml](assets/docker-compose.template.yml)** — Fastify + PostgreSQL 16 + Redis 7 dev environment with health checks
