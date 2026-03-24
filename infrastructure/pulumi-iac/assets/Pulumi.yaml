@@ -1,0 +1,45 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Pulumi.yaml — Project-level configuration
+#
+# This file defines the Pulumi project metadata. It is checked into version
+# control and shared across all stacks (dev, staging, prod, etc.).
+# Docs: https://www.pulumi.com/docs/concepts/projects/
+# ──────────────────────────────────────────────────────────────────────────────
+
+# The project name. Must be unique within the backend.
+name: my-project
+
+# The language runtime used for this project.
+# Supported: nodejs, python, go, dotnet, java, yaml
+runtime:
+  name: nodejs
+  options:
+    # Set to true when using TypeScript (the default for new Node.js projects).
+    typescript: true
+
+# A human-readable description of what this project manages.
+description: Infrastructure managed by Pulumi
+
+# Tags are key-value pairs attached to all resources in this project.
+# Use them for cost tracking, ownership, and auditing.
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-typescript
+
+# Backend configuration — where Pulumi stores state.
+# Options:
+#   - Pulumi Cloud (default): omit this section entirely
+#   - Self-managed S3:        url: s3://my-pulumi-state-bucket
+#   - Self-managed Azure:     url: azblob://my-container
+#   - Self-managed GCS:       url: gs://my-bucket
+#   - Local file:             url: file://~
+backend:
+  url: s3://my-pulumi-state-bucket
+
+# Project-level options that apply to every stack.
+options:
+  # "always" refreshes state on every `pulumi up` / `preview`.
+  # Useful for catching out-of-band changes (manual console edits).
+  # Set to "never" in CI to speed up pipelines if drift detection is not needed.
+  refresh: always

@@ -283,11 +283,7 @@ expect(await page.content()).toMatchSnapshot('page.html');
 
 ## Component Testing
 
-Test framework components in isolation (React, Vue, Svelte):
-
-```bash
-npm install -D @playwright/experimental-ct-react
-```
+Test framework components in isolation (React, Vue, Svelte) with `@playwright/experimental-ct-react` (or `-vue`, `-svelte`):
 
 ```ts
 import { test, expect } from '@playwright/experimental-ct-react';
@@ -296,16 +292,14 @@ import { Button } from './Button';
 test('renders with label', async ({ mount }) => {
   const component = await mount(<Button label="Click me" />);
   await expect(component).toContainText('Click me');
-  await component.click();
 });
 ```
 
 ## Parallel Execution and Test Isolation
 
-Tests run in parallel by default, each in its own `BrowserContext`:
+Tests run in parallel by default, each in its own `BrowserContext` (isolated cookies, storage, cache):
 
 ```ts
-// Configure parallelism
 export default defineConfig({
   fullyParallel: true,       // parallelize tests within files
   workers: 4,                // number of parallel workers
@@ -314,12 +308,9 @@ export default defineConfig({
 // Serial execution for dependent tests
 test.describe.serial('checkout flow', () => {
   test('add to cart', async ({ page }) => { /* ... */ });
-  test('enter shipping', async ({ page }) => { /* ... */ });
   test('complete payment', async ({ page }) => { /* ... */ });
 });
 ```
-
-Each test gets a fresh `BrowserContext` — cookies, storage, and cache are isolated.
 
 ## Trace Viewer and Debugging
 
@@ -414,21 +405,11 @@ export default defineConfig({
     { name: 'mobile-chrome', use: { ...devices['Pixel 7'] } },
     { name: 'mobile-safari', use: { ...devices['iPhone 14'] } },
     { name: 'tablet', use: { ...devices['iPad Pro 11'] } },
-    { name: 'custom', use: { viewport: { width: 1280, height: 720 } } },
   ],
 });
 ```
 
-```ts
-test('mobile menu appears on small screens', async ({ page, isMobile }) => {
-  await page.goto('/');
-  if (isMobile) {
-    await expect(page.getByRole('button', { name: 'Menu' })).toBeVisible();
-  } else {
-    await expect(page.getByRole('navigation')).toBeVisible();
-  }
-});
-```
+Use `isMobile` fixture in tests to branch on viewport size.
 
 ## Multi-Tab and Multi-Window Scenarios
 
@@ -481,3 +462,34 @@ test('dashboard loads', async ({ loginPage, page }) => {
 
 Run: `npx playwright test`, `npx playwright test --project=chromium`,
 `npx playwright test tests/login.spec.ts`, `npx playwright test --grep "login"`.
+
+## References
+
+In-depth guides covering advanced topics, troubleshooting, and API details:
+
+| Document | Description |
+|----------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | POM with fixtures, custom/worker fixtures, API+UI testing, parallelism, sharding, custom reporters, multi-browser projects, auth with storageState, iframes, shadow DOM, web components, accessibility (axe-core), performance metrics, HAR recording/replay |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Flaky test diagnosis, strict mode violations, timing issues, selector strategies, debugging tools (trace viewer, UI mode, inspector, VS Code), CI issues (Docker, screenshots, deps), actionability checks, auto-waiting pitfalls, navigation races, file upload/download, geolocation/permissions |
+| [`references/api-reference.md`](references/api-reference.md) | Complete API reference for Page, BrowserContext, Locator, expect, Route, Frame, Dialog, Download, FileChooser, Mouse, Keyboard, Touchscreen — with method signatures, params, return types, and examples |
+
+## Scripts
+
+Executable helpers for common Playwright workflows:
+
+| Script | Usage |
+|--------|-------|
+| [`scripts/setup-playwright-ci.sh`](scripts/setup-playwright-ci.sh) | `./setup-playwright-ci.sh [--browsers chromium,firefox] [--shards 4]` — Installs Playwright, generates GitHub Actions workflow, configures caching |
+| [`scripts/generate-page-object.sh`](scripts/generate-page-object.sh) | `./generate-page-object.sh --url http://localhost:3000/login --name LoginPage` — Generates POM TypeScript class and companion test file |
+| [`scripts/run-visual-regression.sh`](scripts/run-visual-regression.sh) | `./run-visual-regression.sh [--project chromium] [--ci] [--docker]` — Runs visual regression tests with diff reporting and optional Docker consistency |
+
+## Assets
+
+Copy-ready templates for bootstrapping Playwright projects:
+
+| Template | Description |
+|----------|-------------|
+| [`assets/playwright.config.ts`](assets/playwright.config.ts) | Production-ready config with chromium/firefox/webkit/mobile projects, retries, trace-on-first-retry, HTML+blob reporters, webServer |
+| [`assets/global-setup.ts`](assets/global-setup.ts) | Authentication global setup that logs in and saves storageState for reuse across tests |
+| [`assets/base-page.ts`](assets/base-page.ts) | Abstract base POM class with navigation, screenshots, test-ID utilities, waiting helpers, assertions, form interactions, and network mocking |
+| [`assets/github-actions-playwright.yml`](assets/github-actions-playwright.yml) | GitHub Actions workflow with npm/browser caching, 4-shard matrix, blob report merging, and artifact upload |

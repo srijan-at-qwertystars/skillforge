@@ -379,3 +379,38 @@ Blackbox prober pattern — use relabeling to pass target as parameter:
 **Labels:** Avoid frequently changing labels (pod UIDs). Use consistent names across services (`instance`, `job`, `env`, `service`). Only `le` for histogram buckets.
 
 **Operations:** Monitor Prometheus itself (`prometheus_tsdb_head_series`, `prometheus_engine_query_duration_seconds`). Set `--query.max-samples` to prevent OOM. Run HA pairs — Alertmanager deduplicates via cluster gossip. Reload config via `POST /-/reload` with `--web.enable-lifecycle`.
+
+## Reference Docs
+
+Deep-dive guides in `references/`:
+
+| Document | Topics |
+|---|---|
+| `advanced-patterns.md` | PromQL advanced queries (subqueries, multi-dimensional analysis), histogram best practices, federation patterns, remote write/read, Thanos vs Mimir vs Cortex, exemplars, native histograms, recording rule optimization, HA pairs |
+| `troubleshooting.md` | High cardinality debugging, scrape failures, OOM/storage issues, slow queries, relabeling debugging, stale series, metric collisions, Alertmanager routing, push gateway pitfalls, WAL corruption, target discovery |
+| `kubernetes-monitoring.md` | kube-prometheus-stack Helm, ServiceMonitor/PodMonitor CRDs, kube-state-metrics, node-exporter DaemonSet, cAdvisor, kubelet/API server/etcd metrics, custom metrics for HPA, cluster health alerts, Grafana provisioning |
+| `alerting-patterns.md` | Multi-window burn-rate alerting, SLO-based alerts, alert routing strategies |
+| `promql-cookbook.md` | PromQL recipes for common monitoring scenarios |
+
+## Helper Scripts
+
+Executable scripts in `scripts/`:
+
+| Script | Purpose | Usage |
+|---|---|---|
+| `setup-prometheus.sh` | Deploy Prometheus + Grafana + Alertmanager stack via Docker Compose or local binary | `./setup-prometheus.sh docker` |
+| `check-cardinality.sh` | Analyze TSDB for high-cardinality metrics, report top series/labels/memory | `./check-cardinality.sh [prom_url]` |
+| `generate-alerts.sh` | Generate alerting rules from templates (SLO, infra, app, k8s, self-monitoring) | `./generate-alerts.sh all -o ./rules/` |
+| `validate-rules.sh` | Validate Prometheus rule files with promtool | `./validate-rules.sh rules/` |
+
+## Asset Templates
+
+Production-ready configs in `assets/`:
+
+| Asset | Description |
+|---|---|
+| `prometheus.yml` | Full config with Kubernetes SD, relabeling, remote write/read, TLS, blackbox probing |
+| `docker-compose.yml` | Complete stack: Prometheus, Grafana, Alertmanager, node-exporter, cAdvisor |
+| `alerting-rules.yml` | SLO burn-rate, infrastructure, disk, target health, Prometheus self-monitoring alerts |
+| `recording-rules.yml` | Precomputed CPU, memory, disk, network, HTTP, and SLO burn-rate metrics |
+| `alertmanager.yml` | Alertmanager with PagerDuty, Slack, email routing and inhibition rules |

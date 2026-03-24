@@ -295,23 +295,6 @@ describe("S3 bucket", () => {
 });
 ```
 
-**Python unit tests**:
-
-```python
-import pulumi
-class MyMocks(pulumi.runtime.Mocks):
-    def new_resource(self, args): return [args.name + "_id", args.inputs]
-    def call(self, args): return {}
-
-pulumi.runtime.set_mocks(MyMocks())
-from my_infra import bucket
-
-@pulumi.runtime.test
-def test_bucket_tags():
-    def check(tags): assert "Environment" in tags
-    return bucket.tags.apply(check)
-```
-
 **Property tests**: Use CrossGuard `validateStack` to assert global invariants. **Integration tests**: Run `pulumi up` in a test stack, assert outputs, then `pulumi destroy`.
 
 ## State Management
@@ -393,7 +376,6 @@ Use `LocalWorkspace` for file-based projects or inline programs. Use `RemoteWork
 
 ```typescript
 import * as awsx from "@pulumi/awsx";
-
 const vpc = new awsx.ec2.Vpc("app-vpc", {
     cidrBlock: "10.0.0.0/16",
     numberOfAvailabilityZones: 3,
@@ -401,7 +383,6 @@ const vpc = new awsx.ec2.Vpc("app-vpc", {
 });
 export const vpcId = vpc.vpcId;
 export const privateSubnetIds = vpc.privateSubnetIds;
-export const publicSubnetIds = vpc.publicSubnetIds;
 ```
 
 **EKS cluster**:
@@ -415,37 +396,7 @@ const cluster = new eks.Cluster("my-cluster", {
 export const kubeconfig = cluster.kubeconfig;
 ```
 
-**Serverless function (AWS Lambda)**:
-
-```typescript
-const fn = new aws.lambda.Function("my-fn", {
-    runtime: aws.lambda.Runtime.NodeJS20dX,
-    handler: "index.handler",
-    code: new pulumi.asset.AssetArchive({
-        "index.js": new pulumi.asset.StringAsset(`exports.handler = async () => ({ statusCode: 200, body: "OK" });`),
-    }),
-    role: lambdaRole.arn,
-});
-```
-
-**Static website with CloudFront**: Combine S3 bucket + CloudFront distribution + ACM certificate + Route53 record.
-
-**RDS database**:
-
-```typescript
-const db = new aws.rds.Instance("app-db", {
-    engine: "postgres",
-    engineVersion: "16",
-    instanceClass: "db.t4g.micro",
-    allocatedStorage: 20,
-    dbName: "appdb",
-    username: "admin",
-    password: config.requireSecret("dbPassword"),
-    skipFinalSnapshot: true,
-    vpcSecurityGroupIds: [dbSg.id],
-    dbSubnetGroupName: subnetGroup.name,
-});
-```
+**Serverless / Static Site / RDS**: See [`references/cloud-patterns.md`](references/cloud-patterns.md) for full production-ready patterns with Lambda + API Gateway, S3 + CloudFront, RDS with read replicas, GKE, and Azure Container Apps.
 
 ## Transformations and Aliases
 
@@ -497,3 +448,34 @@ pulumi about                       # Show environment info
 ```
 
 Set `PULUMI_CONFIG_PASSPHRASE` for self-managed backend encryption. Use `--diff` with `pulumi up` or `preview` for detailed change diffs. Use `--target urn` to operate on specific resources. Use `--replace urn` to force resource replacement.
+
+## Reference Documentation
+
+Deep-dive guides for advanced topics:
+
+| Reference | Description |
+|-----------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Multi-stack architectures, component resource design, dynamic providers, Automation API, stack transformations, resource aliases, provider configuration, Pulumi ESC, micro-stacks vs mono-stack, reusable packages, cross-language components |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | State conflicts/repair, import failures, drift detection, dependency cycles, preview vs up discrepancies, secret decryption errors, provider version conflicts, resource replacement decisions, performance with large stacks |
+| [`references/cloud-patterns.md`](references/cloud-patterns.md) | Production-ready patterns with full TypeScript code: VPC, EKS, serverless API, static website, RDS with replicas, multi-region, GKE, Azure Container Apps |
+
+## Helper Scripts
+
+Executable scripts for common Pulumi workflows:
+
+| Script | Usage | Description |
+|--------|-------|-------------|
+| [`scripts/scaffold-pulumi-project.sh`](scripts/scaffold-pulumi-project.sh) | `./scaffold-pulumi-project.sh --cloud aws --language ts --template vpc --name my-infra` | Scaffolds a complete Pulumi project with all boilerplate (Pulumi.yaml, config, .gitignore, starter code) |
+| [`scripts/pulumi-import-resources.sh`](scripts/pulumi-import-resources.sh) | `./pulumi-import-resources.sh --resource-type ec2 --stack dev` | Discovers existing AWS resources and generates/executes `pulumi import` commands interactively |
+| [`scripts/pulumi-ci-setup.sh`](scripts/pulumi-ci-setup.sh) | `./pulumi-ci-setup.sh --platform github --stack prod --cloud aws` | Generates CI/CD pipeline config (GitHub Actions or GitLab CI) with preview on PR and deploy on merge |
+
+## Asset Templates
+
+Ready-to-use project templates and config files:
+
+| Asset | Description |
+|-------|-------------|
+| [`assets/Pulumi.yaml`](assets/Pulumi.yaml) | Project config template with recommended backend, tags, and runtime settings |
+| [`assets/Pulumi.dev.yaml`](assets/Pulumi.dev.yaml) | Stack config template showing secrets, typed config, and provider settings |
+| [`assets/index.ts`](assets/index.ts) | TypeScript starter: VPC + ECS Fargate + ALB with config-driven parameters |
+| [`assets/github-actions-pulumi.yml`](assets/github-actions-pulumi.yml) | GitHub Actions workflow with OIDC auth, PR preview comments, and deploy on merge |

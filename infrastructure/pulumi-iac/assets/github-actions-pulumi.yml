@@ -1,0 +1,140 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# GitHub Actions — Pulumi Infrastructure Pipeline
+#
+# Triggers:
+#   • Pull Request → preview (dry-run) + PR comment with changes
+#   • Push to main → deploy (apply changes)
+#
+# Required repository secrets:
+#   PULUMI_ACCESS_TOKEN    Pulumi Cloud access token
+#   AWS_ROLE_ARN           IAM role ARN for OIDC authentication
+#
+# Optional repository variables:
+#   AWS_REGION             Target AWS region (default: us-west-2)
+#   PULUMI_STACK           Stack name (default: dev)
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: Pulumi Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+# Prevent parallel deployments to the same stack.
+# Queue rather than cancel so we never skip a deployment.
+concurrency:
+  group: pulumi-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write       # Required for AWS OIDC
+  contents: read        # Checkout repo
+  pull-requests: write  # Post PR comments with preview output
+
+env:
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  NODE_VERSION: "20"
+  PULUMI_STACK: ${{ vars.PULUMI_STACK || 'dev' }}
+
+jobs:
+  # ─── Preview (runs on every PR) ───────────────────────────────────────────
+  preview:
+    name: "Preview"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── AWS credentials via OIDC (recommended) ────────────────────────────
+      # Set up an IAM OIDC identity provider for GitHub Actions first:
+      # https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+          # ── Fallback: static access keys ──────────────────────────────────
+          # Uncomment the lines below (and comment out role-to-assume) to use
+          # long-lived IAM access keys instead of OIDC:
+          #
+          # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Pulumi Preview
+        uses: pulumi/actions@v6
+        id: preview
+        with:
+          command: preview
+          stack-name: ${{ env.PULUMI_STACK }}
+          comment-on-pr: true
+          comment-on-summary: true
+          diff: true
+          # Uncomment to fail the check if there are unexpected changes:
+          # expect-no-changes: true
+
+  # ─── Deploy (runs on push to main) ────────────────────────────────────────
+  deploy:
+    name: "Deploy"
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    # Environment protection rules — configure required reviewers,
+    # wait timers, or branch policies in Settings → Environments.
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - name: Pulumi Up
+        uses: pulumi/actions@v6
+        id: deploy
+        with:
+          command: up
+          stack-name: ${{ env.PULUMI_STACK }}
+          diff: true
+
+      # Optional: post a Slack notification on deploy
+      # - name: Notify Slack
+      #   if: always()
+      #   uses: slackapi/slack-github-action@v1
+      #   with:
+      #     payload: |
+      #       {
+      #         "text": "Pulumi deploy ${{ job.status }}: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      #       }
+      #   env:
+      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

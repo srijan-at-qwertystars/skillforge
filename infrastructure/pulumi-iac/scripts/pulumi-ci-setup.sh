@@ -1,0 +1,373 @@
+#!/usr/bin/env bash
+#
+# pulumi-ci-setup.sh - Generate CI/CD pipeline configs for Pulumi projects
+#
+# Usage:
+#   pulumi-ci-setup.sh [OPTIONS]
+#
+# Options:
+#   --platform   github|gitlab       CI/CD platform (required)
+#   --stack      <stack-name>         Pulumi stack name (default: dev)
+#   --cloud      aws|azure|gcp       Cloud provider for credentials setup (default: aws)
+#   --dir        <output-dir>        Output directory for generated files (default: current dir)
+#   -h, --help                       Show this help message
+#
+# Examples:
+#   pulumi-ci-setup.sh --platform github --stack production --cloud aws
+#   pulumi-ci-setup.sh --platform gitlab --stack dev --dir ./my-project
+#   pulumi-ci-setup.sh --platform github --cloud gcp --stack staging --dir ./infra
+#
+# Description:
+#   Generates ready-to-use CI/CD pipeline configuration files for Pulumi projects.
+#   For GitHub Actions: preview on PR, deploy on merge, PR comments, OIDC auth.
+#   For GitLab CI: staged pipeline with preview and deploy, proper variables.
+
+set -euo pipefail
+
+# ─── Colors & helpers ────────────────────────────────────────────────────────
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+info()  { echo -e "${BLUE}[INFO]${NC}  $*"; }
+ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
+warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
+err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+die()   { err "$@"; exit 1; }
+
+usage() {
+  sed -n '3,/^$/s/^# \?//p' "$0"
+  exit 0
+}
+
+# ─── Globals ─────────────────────────────────────────────────────────────────
+
+PLATFORM=""
+STACK="dev"
+CLOUD="aws"
+OUTPUT_DIR="."
+
+# ─── Argument parsing ───────────────────────────────────────────────────────
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --platform) PLATFORM="$2"; shift 2 ;;
+      --stack)    STACK="$2";    shift 2 ;;
+      --cloud)    CLOUD="$2";   shift 2 ;;
+      --dir)      OUTPUT_DIR="$2"; shift 2 ;;
+      -h|--help)  usage ;;
+      *)          die "Unknown option: $1. Use -h for help." ;;
+    esac
+  done
+}
+
+# ─── Validation ──────────────────────────────────────────────────────────────
+
+validate_inputs() {
+  if [[ -z "$PLATFORM" ]]; then
+    die "Missing required flag: --platform (github|gitlab)"
+  fi
+  if [[ ! "$PLATFORM" =~ ^(github|gitlab)$ ]]; then
+    die "Invalid platform '$PLATFORM'. Must be github or gitlab."
+  fi
+  if [[ ! "$CLOUD" =~ ^(aws|azure|gcp)$ ]]; then
+    die "Invalid cloud '$CLOUD'. Must be aws, azure, or gcp."
+  fi
+}
+
+# ─── Cloud-specific credential steps ────────────────────────────────────────
+
+github_aws_credentials() {
+  cat <<'EOF'
+      # AWS credentials via OIDC (recommended)
+      # Prerequisites: configure an IAM OIDC identity provider for GitHub Actions
+      # See: https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+          # Fallback: use static keys instead of OIDC
+          # aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          # aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+EOF
+}
+
+github_azure_credentials() {
+  cat <<'EOF'
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+EOF
+}
+
+github_gcp_credentials() {
+  cat <<'EOF'
+      - name: Authenticate to Google Cloud (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+EOF
+}
+
+github_cloud_creds() {
+  case "$CLOUD" in
+    aws)   github_aws_credentials ;;
+    azure) github_azure_credentials ;;
+    gcp)   github_gcp_credentials ;;
+  esac
+}
+
+gitlab_cloud_vars() {
+  case "$CLOUD" in
+    aws)
+      cat <<EOF
+  AWS_ACCESS_KEY_ID: \$AWS_ACCESS_KEY_ID
+  AWS_SECRET_ACCESS_KEY: \$AWS_SECRET_ACCESS_KEY
+  AWS_REGION: \${AWS_REGION:-us-west-2}
+EOF
+      ;;
+    azure)
+      cat <<EOF
+  ARM_CLIENT_ID: \$ARM_CLIENT_ID
+  ARM_CLIENT_SECRET: \$ARM_CLIENT_SECRET
+  ARM_TENANT_ID: \$ARM_TENANT_ID
+  ARM_SUBSCRIPTION_ID: \$ARM_SUBSCRIPTION_ID
+EOF
+      ;;
+    gcp)
+      cat <<EOF
+  GOOGLE_CREDENTIALS: \$GOOGLE_CREDENTIALS
+  GOOGLE_PROJECT: \$GOOGLE_PROJECT
+EOF
+      ;;
+  esac
+}
+
+# ─── GitHub Actions workflow ─────────────────────────────────────────────────
+
+generate_github_actions() {
+  local workflow_dir="${OUTPUT_DIR}/.github/workflows"
+  mkdir -p "$workflow_dir"
+  local file="${workflow_dir}/pulumi.yml"
+
+  local creds
+  creds="$(github_cloud_creds)"
+
+  cat > "$file" <<EOF
+# Pulumi CI/CD Pipeline
+# Generated by pulumi-ci-setup.sh
+#
+# Required secrets:
+#   PULUMI_ACCESS_TOKEN  - Pulumi access token for state management
+$(case "$CLOUD" in
+  aws)   echo "#   AWS_ROLE_ARN        - IAM role ARN for OIDC authentication" ;;
+  azure) echo "#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID" ;;
+  gcp)   echo "#   GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT" ;;
+esac)
+
+name: Pulumi Infrastructure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Prevent parallel deployments to the same stack
+concurrency:
+  group: pulumi-\${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write    # Required for OIDC
+  contents: read
+  pull-requests: write  # Required for PR comments
+
+env:
+  PULUMI_ACCESS_TOKEN: \${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+jobs:
+  preview:
+    name: Pulumi Preview
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+${creds}
+
+      - name: Pulumi Preview
+        uses: pulumi/actions@v6
+        id: preview
+        with:
+          command: preview
+          stack-name: ${STACK}
+          comment-on-pr: true
+          comment-on-summary: true
+          diff: true
+
+  deploy:
+    name: Pulumi Deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: ${STACK}  # Uses environment protection rules
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+${creds}
+
+      - name: Pulumi Deploy
+        uses: pulumi/actions@v6
+        with:
+          command: up
+          stack-name: ${STACK}
+          diff: true
+EOF
+
+  ok "Created ${file}"
+  info "Required secrets to configure in GitHub:"
+  info "  • PULUMI_ACCESS_TOKEN"
+  case "$CLOUD" in
+    aws)   info "  • AWS_ROLE_ARN (or AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY)" ;;
+    azure) info "  • AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID" ;;
+    gcp)   info "  • GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT" ;;
+  esac
+}
+
+# ─── GitLab CI pipeline ─────────────────────────────────────────────────────
+
+generate_gitlab_ci() {
+  local file="${OUTPUT_DIR}/.gitlab-ci.yml"
+
+  local cloud_vars
+  cloud_vars="$(gitlab_cloud_vars)"
+
+  cat > "$file" <<EOF
+# Pulumi CI/CD Pipeline for GitLab
+# Generated by pulumi-ci-setup.sh
+#
+# Required CI/CD variables:
+#   PULUMI_ACCESS_TOKEN  - Pulumi access token
+$(case "$CLOUD" in
+  aws)   echo "#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION" ;;
+  azure) echo "#   ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID" ;;
+  gcp)   echo "#   GOOGLE_CREDENTIALS, GOOGLE_PROJECT" ;;
+esac)
+
+image: node:20
+
+variables:
+  PULUMI_ACCESS_TOKEN: \$PULUMI_ACCESS_TOKEN
+${cloud_vars}
+
+stages:
+  - install
+  - preview
+  - deploy
+
+cache:
+  key: \${CI_COMMIT_REF_SLUG}
+  paths:
+    - node_modules/
+
+install:
+  stage: install
+  script:
+    - npm ci
+    - npm install -g @pulumi/pulumi
+  artifacts:
+    paths:
+      - node_modules/
+    expire_in: 1 hour
+
+preview:
+  stage: preview
+  needs: [install]
+  script:
+    - npx pulumi login
+    - npx pulumi stack select ${STACK}
+    - npx pulumi preview --diff --expect-no-changes 2>&1 | tee preview-output.txt || true
+  artifacts:
+    paths:
+      - preview-output.txt
+    expire_in: 7 days
+  rules:
+    - if: \$CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: \$CI_COMMIT_BRANCH && \$CI_COMMIT_BRANCH != \$CI_DEFAULT_BRANCH
+
+deploy:
+  stage: deploy
+  needs: [install]
+  script:
+    - npx pulumi login
+    - npx pulumi stack select ${STACK}
+    - npx pulumi up --yes --diff
+  rules:
+    - if: \$CI_COMMIT_BRANCH == \$CI_DEFAULT_BRANCH
+  environment:
+    name: ${STACK}
+  when: manual
+  allow_failure: false
+EOF
+
+  ok "Created ${file}"
+  info "Required CI/CD variables to configure in GitLab:"
+  info "  • PULUMI_ACCESS_TOKEN"
+  case "$CLOUD" in
+    aws)   info "  • AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION" ;;
+    azure) info "  • ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID" ;;
+    gcp)   info "  • GOOGLE_CREDENTIALS, GOOGLE_PROJECT" ;;
+  esac
+}
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+main() {
+  parse_args "$@"
+  validate_inputs
+
+  info "Generating CI/CD config for ${PLATFORM}"
+  info "  Stack: ${STACK}"
+  info "  Cloud: ${CLOUD}"
+  info "  Dir:   ${OUTPUT_DIR}"
+  echo
+
+  case "$PLATFORM" in
+    github) generate_github_actions ;;
+    gitlab) generate_gitlab_ci ;;
+  esac
+
+  echo
+  ok "CI/CD pipeline configuration generated successfully."
+}
+
+main "$@"

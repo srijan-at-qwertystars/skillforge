@@ -1,0 +1,47 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Pulumi.dev.yaml — Stack configuration for the "dev" environment
+#
+# Each stack (dev, staging, prod) has its own Pulumi.<stack>.yaml file.
+# Values here are accessed in code via `new pulumi.Config()`.
+#
+# Key concepts:
+#   - Namespaced keys:  <project-name>:<key> scopes values to your project.
+#   - Provider keys:    <provider>:<key> configures cloud provider settings.
+#   - Secrets:          Use `pulumi config set --secret <key> <value>` to encrypt.
+#   - Type coercion:    All config values are strings. Wrap numbers and booleans
+#                       in quotes so YAML parsers don't convert them.
+#
+# Docs: https://www.pulumi.com/docs/concepts/config/
+# ──────────────────────────────────────────────────────────────────────────────
+
+config:
+  # ── Provider configuration ─────────────────────────────────────────────────
+  # Sets the default AWS region for all resources in this stack.
+  aws:region: us-west-2
+
+  # ── Project configuration ──────────────────────────────────────────────────
+  # These keys are read in code with config.require("environment"), etc.
+
+  # Logical environment name — used for naming and tagging.
+  my-project:environment: dev
+
+  # EC2 / compute instance size.
+  my-project:instanceType: t3.micro
+
+  # ── Secrets ────────────────────────────────────────────────────────────────
+  # Encrypted values are stored as ciphertext and decrypted at runtime.
+  # Set them with: pulumi config set --secret dbPassword 'hunter2'
+  # The "secure" key is auto-generated; do not edit the ciphertext by hand.
+  my-project:dbPassword:
+    secure: <PASTE_ENCRYPTED_VALUE>
+
+  # ── Numeric & boolean values ───────────────────────────────────────────────
+  # Pulumi config values are always strings. Quote numbers and booleans to
+  # prevent YAML from interpreting them as native types. In code, use
+  # config.requireNumber("minInstances") or config.requireBoolean("enableMonitoring").
+  my-project:minInstances: "2"
+  my-project:maxInstances: "10"
+  my-project:enableMonitoring: "true"
+
+  # ── Domain / networking ────────────────────────────────────────────────────
+  my-project:domainName: dev.example.com
