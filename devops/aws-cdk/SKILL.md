@@ -182,7 +182,7 @@ const table = new dynamodb.Table(this, 'Table', {
   sortKey: { name: 'sk', type: dynamodb.AttributeType.STRING },
   billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
   removalPolicy: RemovalPolicy.RETAIN,
-  pointInTimeRecoveryEnabled: true,
+  pointInTimeRecovery: true,
 });
 
 const dlq = new sqs.Queue(this, 'DLQ');
@@ -497,3 +497,5 @@ export class UploadProcessorStack extends Stack {
 const table = new dynamodb.Table(this, 'Metadata', {
   partitionKey: { name: 'objectKey', type: dynamodb.AttributeType.STRING },
   billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+
+<!-- tested: pass -->

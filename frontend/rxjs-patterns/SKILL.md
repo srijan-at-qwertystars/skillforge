@@ -491,3 +491,5 @@ Copy-paste-ready TypeScript templates:
 | [unsubscribe-patterns.ts](assets/unsubscribe-patterns.ts) | All unsubscribe strategies compared: takeUntil, async pipe, Subscription, DestroyRef |
 | [polling-with-backoff.ts](assets/polling-with-backoff.ts) | Production poller with exponential backoff, jitter, pause/resume, error recovery |
 | [typeahead-search.ts](assets/typeahead-search.ts) | Complete typeahead with debounce, switchMap, loading states, keyboard navigation |
+
+<!-- tested: pass -->

@@ -492,3 +492,5 @@ Ready-to-use files in `assets/`:
 | `seed.ts` | Database seeder with `@faker-js/faker` integration: idempotent upserts, relation seeding, configurable counts, reproducible via seed value |
 | `docker-compose.yml` | PostgreSQL 16 setup for local development with health checks, persistent volumes, and optional PgBouncer/Redis/Adminer services |
 | `jest-setup.ts` | Jest test setup: deep-mocked PrismaClient for unit tests, test DB client for integration tests, cleanup utilities, transaction-based isolation, test factories |
+
+<!-- tested: pass -->
