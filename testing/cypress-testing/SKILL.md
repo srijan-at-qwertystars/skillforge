@@ -464,3 +464,4 @@ Ready-to-use templates and configurations:
 - **[cypress.config.ts](assets/cypress.config.ts)** — Production-ready Cypress config template with E2E and component testing setup, CI-aware settings, and memory optimization.
 - **[commands.ts](assets/commands.ts)** — Collection of custom commands: login/auth with session caching, API helpers, drag-and-drop, file upload, table assertions, paste, and network idle detection.
 - **[github-actions.yml](assets/github-actions.yml)** — GitHub Actions workflow with dependency caching, parallel runs, path filtering, component and E2E test jobs, artifact upload, and a summary gate job.
+<!-- tested: pass -->

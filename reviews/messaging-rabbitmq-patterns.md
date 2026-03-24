@@ -1,100 +1,54 @@
-# QA Review: rabbitmq-patterns
+# Review: rabbitmq-patterns
 
-**Skill path:** `~/skillforge/messaging/rabbitmq-patterns/`
-**Reviewed:** 2025-07-16
-**Reviewer:** Copilot QA
+Accuracy: 4/5
+Completeness: 4/5
+Actionability: 5/5
+Trigger quality: 5/5
+Overall: 4.5/5
 
----
+Issues:
 
-## a. Structure Check
+1. **Quorum queue default delivery limit incorrect** — SKILL.md line 214 states "default 20 in 4.0" but the actual default is 16 (per official RabbitMQ docs and release notes).
 
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| YAML frontmatter `name` | ✅ Pass | `rabbitmq-patterns` |
-| YAML frontmatter `description` | ✅ Pass | Present, multi-line |
-| Positive triggers (when to use) | ✅ Pass | 15+ specific trigger scenarios listed |
-| Negative triggers (when NOT to use) | ✅ Pass | 8 competing technologies explicitly excluded |
-| Body under 500 lines | ✅ Pass | 471 lines |
-| Imperative voice, no filler | ✅ Pass | Direct, action-oriented prose throughout |
-| Examples with input/output | ✅ Pass | Python, Node.js, Go, bash, YAML, INI examples |
-| `references/` linked from SKILL.md | ✅ Pass | 3 files linked with descriptions |
-| `scripts/` linked from SKILL.md | ✅ Pass | 3 scripts linked with usage examples |
-| `assets/` linked from SKILL.md | ✅ Pass | 5 assets linked with descriptions |
-| All referenced files exist | ✅ Pass | All 11 referenced files verified present |
+2. **Khepri/Mnesia claim misleading** — SKILL.md line 358 says "Khepri replaces Mnesia as the metadata store" in 4.0. In reality, Khepri is available in 4.0 but Mnesia remains the default; Khepri is planned to become default in 4.2. Should say "Khepri is available as an alternative to Mnesia."
 
----
+3. **Node.js amqplib consume example incorrect** — SKILL.md line 288: `ch.consume('tasks', ..., { prefetch: 10 })` passes `prefetch` as an option to `consume()`, but amqplib does not accept `prefetch` there. Prefetch must be set separately via `ch.prefetch(10)` before calling `ch.consume()`.
 
-## b. Content Check
+4. **6 orphaned files not linked from SKILL.md**:
+   - `references/clustering-guide.md`
+   - `scripts/purge-queues.sh`
+   - `scripts/setup-rabbitmq-cluster.sh`
+   - `scripts/rabbitmq-health-check.sh`
+   - `assets/node-producer-consumer.js`
+   - `assets/python-producer-consumer.py`
 
-### Verified Accurate
+   These are high-quality files that would increase value if linked.
 
-- **Quorum queue arguments** (`x-queue-type`, `x-delivery-limit`, `x-dead-letter-strategy: at-least-once`): Verified correct against RabbitMQ docs.
-- **Stream offsets** (`first`, `last`, `next`, timestamp, numeric): Verified correct. Missing the `interval` offset (e.g., `'1h'`) — minor omission.
-- **Publisher confirms (pika)**: `pika.exceptions.UnroutableError` and `pika.exceptions.NackError` are the correct exception types for `BlockingConnection` with `confirm_delivery()`.
-- **Exchange types and routing**: Correct. Wildcard semantics (`*` = one word, `#` = zero-or-more) accurate.
-- **Quorum queue constraints**: Correct — no exclusive, no non-durable, no priority, no global QoS.
-- **TLS config**: Valid `rabbitmq.conf` syntax. TLSv1.3 + TLSv1.2 is the recommended setup.
-- **Kubernetes Cluster Operator**: CRD `rabbitmq.com/v1beta1 RabbitmqCluster` is the correct API.
-- **Shovel/Federation CLI**: Commands verified correct.
-- **Docker image tag**: `rabbitmq:3.13-management-alpine` is a valid current tag.
+5. **Minor: missing 4.0-specific gotchas** — No mention of AMQP 1.0 becoming a core protocol in 4.0, feature flags required after upgrade, or quorum queue limitations (no exclusive/auto-delete).
 
-### Issues Found
+## Detailed Assessment
 
-1. **Lazy queue deprecation (Accuracy — Medium severity)**
-   Line 432 in Performance Tuning Checklist item 4: _"Use lazy queues (`x-queue-mode: lazy`) for large backlogs to reduce memory pressure."_
-   **Problem:** `x-queue-mode: lazy` is deprecated since RabbitMQ 3.12 (2023). All classic queues now behave as lazy by default. This argument is a no-op on 3.12+. Recommending it is misleading for anyone on a current version.
-   **Fix:** Replace with: _"Classic queues are lazy by default since 3.12. For older versions, set `x-queue-mode: lazy`. For new deployments, prefer quorum queues."_
+### Structure (Pass)
+- ✅ YAML frontmatter has `name` and `description`
+- ✅ Description includes positive triggers (11 use cases) AND negative triggers (6 exclusions)
+- ✅ Body is 456 lines (under 500 limit)
+- ✅ Imperative voice throughout, no filler
+- ✅ Examples with code in Python, Node.js, Go, Java, bash
+- ⚠️ references/, scripts/, assets/ partially linked — 6 files orphaned
 
-2. **Exclusive consumer vs Single Active Consumer conflation (Accuracy — Low severity)**
-   Line 179: _"Exclusive consumer: Set `exclusive=True` for single-active-consumer semantics."_
-   **Problem:** `exclusive=True` on `basic_consume` means only that consumer can access the queue (others get an error, queue auto-deletes on disconnect). This is NOT the same as `x-single-active-consumer`, which allows multiple registered consumers with only one active and automatic failover. The skill correctly describes SAC on the next line but the exclusive consumer description is misleading.
-   **Fix:** Reword to: _"Exclusive consumer: Set `exclusive=True` to lock the queue to a single consumer (queue auto-deletes on disconnect)."_
+### Content (Strong)
+- Core concepts, exchange types, message patterns, reliability — all accurate
+- Docker setup, clustering, monitoring, security — comprehensive
+- Client library examples in 4 languages — practical and mostly correct
+- Troubleshooting section covers top real-world pitfalls
+- Reference docs (troubleshooting, API reference, advanced patterns) are thorough
+- Scripts are production-quality with error handling and configurability
+- Web-verified: consumer_timeout 30min default ✅, mirrored queues removed in 4.0 ✅, stream filtering 3.13+ ✅
 
-3. **Missing stream offset option (Completeness — Low severity)**
-   Line 102 lists offset options but omits the `interval` offset (e.g., `'1h'`, `'7D'`) which allows consuming from a relative time window.
+### Trigger (Excellent)
+- Would trigger correctly for: RabbitMQ setup, AMQP patterns, work queues, pub/sub, DLX, quorum queues, clustering, monitoring
+- Would NOT falsely trigger for: Kafka, Redis pub/sub, SQS/SNS, WebSocket, in-process queues
+- Well-scoped with both positive and negative criteria
 
-### Missing Gotchas
-
-- **Connection recovery**: No guidance on automatic reconnection. In production, connections drop — pika's `BlockingConnection` has no auto-recovery; `SelectConnection` or heartbeat-based detection + manual reconnect is essential. This is the #1 production issue for new RabbitMQ users.
-- **Message ordering**: No explicit mention that ordering is guaranteed per-queue but NOT across multiple queues or with competing consumers (redelivery can reorder).
-- **Memory watermark interaction with publisher confirms**: When memory alarm fires, publishers block (not nack). This distinction from NackError is not mentioned.
-
----
-
-## c. Trigger Check
-
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| Triggers for RabbitMQ queries | ✅ Pass | Description mentions 15+ RabbitMQ-specific features (exchanges, quorum queues, streams, DLQ, publisher confirms, etc.) |
-| False trigger: Kafka | ✅ Pass | Explicitly excluded: "Apache Kafka for log streaming or event sourcing" |
-| False trigger: NATS | ✅ Pass | Explicitly excluded: "NATS for lightweight pub/sub" |
-| False trigger: AWS SQS/SNS | ✅ Pass | Explicitly excluded |
-| False trigger: General messaging | ✅ Pass | Explicitly excluded: "general message queue theory without RabbitMQ specifics" |
-| Description specificity | ✅ Pass | Highly specific; unlikely to trigger for non-RabbitMQ messaging |
-
----
-
-## d. Scores
-
-| Dimension | Score | Rationale |
-|-----------|-------|-----------|
-| **Accuracy** | 4 | Core AMQP model, quorum queues, streams, confirms, clustering, security all verified correct. Lazy queue deprecation and exclusive/SAC conflation are notable but non-critical errors. |
-| **Completeness** | 4 | Excellent breadth: 3 languages, Docker, K8s, Shovel/Federation, monitoring, security, DLQ patterns. Missing connection recovery guidance and message ordering caveats. |
-| **Actionability** | 5 | Every section has runnable code. Scripts for cluster setup, health checks, queue purging. Assets include production-ready configs and full producer/consumer implementations. |
-| **Trigger quality** | 5 | Comprehensive positive triggers covering all major RabbitMQ features. Negative triggers explicitly exclude 8 competing technologies. No realistic false-trigger scenarios. |
-
-**Overall: 4.5 / 5.0**
-
----
-
-## e. Recommendation
-
-**PASS** — Skill is production-quality with minor issues. The lazy queue deprecation should be fixed promptly as it affects anyone on RabbitMQ 3.12+ (current stable). Other issues are low severity.
-
-### Suggested Fixes (Priority Order)
-
-1. Update Performance Tuning item 4 re: lazy queue deprecation (3.12+)
-2. Clarify exclusive consumer vs single-active-consumer distinction
-3. Add connection recovery / reconnection best practices section
-4. Add interval offset option to streams documentation
-5. Add note on message ordering guarantees with competing consumers
+### Verdict
+**PASS** — Skill is production-quality with minor factual errors. No dimension ≤ 2, overall ≥ 4.0. No GitHub issues required.

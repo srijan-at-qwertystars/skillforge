@@ -454,3 +454,4 @@ Configuration templates and infrastructure-as-code:
 - **[docker-compose.yml](assets/docker-compose.yml)** — Production-ready 3-node RabbitMQ cluster with management UI, Prometheus metrics, stream protocol, volume persistence, and health checks.
 - **[rabbitmq.conf](assets/rabbitmq.conf)** — Optimized RabbitMQ configuration template with production settings for resource limits, clustering, TLS, logging, and quorum queues.
 - **[definitions.json](assets/definitions.json)** — RabbitMQ definitions export template with sample users (admin, app_service, monitoring), vhosts (production, staging), exchanges, queues, bindings, and policies.
+<!-- tested: pass -->

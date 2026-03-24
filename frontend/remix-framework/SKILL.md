@@ -440,3 +440,5 @@ Reusable templates in `assets/`:
 - **[route-template.tsx](assets/route-template.tsx)** — Full route module template with typed loader, action, meta, headers, links, handle, shouldRevalidate, component, and ErrorBoundary. Copy and rename for new routes.
 - **[auth-session.ts](assets/auth-session.ts)** — Cookie-based session authentication with `createCookieSessionStorage`. Includes requireUser, createUserSession, destroyUserSession, and flash message helpers. Place at `app/services/session.server.ts`.
 - **[vite.config.ts](assets/vite.config.ts)** — Remix/RR7 Vite config template with reactRouter plugin, tsconfigPaths, dev server, build, CSS, SSR, and dependency optimization settings.
+
+<!-- tested: pass -->
