@@ -1,0 +1,95 @@
+# Elixir Development Environment
+# Usage: docker compose up -d
+#        docker compose exec app iex -S mix
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"     # HTTP
+      - "4001:4001"     # HTTPS (optional)
+    volumes:
+      - .:/app
+      - deps:/app/deps
+      - build:/app/_build
+    environment:
+      - MIX_ENV=dev
+      - DATABASE_URL=ecto://postgres:postgres@db:5432/my_app_dev
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY_BASE=dev-secret-key-base-at-least-64-chars-long-replace-in-production
+      - PHX_HOST=localhost
+      - PHX_PORT=4000
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: mix phx.server
+    # For non-Phoenix: command: iex -S mix
+    stdin_open: true
+    tty: true
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: my_app_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./priv/repo/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  db_test:
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: my_app_test
+    tmpfs:
+      - /var/lib/postgresql/data  # in-memory for fast tests
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes
+
+  # Optional: Observability
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     GF_SECURITY_ADMIN_PASSWORD: admin
+  #   volumes:
+  #     - grafanadata:/var/lib/grafana
+
+volumes:
+  pgdata:
+  redisdata:
+  deps:
+  build:
+  # grafanadata:

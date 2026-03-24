@@ -1,0 +1,119 @@
+# docker-compose.yml — gRPC development environment.
+#
+# Services:
+#   - grpc-server:  Your gRPC service (build from Dockerfile)
+#   - envoy:        gRPC-Web proxy for browser clients
+#   - grpcui:       Web UI for testing gRPC services
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f grpc-server
+#
+# Ports:
+#   - 50051: gRPC (direct)
+#   - 8080:  gRPC-Web via Envoy (browser-compatible)
+#   - 8090:  grpcui web interface
+
+services:
+  # --- Your gRPC service ---
+  grpc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "50051:50051"
+    environment:
+      - GRPC_ADDR=:50051
+      - ENV=development
+    healthcheck:
+      # Uses grpc_health_probe binary (include in your Dockerfile)
+      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+  # --- Envoy proxy for gRPC-Web ---
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    depends_on:
+      grpc-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- grpcui for interactive testing ---
+  grpcui:
+    image: fullstorydev/grpcui:latest
+    command: ["-plaintext", "-port", "8090", "-bind", "0.0.0.0", "grpc-server:50051"]
+    ports:
+      - "8090:8090"
+    depends_on:
+      grpc-server:
+        condition: service_healthy
+    restart: unless-stopped
+
+# --- Envoy config for gRPC-Web proxy ---
+# Save this as envoy.yaml alongside docker-compose.yml:
+#
+# static_resources:
+#   listeners:
+#     - name: listener_0
+#       address:
+#         socket_address: { address: 0.0.0.0, port_value: 8080 }
+#       filter_chains:
+#         - filters:
+#             - name: envoy.filters.network.http_connection_manager
+#               typed_config:
+#                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+#                 stat_prefix: grpc_web
+#                 codec_type: AUTO
+#                 route_config:
+#                   name: local_route
+#                   virtual_hosts:
+#                     - name: backend
+#                       domains: ["*"]
+#                       routes:
+#                         - match: { prefix: "/" }
+#                           route:
+#                             cluster: grpc_backend
+#                             timeout: 60s
+#                             max_stream_duration:
+#                               grpc_timeout_header_max: 60s
+#                       cors:
+#                         allow_origin_string_match:
+#                           - prefix: "*"
+#                         allow_methods: "GET, PUT, DELETE, POST, OPTIONS"
+#                         allow_headers: "keep-alive,user-agent,cache-control,content-type,content-transfer-encoding,x-custom-header,x-accept-content-transfer-encoding,x-accept-response-streaming,x-user-agent,x-grpc-web,grpc-timeout,authorization"
+#                         expose_headers: "grpc-status,grpc-message"
+#                         max_age: "1728000"
+#                 http_filters:
+#                   - name: envoy.filters.http.grpc_web
+#                     typed_config:
+#                       "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_web.v3.GrpcWeb
+#                   - name: envoy.filters.http.cors
+#                     typed_config:
+#                       "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+#                   - name: envoy.filters.http.router
+#                     typed_config:
+#                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+#   clusters:
+#     - name: grpc_backend
+#       type: STRICT_DNS
+#       lb_policy: ROUND_ROBIN
+#       typed_extension_protocol_options:
+#         envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+#           "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+#           explicit_http_config:
+#             http2_protocol_options: {}
+#       load_assignment:
+#         cluster_name: grpc_backend
+#         endpoints:
+#           - lb_endpoints:
+#               - endpoint:
+#                   address:
+#                     socket_address: { address: grpc-server, port_value: 50051 }

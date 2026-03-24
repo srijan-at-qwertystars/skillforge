@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Button Components — Tailwind CSS</title>
+  <link rel="stylesheet" href="output.css" />
+</head>
+<body class="bg-gray-50 p-8 dark:bg-gray-950">
+<div class="mx-auto max-w-4xl space-y-12">
+
+  <!-- ═══ Solid Buttons ═══ -->
+  <section>
+    <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Solid Buttons</h2>
+    <div class="flex flex-wrap items-center gap-3">
+
+      <!-- Primary -->
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5
+                     text-sm font-semibold text-white shadow-sm
+                     hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-blue-600 active:bg-blue-800
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-colors
+                     dark:bg-blue-500 dark:hover:bg-blue-400 dark:focus-visible:outline-blue-400">
+        Primary
+      </button>
+
+      <!-- Secondary -->
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg bg-gray-600 px-4 py-2.5
+                     text-sm font-semibold text-white shadow-sm
+                     hover:bg-gray-700 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-gray-600 active:bg-gray-800 transition-colors
+                     dark:bg-gray-500 dark:hover:bg-gray-400">
+        Secondary
+      </button>
+
+      <!-- Danger -->
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2.5
+                     text-sm font-semibold text-white shadow-sm
+                     hover:bg-red-700 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-red-600 active:bg-red-800 transition-colors
+                     dark:bg-red-500 dark:hover:bg-red-400">
+        Danger
+      </button>
+
+      <!-- Success -->
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5
+                     text-sm font-semibold text-white shadow-sm
+                     hover:bg-green-700 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-green-600 active:bg-green-800 transition-colors
+                     dark:bg-green-500 dark:hover:bg-green-400">
+        Success
+      </button>
+
+      <!-- Warning -->
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg bg-yellow-500 px-4 py-2.5
+                     text-sm font-semibold text-white shadow-sm
+                     hover:bg-yellow-600 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-yellow-500 active:bg-yellow-700 transition-colors">
+        Warning
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══ Outline Buttons ═══ -->
+  <section>
+    <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Outline Buttons</h2>
+    <div class="flex flex-wrap items-center gap-3">
+
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-blue-600
+                     bg-transparent px-4 py-2 text-sm font-semibold text-blue-600
+                     hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-blue-600 active:bg-blue-100 transition-colors
+                     dark:border-blue-400 dark:text-blue-400 dark:hover:bg-blue-950">
+        Primary
+      </button>
+
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-gray-300
+                     bg-transparent px-4 py-2 text-sm font-semibold text-gray-700
+                     hover:bg-gray-50 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-gray-400 active:bg-gray-100 transition-colors
+                     dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+        Secondary
+      </button>
+
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg border-2 border-red-600
+                     bg-transparent px-4 py-2 text-sm font-semibold text-red-600
+                     hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-red-600 active:bg-red-100 transition-colors
+                     dark:border-red-400 dark:text-red-400 dark:hover:bg-red-950">
+        Danger
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══ Ghost Buttons ═══ -->
+  <section>
+    <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Ghost Buttons</h2>
+    <div class="flex flex-wrap items-center gap-3">
+
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
+                     text-sm font-semibold text-blue-600
+                     hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-blue-600 active:bg-blue-100 transition-colors
+                     dark:text-blue-400 dark:hover:bg-blue-950">
+        Primary Ghost
+      </button>
+
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
+                     text-sm font-semibold text-gray-700
+                     hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-gray-400 active:bg-gray-200 transition-colors
+                     dark:text-gray-300 dark:hover:bg-gray-800">
+        Neutral Ghost
+      </button>
+
+      <button class="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
+                     text-sm font-semibold text-red-600
+                     hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2
+                     focus-visible:outline-red-600 active:bg-red-100 transition-colors
+                     dark:text-red-400 dark:hover:bg-red-950">
+        Danger Ghost
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══ Sizes ═══ -->
+  <section>
+    <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Sizes</h2>
+    <div class="flex flex-wrap items-center gap-3">
+
+      <button class="rounded px-2 py-1 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+        Extra Small
+      </button>
+
+      <button class="rounded-md px-3 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+        Small
+      </button>
+
+      <button class="rounded-lg px-4 py-2.5 text-sm font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+        Default
+      </button>
+
+      <button class="rounded-lg px-5 py-3 text-base font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+        Large
+      </button>
+
+      <button class="rounded-xl px-6 py-3.5 text-lg font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+        Extra Large
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══ Icon Buttons ═══ -->
+  <section>
+    <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">With Icons</h2>
+    <div class="flex flex-wrap items-center gap-3">
+
+      <!-- Leading icon -->
+      <button class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5
+                     text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
+        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add Item
+      </button>
+
+      <!-- Trailing icon -->
+      <button class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5
+                     text-sm font-semibold text-white hover:bg-blue-700 transition-colors">
+        Continue
+        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+        </svg>
+      </button>
+
+      <!-- Icon only -->
+      <button class="inline-flex items-center justify-center rounded-lg bg-blue-600 p-2.5
+                     text-white hover:bg-blue-700 transition-colors" aria-label="Edit">
+        <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+        </svg>
+      </button>
+
+      <!-- Icon only — ghost -->
+      <button class="inline-flex items-center justify-center rounded-lg p-2
+                     text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors
+                     dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200" aria-label="More options">
+        <svg class="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/>
+        </svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══ States ═══ -->
+  <section>
+    <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">States</h2>
+    <div class="flex flex-wrap items-center gap-3">
+
+      <!-- Loading -->
+      <button class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5
+                     text-sm font-semibold text-white opacity-80 cursor-wait" disabled>
+        <svg class="size-4 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
+          <path class="opacity-75" fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+        </svg>
+        Loading...
+      </button>
+
+      <!-- Disabled -->
+      <button class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5
+                     text-sm font-semibold text-white
+                     disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+        Disabled
+      </button>
+
+      <!-- Full width -->
+      <button class="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white
+                     hover:bg-blue-700 transition-colors sm:w-auto">
+        Full Width on Mobile
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══ Button Group ═══ -->
+  <section>
+    <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Button Group</h2>
+    <div class="inline-flex rounded-lg shadow-sm" role="group">
+      <button class="rounded-l-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700
+                     hover:bg-gray-50 focus:z-10 focus:outline-2 focus:outline-blue-600
+                     dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
+        Day
+      </button>
+      <button class="border-y border-gray-300 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700
+                     focus:z-10 focus:outline-2 focus:outline-blue-600
+                     dark:border-gray-600 dark:bg-blue-900/30 dark:text-blue-300">
+        Week
+      </button>
+      <button class="border-y border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700
+                     hover:bg-gray-50 focus:z-10 focus:outline-2 focus:outline-blue-600
+                     dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
+        Month
+      </button>
+      <button class="rounded-r-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700
+                     hover:bg-gray-50 focus:z-10 focus:outline-2 focus:outline-blue-600
+                     dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700">
+        Year
+      </button>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

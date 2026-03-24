@@ -1,0 +1,70 @@
+# buf.gen.yaml v2 — Code generation for Go + TypeScript (Connect-ES).
+# Docs: https://buf.build/docs/configuration/v2/buf-gen-yaml
+#
+# Usage:
+#   buf generate              # Generate all
+#   buf generate proto/       # Generate from specific input
+#   buf generate --clean      # Clean output dirs first
+
+version: v2
+
+# Managed mode — auto-sets language-specific options.
+# Removes the need to put go_package in every .proto file.
+managed:
+  enabled: true
+  override:
+    # Go: set package prefix for generated code
+    - file_option: go_package_prefix
+      value: github.com/yourorg/yourproject/gen/go
+    # Don't override well-known types
+    - file_option: go_package_prefix
+      module: buf.build/googleapis/googleapis
+      value: google.golang.org/genproto/googleapis
+
+plugins:
+  # --- Go ---
+
+  # Protobuf types (messages, enums)
+  - remote: buf.build/protocolbuffers/go
+    out: gen/go
+    opt: paths=source_relative
+
+  # gRPC service stubs
+  - remote: buf.build/grpc/go
+    out: gen/go
+    opt: paths=source_relative
+
+  # Connect-Go service stubs (optional — use instead of or alongside gRPC)
+  # - remote: buf.build/connectrpc/go
+  #   out: gen/go
+  #   opt: paths=source_relative
+
+  # --- TypeScript (Connect-ES) ---
+
+  # Protobuf types
+  - remote: buf.build/bufbuild/es
+    out: gen/ts
+    opt: target=ts
+
+  # Connect-ES service stubs
+  - remote: buf.build/connectrpc/es
+    out: gen/ts
+    opt: target=ts
+
+  # --- Uncomment for additional languages ---
+
+  # Python protobuf
+  # - remote: buf.build/protocolbuffers/python
+  #   out: gen/python
+
+  # Python gRPC
+  # - remote: buf.build/grpc/python
+  #   out: gen/python
+
+  # Validation (protovalidate)
+  # - remote: buf.build/bufbuild/protovalidate-go
+  #   out: gen/go
+  #   opt: paths=source_relative
+
+# Delete output dirs before generating (prevents stale files)
+clean: true

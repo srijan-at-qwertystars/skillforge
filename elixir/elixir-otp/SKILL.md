@@ -476,3 +476,23 @@ config :libcluster, topologies: [
 8. **Not handling `:DOWN` messages** — When monitoring processes, always handle `{:DOWN, ref, :process, pid, reason}` in `handle_info`.
 9. **Overusing macros** — Prefer functions and behaviours. Macros make code harder to trace and debug.
 10. **Compile-time config for runtime values** — Use `runtime.exs` and `System.fetch_env!/1` for secrets. Never put secrets in `config.exs`.
+
+## References
+
+- **`references/advanced-patterns.md`** — GenStateMachine, dynamic supervisors at scale, process registries (Registry, :global, Horde), backpressure with GenStage/Flow/Broadway, hot code reloading, ETS/DETS patterns, persistent_term, Poolboy, umbrella apps, behaviours/protocols deep dive.
+- **`references/troubleshooting.md`** — Process leaks, memory bloat, message queue overflow, supervisor restart intensity, deadlocks, ETS limits, atom exhaustion, binary memory, debugging with :observer/:sys/:recon, common crash reasons.
+- **`references/testing-guide.md`** — ExUnit async tests, setup/setup_all, describe blocks, tags, Mox, Bypass, Ecto sandbox, StreamData property testing, doctests, coverage, CI setup.
+
+## Templates and Scripts
+
+### Scripts (`scripts/`)
+- **`scripts/new-genserver.sh <Module>`** — Scaffold GenServer with callbacks and child spec.
+- **`scripts/new-supervisor.sh <Module> [strategy]`** — Scaffold Supervisor with configurable strategy.
+- **`scripts/otp-health-check.sh <node@host>`** — Report process count, memory, queues, ETS, uptime.
+
+### Templates (`assets/`)
+- **`assets/genserver-template.ex`** — Production GenServer with telemetry, typespecs, error handling.
+- **`assets/supervisor-template.ex`** — Supervisor with multiple children, Registry, DynamicSupervisor.
+- **`assets/application-template.ex`** — Application module with supervision tree, runtime config.
+- **`assets/mix-project-template.exs`** — mix.exs with common deps, aliases, releases.
+- **`assets/docker-compose.yml`** — Dev environment: Postgres, test DB, Redis.

@@ -374,46 +374,25 @@ Escape hatch for one-off values not in the default scale:
 
 ## COMPONENT PATTERNS
 
-### Button
+Quick examples (full library in `references/component-library.md`):
 ```html
-<button class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2
-               text-sm font-semibold text-white shadow-sm
-               hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2
-               focus-visible:outline-blue-600 active:bg-blue-800
-               disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-  Save Changes
-</button>
-```
+<!-- Button -->
+<button class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold
+               text-white shadow-sm hover:bg-blue-700 focus-visible:outline-2
+               focus-visible:outline-offset-2 focus-visible:outline-blue-600
+               disabled:opacity-50 transition-colors">Save Changes</button>
 
-### Card
-```html
-<div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm
-            dark:border-gray-700 dark:bg-gray-800">
-  <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Card Title</h3>
-  <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Card content here.</p>
+<!-- Card -->
+<div class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+  <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Title</h3>
+  <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Content</p>
 </div>
-```
 
-### Form Input
-```html
-<label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
-<input type="email"
-       class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2
-              text-sm shadow-sm placeholder:text-gray-400
-              focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none
-              dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-       placeholder="you@example.com" />
-```
-
-### Responsive Navbar
-```html
-<nav class="flex items-center justify-between px-6 py-4 bg-white shadow-sm dark:bg-gray-900">
-  <a href="/" class="text-xl font-bold">Logo</a>
-  <div class="hidden md:flex items-center gap-6">
-    <a href="#" class="text-sm text-gray-600 hover:text-gray-900">About</a>
-  </div>
-  <button class="md:hidden" aria-label="Menu">☰</button>
-</nav>
+<!-- Input -->
+<input type="email" placeholder="you@example.com"
+       class="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm
+              placeholder:text-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200
+              focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
 ```
 
 ## @apply — USE SPARINGLY
@@ -498,3 +477,23 @@ Run `npx astro add tailwind`.
 6. **@apply order**: `@apply` respects utility order but not cascade position. Prefer `@utility` in v4.
 7. **Purge false positives**: If classes disappear in production, check `@source` paths cover all template locations.
 8. **Container query prefix collision**: `@sm:` (container) vs `sm:` (viewport). Use `@` prefix for container queries.
+
+## REFERENCE DOCUMENTS
+
+- **`references/advanced-patterns.md`** — Complex responsive layouts, container queries, @layer, CSS variables with Tailwind, dynamic classes (safelist, matchUtilities), animation keyframes, custom variants, Tailwind + CSS Modules, design system tokens, multi-theme support, RTL, print styles.
+- **`references/troubleshooting.md`** — Classes not applied (content scanning), specificity conflicts, dynamic class failures, purge problems, v3→v4 migration, PostCSS conflicts, IDE IntelliSense, dev tools debugging, production size optimization, SSR hydration mismatches.
+- **`references/component-library.md`** — Production components with responsive + dark mode: buttons (all variants/sizes/states), forms (inputs, validation, floating labels, toggles), cards, modals, dropdowns, navigation (navbar/sidebar/breadcrumbs/tabs), alerts/toasts, tables, pagination, badges, avatars.
+
+## SCRIPTS
+
+- **`scripts/tailwind-init.sh`** — Init Tailwind v4 in a project. Auto-detects framework (Next.js/Vite/Remix/Astro/plain) and package manager. Usage: `./scripts/tailwind-init.sh [framework]`
+- **`scripts/tailwind-migrate.sh`** — Analyze v3→v4 migration: config, imports, deprecated utilities, PostCSS, plugins. Usage: `./scripts/tailwind-migrate.sh [path]`
+- **`scripts/class-audit.sh`** — Audit for anti-patterns: long class strings (>15), duplicates, conflicts, heavy @apply, dynamic interpolation. Usage: `./scripts/class-audit.sh [dir]`
+
+## ASSET TEMPLATES
+
+- **`assets/app.css`** — v4 base CSS template: @import, @theme (OKLCH brand colors, semantic tokens, shadows, animations), keyframes, custom variants, custom utilities, base styles.
+- **`assets/button-components.html`** — Button set: solid/outline/ghost variants, 5 sizes, icon buttons, loading/disabled states, button groups.
+- **`assets/form-components.html`** — Inputs, validation states, input groups, floating labels, select, checkbox/radio/radio cards, textarea, toggle switches, complete form.
+- **`assets/layout-templates.html`** — Holy grail, sidebar+main, dashboard grid, responsive card grid (breakpoint + auto-fit + featured).
+- **`assets/tailwind-cheatsheet.md`** — Quick reference of utilities by category: layout, flexbox, grid, spacing, sizing, typography, colors, borders, shadows, transitions, breakpoints, variants.

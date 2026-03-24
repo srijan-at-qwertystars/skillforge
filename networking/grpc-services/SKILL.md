@@ -435,3 +435,50 @@ def test_create_payment(grpc_server):
 8. **No health checks** — K8s/LBs can't route traffic correctly.
 9. **Unversioned proto packages** — use `foo.v1` for safe evolution.
 10. **Skipping buf lint** — catches naming and structure issues before review.
+
+## References
+
+Deep-dive docs for specific topics:
+
+- **[`references/advanced-patterns.md`](references/advanced-patterns.md)** — Streaming best practices,
+  flow control, keepalive tuning, connection management, retry policies, hedging,
+  service mesh (Istio/Envoy), gRPC-Web proxying, reflection, channelz, xDS load
+  balancing, custom codecs, compression, large messages, protobuf evolution.
+
+- **[`references/troubleshooting.md`](references/troubleshooting.md)** — Error code reference,
+  UNAVAILABLE vs DEADLINE_EXCEEDED, connection reset, TLS failures, proto compatibility,
+  codegen mismatches, streaming backpressure, memory leaks, interceptor ordering,
+  metadata limits, debugging with grpcurl/grpcui/Evans.
+
+- **[`references/buf-guide.md`](references/buf-guide.md)** — Buf CLI deep dive: buf.yaml v2,
+  buf.gen.yaml, lint rules, breaking change detection, BSR, managed mode, remote
+  plugins, buf curl, protoc migration, CI integration.
+
+## Scripts
+
+Executable utilities in `scripts/`:
+
+- **`scripts/proto-init.sh`** — Scaffold a new protobuf project with buf.yaml,
+  buf.gen.yaml, directory structure, and starter proto file.
+  Usage: `./scripts/proto-init.sh <project-name> <go|ts|python>`
+
+- **`scripts/grpc-health-check.sh`** — Health check a gRPC service via grpcurl.
+  Reports health status, lists services via reflection.
+  Usage: `./scripts/grpc-health-check.sh <host:port> [service-name] [--list] [--tls]`
+
+- **`scripts/proto-breaking-check.sh`** — Run buf breaking change detection against
+  a git branch. Usage: `./scripts/proto-breaking-check.sh [branch]`
+
+## Assets & Templates
+
+Reusable templates in `assets/`:
+
+- **`assets/service.proto`** — Proto3 service template with CRUD, pagination,
+  field masks, batch operations, and proper naming conventions.
+- **`assets/buf.yaml`** — Modern buf.yaml v2 with STANDARD lint + FILE breaking rules.
+- **`assets/buf.gen.yaml`** — Code generation for Go + TypeScript (Connect-ES)
+  with managed mode.
+- **`assets/go-server-template.go`** — Go gRPC server with interceptors (recovery,
+  logging, request-id), health check, reflection, keepalive, graceful shutdown.
+- **`assets/docker-compose.yml`** — Dev environment: gRPC server, Envoy gRPC-Web
+  proxy, grpcui testing UI.

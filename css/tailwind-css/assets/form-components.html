@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Form Components — Tailwind CSS</title>
+  <link rel="stylesheet" href="output.css" />
+</head>
+<body class="bg-gray-50 p-8 dark:bg-gray-950">
+<div class="mx-auto max-w-2xl space-y-12">
+
+  <!-- ═══ Text Inputs ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Text Inputs</h2>
+    <div class="space-y-5">
+
+      <!-- Default -->
+      <div>
+        <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Full Name</label>
+        <input type="text" id="name" placeholder="John Doe"
+               class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                      text-sm shadow-sm placeholder:text-gray-400
+                      focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none
+                      dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500" />
+      </div>
+
+      <!-- With helper text -->
+      <div>
+        <label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+        <input type="email" id="email" placeholder="you@example.com"
+               class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                      text-sm shadow-sm placeholder:text-gray-400
+                      focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none
+                      dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+        <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">We'll never share your email.</p>
+      </div>
+
+      <!-- Disabled -->
+      <div>
+        <label for="disabled" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Disabled</label>
+        <input type="text" id="disabled" value="Cannot edit" disabled
+               class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-gray-50 px-3 py-2
+                      text-sm text-gray-500 shadow-sm cursor-not-allowed
+                      dark:border-gray-700 dark:bg-gray-900 dark:text-gray-500" />
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Validation States ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Validation States</h2>
+    <div class="space-y-5">
+
+      <!-- Success -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
+        <div class="relative mt-1.5">
+          <input type="text" value="johndoe"
+                 class="block w-full rounded-lg border border-green-500 bg-white px-3 py-2 pr-10
+                        text-sm shadow-sm focus:border-green-500 focus:ring-2 focus:ring-green-500/20
+                        focus:outline-none dark:border-green-400 dark:bg-gray-800 dark:text-white" />
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+            <svg class="size-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+            </svg>
+          </div>
+        </div>
+        <p class="mt-1.5 text-sm text-green-600 dark:text-green-400">Username is available!</p>
+      </div>
+
+      <!-- Error -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+        <div class="relative mt-1.5">
+          <input type="email" value="invalid-email" aria-invalid="true" aria-describedby="email-error"
+                 class="block w-full rounded-lg border border-red-500 bg-white px-3 py-2 pr-10
+                        text-sm shadow-sm focus:border-red-500 focus:ring-2 focus:ring-red-500/20
+                        focus:outline-none dark:border-red-400 dark:bg-gray-800 dark:text-white" />
+          <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
+            <svg class="size-5 text-red-500" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+            </svg>
+          </div>
+        </div>
+        <p id="email-error" class="mt-1.5 text-sm text-red-600 dark:text-red-400">Please enter a valid email address.</p>
+      </div>
+
+      <!-- Warning -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
+        <input type="password" value="weak"
+               class="mt-1.5 block w-full rounded-lg border border-yellow-500 bg-white px-3 py-2
+                      text-sm shadow-sm focus:border-yellow-500 focus:ring-2 focus:ring-yellow-500/20
+                      focus:outline-none dark:border-yellow-400 dark:bg-gray-800 dark:text-white" />
+        <p class="mt-1.5 text-sm text-yellow-600 dark:text-yellow-400">Password is weak. Use at least 8 characters.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Input Groups ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Input Groups</h2>
+    <div class="space-y-5">
+
+      <!-- Leading addon -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Website</label>
+        <div class="mt-1.5 flex rounded-lg shadow-sm">
+          <span class="inline-flex items-center rounded-l-lg border border-r-0 border-gray-300 bg-gray-50
+                       px-3 text-sm text-gray-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-400">
+            https://
+          </span>
+          <input type="text" placeholder="www.example.com"
+                 class="block w-full min-w-0 flex-1 rounded-r-lg border border-gray-300 bg-white px-3 py-2
+                        text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none
+                        dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+        </div>
+      </div>
+
+      <!-- Trailing button -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Search</label>
+        <div class="mt-1.5 flex rounded-lg shadow-sm">
+          <input type="text" placeholder="Search..."
+                 class="block w-full min-w-0 flex-1 rounded-l-lg border border-r-0 border-gray-300 bg-white
+                        px-3 py-2 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+                        focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+          <button class="inline-flex items-center rounded-r-lg border border-blue-600 bg-blue-600 px-4
+                         text-sm font-medium text-white hover:bg-blue-700 transition-colors">
+            Search
+          </button>
+        </div>
+      </div>
+
+      <!-- With icon inside -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Amount</label>
+        <div class="relative mt-1.5">
+          <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <span class="text-sm text-gray-500">$</span>
+          </div>
+          <input type="number" placeholder="0.00"
+                 class="block w-full rounded-lg border border-gray-300 bg-white py-2 pl-7 pr-3
+                        text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+                        focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Select ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Select</h2>
+    <div class="space-y-5">
+
+      <div>
+        <label for="country" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Country</label>
+        <select id="country"
+                class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                       text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+                       focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white">
+          <option value="">Select a country</option>
+          <option>United States</option>
+          <option>Canada</option>
+          <option>United Kingdom</option>
+          <option>Germany</option>
+          <option>France</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Checkboxes & Radios ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Checkboxes & Radios</h2>
+    <div class="space-y-6">
+
+      <!-- Checkboxes -->
+      <fieldset>
+        <legend class="text-sm font-medium text-gray-700 dark:text-gray-300">Notifications</legend>
+        <div class="mt-3 space-y-3">
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" checked
+                   class="mt-0.5 size-4 rounded border-gray-300 text-blue-600 shadow-sm
+                          focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0
+                          dark:border-gray-600 dark:bg-gray-800 dark:checked:bg-blue-500" />
+            <div>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Email notifications</span>
+              <p class="text-xs text-gray-500 dark:text-gray-400">Get notified via email</p>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox"
+                   class="mt-0.5 size-4 rounded border-gray-300 text-blue-600 shadow-sm
+                          focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0
+                          dark:border-gray-600 dark:bg-gray-800 dark:checked:bg-blue-500" />
+            <div>
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Push notifications</span>
+              <p class="text-xs text-gray-500 dark:text-gray-400">Get notified on your device</p>
+            </div>
+          </label>
+          <label class="flex items-start gap-3 cursor-pointer">
+            <input type="checkbox" disabled
+                   class="mt-0.5 size-4 rounded border-gray-300 text-blue-600 shadow-sm opacity-50
+                          cursor-not-allowed dark:border-gray-600 dark:bg-gray-800" />
+            <div>
+              <span class="text-sm font-medium text-gray-400 dark:text-gray-500">SMS (unavailable)</span>
+              <p class="text-xs text-gray-400 dark:text-gray-600">Coming soon</p>
+            </div>
+          </label>
+        </div>
+      </fieldset>
+
+      <!-- Radios -->
+      <fieldset>
+        <legend class="text-sm font-medium text-gray-700 dark:text-gray-300">Plan</legend>
+        <div class="mt-3 space-y-3">
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="radio" name="plan" value="free" checked
+                   class="size-4 border-gray-300 text-blue-600 shadow-sm
+                          focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0
+                          dark:border-gray-600 dark:bg-gray-800" />
+            <span class="text-sm text-gray-700 dark:text-gray-300">Free — $0/mo</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="radio" name="plan" value="pro"
+                   class="size-4 border-gray-300 text-blue-600 shadow-sm
+                          focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0
+                          dark:border-gray-600 dark:bg-gray-800" />
+            <span class="text-sm text-gray-700 dark:text-gray-300">Pro — $9/mo</span>
+          </label>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <input type="radio" name="plan" value="enterprise"
+                   class="size-4 border-gray-300 text-blue-600 shadow-sm
+                          focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0
+                          dark:border-gray-600 dark:bg-gray-800" />
+            <span class="text-sm text-gray-700 dark:text-gray-300">Enterprise — Contact us</span>
+          </label>
+        </div>
+      </fieldset>
+
+      <!-- Radio Cards -->
+      <fieldset>
+        <legend class="text-sm font-medium text-gray-700 dark:text-gray-300">Select size</legend>
+        <div class="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-5">
+          <label class="flex cursor-pointer items-center justify-center rounded-lg border-2 border-blue-600
+                        bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700
+                        dark:border-blue-400 dark:bg-blue-950 dark:text-blue-300">
+            <input type="radio" name="size" value="xs" class="sr-only" checked />
+            XS
+          </label>
+          <label class="flex cursor-pointer items-center justify-center rounded-lg border-2 border-gray-200
+                        px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-300
+                        dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600">
+            <input type="radio" name="size" value="s" class="sr-only" />
+            S
+          </label>
+          <label class="flex cursor-pointer items-center justify-center rounded-lg border-2 border-gray-200
+                        px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-300
+                        dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600">
+            <input type="radio" name="size" value="m" class="sr-only" />
+            M
+          </label>
+          <label class="flex cursor-pointer items-center justify-center rounded-lg border-2 border-gray-200
+                        px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-300
+                        dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600">
+            <input type="radio" name="size" value="l" class="sr-only" />
+            L
+          </label>
+          <label class="flex cursor-pointer items-center justify-center rounded-lg border-2 border-gray-200
+                        px-3 py-2 text-sm font-medium text-gray-700 hover:border-gray-300
+                        dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-600">
+            <input type="radio" name="size" value="xl" class="sr-only" />
+            XL
+          </label>
+        </div>
+      </fieldset>
+    </div>
+  </section>
+
+  <!-- ═══ Textarea ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Textarea</h2>
+    <div>
+      <label for="message" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Message</label>
+      <textarea id="message" rows="4" placeholder="Write your message..."
+                class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                       text-sm shadow-sm placeholder:text-gray-400 resize-y
+                       focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none
+                       dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder:text-gray-500"></textarea>
+      <div class="mt-1.5 flex justify-between">
+        <p class="text-xs text-gray-500 dark:text-gray-400">Supports Markdown</p>
+        <p class="text-xs text-gray-500 dark:text-gray-400">0 / 500</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ Toggle Switch ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Toggle Switches</h2>
+    <div class="space-y-4">
+
+      <label class="flex items-center justify-between cursor-pointer">
+        <div>
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Email notifications</span>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Receive email updates</p>
+        </div>
+        <div class="relative">
+          <input type="checkbox" class="peer sr-only" checked />
+          <div class="h-6 w-11 rounded-full bg-gray-200 peer-checked:bg-blue-600
+                      peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500/20
+                      peer-focus-visible:ring-offset-2 transition-colors
+                      dark:bg-gray-700 dark:peer-checked:bg-blue-500"></div>
+          <div class="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm
+                      transition-transform peer-checked:translate-x-5"></div>
+        </div>
+      </label>
+
+      <label class="flex items-center justify-between cursor-pointer">
+        <div>
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Dark mode</span>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Use dark theme</p>
+        </div>
+        <div class="relative">
+          <input type="checkbox" class="peer sr-only" />
+          <div class="h-6 w-11 rounded-full bg-gray-200 peer-checked:bg-blue-600
+                      peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500/20
+                      peer-focus-visible:ring-offset-2 transition-colors
+                      dark:bg-gray-700 dark:peer-checked:bg-blue-500"></div>
+          <div class="absolute left-0.5 top-0.5 size-5 rounded-full bg-white shadow-sm
+                      transition-transform peer-checked:translate-x-5"></div>
+        </div>
+      </label>
+    </div>
+  </section>
+
+  <!-- ═══ Complete Form Example ═══ -->
+  <section>
+    <h2 class="mb-6 text-lg font-semibold text-gray-900 dark:text-white">Complete Form</h2>
+    <form class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+      <div class="space-y-5">
+        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">First name</label>
+            <input type="text" class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                                      text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+                                      focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Last name</label>
+            <input type="text" class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                                      text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+                                      focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
+          <input type="email" class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                                    text-sm shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20
+                                    focus:outline-none dark:border-gray-600 dark:bg-gray-700 dark:text-white" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">Message</label>
+          <textarea rows="3" class="mt-1.5 block w-full rounded-lg border border-gray-300 bg-white px-3 py-2
+                                    text-sm shadow-sm resize-y focus:border-blue-500 focus:ring-2
+                                    focus:ring-blue-500/20 focus:outline-none
+                                    dark:border-gray-600 dark:bg-gray-700 dark:text-white"></textarea>
+        </div>
+        <label class="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" class="size-4 rounded border-gray-300 text-blue-600
+                                        focus:ring-2 focus:ring-blue-500/20 focus:ring-offset-0
+                                        dark:border-gray-600 dark:bg-gray-700" />
+          <span class="text-sm text-gray-700 dark:text-gray-300">I agree to the terms and conditions</span>
+        </label>
+      </div>
+      <div class="mt-6 flex justify-end gap-3">
+        <button type="button" class="rounded-lg px-4 py-2 text-sm font-medium text-gray-700
+                                     hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">
+          Cancel
+        </button>
+        <button type="submit" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white
+                                     hover:bg-blue-700 transition-colors">
+          Submit
+        </button>
+      </div>
+    </form>
+  </section>
+
+</div>
+</body>
+</html>

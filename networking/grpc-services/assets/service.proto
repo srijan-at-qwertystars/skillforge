@@ -1,0 +1,179 @@
+// Template: Well-structured proto3 service with CRUD operations.
+// Replace "example" and "Example" with your domain entity.
+//
+// Conventions:
+//   - Package versioned: <org>.<domain>.v1
+//   - Messages: PascalCase
+//   - Fields: snake_case
+//   - Enums: UPPER_SNAKE_CASE, prefixed with enum name
+//   - Enum zero value: *_UNSPECIFIED
+//   - RPC request/response: <Verb><Entity>Request/Response
+//   - Field numbers 1-15: reserve for frequently accessed fields (1-byte varint)
+
+syntax = "proto3";
+package acme.example.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/acme/example/gen/go/example/v1;examplev1";
+
+// --- Enums ---
+
+enum ExampleStatus {
+  EXAMPLE_STATUS_UNSPECIFIED = 0;
+  EXAMPLE_STATUS_ACTIVE = 1;
+  EXAMPLE_STATUS_INACTIVE = 2;
+  EXAMPLE_STATUS_ARCHIVED = 3;
+}
+
+// --- Resources ---
+
+// Example is the primary resource managed by this service.
+message Example {
+  // Unique identifier. Format: "ex_<ulid>"
+  string id = 1;
+
+  // Human-readable display name.
+  string display_name = 2;
+
+  // Optional description.
+  string description = 3;
+
+  // Current status.
+  ExampleStatus status = 4;
+
+  // When the resource was created. Output only.
+  google.protobuf.Timestamp create_time = 5;
+
+  // When the resource was last updated. Output only.
+  google.protobuf.Timestamp update_time = 6;
+
+  // Arbitrary key-value labels.
+  map<string, string> labels = 7;
+
+  // Tags for categorization.
+  repeated string tags = 8;
+
+  // Fields 9-15 reserved for future frequently-accessed fields.
+  reserved 9 to 15;
+}
+
+// --- Create ---
+
+message CreateExampleRequest {
+  // The example to create. The `id` field is ignored (server-assigned).
+  Example example = 1;
+
+  // Idempotency key to prevent duplicate creates.
+  string idempotency_key = 2;
+}
+
+message CreateExampleResponse {
+  Example example = 1;
+}
+
+// --- Get ---
+
+message GetExampleRequest {
+  // Resource ID. Required.
+  string id = 1;
+
+  // Fields to return. If not set, all fields are returned.
+  google.protobuf.FieldMask read_mask = 2;
+}
+
+message GetExampleResponse {
+  Example example = 1;
+}
+
+// --- List ---
+
+message ListExamplesRequest {
+  // Maximum number of results to return. Default: 50, max: 100.
+  int32 page_size = 1;
+
+  // Token from a previous ListExamplesResponse for pagination.
+  string page_token = 2;
+
+  // Fields to return on each resource.
+  google.protobuf.FieldMask read_mask = 3;
+
+  // Filter expression (e.g., "status=ACTIVE AND labels.env=prod").
+  string filter = 4;
+
+  // Order by expression (e.g., "create_time desc").
+  string order_by = 5;
+}
+
+message ListExamplesResponse {
+  repeated Example examples = 1;
+
+  // Token for fetching the next page. Empty if no more results.
+  string next_page_token = 2;
+
+  // Total count of matching resources (may be approximate).
+  int32 total_size = 3;
+}
+
+// --- Update ---
+
+message UpdateExampleRequest {
+  // The example with updated fields.
+  Example example = 1;
+
+  // Which fields to update. If not set, all non-empty fields are updated.
+  // Use this for partial updates: only fields in the mask are written.
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+message UpdateExampleResponse {
+  Example example = 1;
+}
+
+// --- Delete ---
+
+message DeleteExampleRequest {
+  // Resource ID to delete.
+  string id = 1;
+}
+
+// Returns empty on success. Use status codes for errors.
+message DeleteExampleResponse {}
+
+// --- Batch ---
+
+message BatchGetExamplesRequest {
+  // Up to 100 IDs to retrieve.
+  repeated string ids = 1;
+
+  google.protobuf.FieldMask read_mask = 2;
+}
+
+message BatchGetExamplesResponse {
+  repeated Example examples = 1;
+}
+
+// --- Service ---
+
+// ExampleService provides CRUD operations for Example resources.
+service ExampleService {
+  // Create a new example.
+  rpc CreateExample(CreateExampleRequest) returns (CreateExampleResponse);
+
+  // Get an example by ID.
+  rpc GetExample(GetExampleRequest) returns (GetExampleResponse);
+
+  // List examples with filtering and pagination.
+  rpc ListExamples(ListExamplesRequest) returns (ListExamplesResponse);
+
+  // Update an example. Supports partial updates via field mask.
+  rpc UpdateExample(UpdateExampleRequest) returns (UpdateExampleResponse);
+
+  // Delete an example by ID.
+  rpc DeleteExample(DeleteExampleRequest) returns (DeleteExampleResponse);
+
+  // Get multiple examples by IDs.
+  rpc BatchGetExamples(BatchGetExamplesRequest) returns (BatchGetExamplesResponse);
+}

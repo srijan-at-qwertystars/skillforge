@@ -1,0 +1,56 @@
+# buf.yaml v2 — Recommended configuration for protobuf projects.
+# Docs: https://buf.build/docs/configuration/v2/buf-yaml
+
+version: v2
+
+# Module definitions — each module is independently lintable and publishable.
+modules:
+  - path: proto
+    # Uncomment and set for BSR publishing:
+    # name: buf.build/yourorg/yourproject
+
+# Dependencies from the Buf Schema Registry.
+# Run `buf dep update` after adding dependencies.
+deps:
+  - buf.build/googleapis/googleapis
+  # - buf.build/grpc/grpc
+  # - buf.build/bufbuild/protovalidate
+
+# Lint configuration — STANDARD catches most issues.
+lint:
+  use:
+    - STANDARD
+
+  # Uncomment to add comment requirements:
+  # - COMMENTS
+
+  # Common exceptions for pragmatic teams:
+  except: []
+    # - PACKAGE_VERSION_SUFFIX    # If you don't version packages
+    # - RPC_REQUEST_RESPONSE_UNIQUE  # If you share request types
+
+  # Skip vendored or generated protos:
+  ignore: []
+    # - proto/vendor
+    # - proto/third_party
+
+  # Naming conventions:
+  enum_zero_value_suffix: _UNSPECIFIED
+  service_suffix: Service
+  rpc_allow_google_protobuf_empty_requests: true
+  rpc_allow_google_protobuf_empty_responses: true
+
+  # Enable inline ignores: // buf:lint:ignore RULE_NAME
+  allow_comment_ignores: true
+
+# Breaking change detection — FILE is the strictest and recommended level.
+breaking:
+  use:
+    - FILE
+
+  # Skip experimental APIs from breaking checks:
+  ignore: []
+    # - proto/experimental
+
+  # Ignore packages containing "alpha" or "beta":
+  ignore_unstable_packages: true
