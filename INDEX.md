@@ -179,3 +179,6 @@
 | devops | [terraform-modules](devops/terraform-modules/) | Terraform module authoring, composition, versioning, testing, registry publishing | tested |
 | networking | [webrtc-patterns](networking/webrtc-patterns/) | WebRTC peer connections, signaling, ICE/STUN/TURN, media tracks, data channels, SFU architectures | tested |
 | security | [oauth2-flows](security/oauth2-flows/) | OAuth 2.0/OIDC flows — authorization code + PKCE, client credentials, device code, token exchange, DPoP | tested |
+| networking | [envoy-proxy](networking/envoy-proxy/) | Envoy proxy configuration — listeners, clusters, xDS, routing, rate limiting, WASM filters, mTLS | created |
+| frontend | [tauri-desktop](frontend/tauri-desktop/) | Tauri v2 desktop apps — Rust backend, commands/IPC, plugins, window management, security, signing | created |
+| security | [vault-secrets](security/vault-secrets/) | HashiCorp Vault — secrets engines, auth methods, policies, Vault Agent, dynamic secrets, PKI | created |
