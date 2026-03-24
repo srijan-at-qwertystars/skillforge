@@ -314,7 +314,6 @@ finally:
 const { Kafka } = require("kafkajs");
 const kafka = new Kafka({ clientId: "order-service", brokers: ["localhost:9092"] });
 const producer = kafka.producer({ idempotent: true });
-
 await producer.connect();
 await producer.send({
   topic: "orders",
@@ -398,6 +397,8 @@ kafka-acls.sh --bootstrap-server broker:9093 --command-config admin.properties \
 
 ## Docker / Local Development (KRaft)
 
+See `assets/docker-compose.yml` for a full dev environment (broker, Schema Registry, Connect, AKHQ). Quick single-broker:
+
 ```yaml
 services:
   kafka:
@@ -412,13 +413,6 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-  schema-registry:
-    image: confluentinc/cp-schema-registry:7.7.1
-    ports: ["8081:8081"]
-    environment:
-      SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
-    depends_on: [kafka]
 ```
 
 ## Common Patterns
@@ -450,41 +444,16 @@ Implement with separate consumer groups per retry topic. Use `message.timestamp.
 @Testcontainers
 class KafkaIntegrationTest {
     @Container
-    static KafkaContainer kafka = new KafkaContainer(
-        DockerImageName.parse("confluentinc/cp-kafka:7.7.1"));
-
+    static KafkaContainer kafka = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.7.1"));
     @Test
     void shouldProduceAndConsume() {
         Properties props = new Properties();
         props.put("bootstrap.servers", kafka.getBootstrapServers());
-        // produce, consume, assert
     }
 }
 ```
 
-### MockProducer / MockConsumer (unit tests)
-
-```java
-MockProducer<String, String> mock = new MockProducer<>(true, new StringSerializer(), new StringSerializer());
-mock.send(new ProducerRecord<>("topic", "key", "value"));
-assertEquals(1, mock.history().size());
-```
-
-### Python (testcontainers)
-
-```python
-from testcontainers.kafka import KafkaContainer
-def test_kafka():
-    with KafkaContainer() as kafka:
-        bootstrap = kafka.get_bootstrap_server()  # produce, consume, assert
-```
-
-## Production Operations
-
-- **Rolling upgrades**: Upgrade brokers one at a time. Set `inter.broker.protocol.version` to current during upgrade, bump after all done.
-- **Partition reassignment**: Use `kafka-reassign-partitions.sh` or Cruise Control. Throttle with `--throttle`.
-- **ISR**: Monitor `UnderReplicatedPartitions`. Never set `min.insync.replicas` ≥ `replication.factor`.
-- **Log compaction**: `cleanup.policy=compact` for KTable topics. Set `min.compaction.lag.ms` to control retention before compaction.
+Use `MockProducer`/`MockConsumer` for unit tests. Use `testcontainers` (`KafkaContainer`) for integration tests in Java and Python.
 
 ## Common Pitfalls
 
@@ -498,3 +467,34 @@ def test_kafka():
 8. **Ignoring consumer lag** → processing delays cascade into outages.
 9. **Large messages (>1MB)** → increase `max.message.bytes`, `max.request.size`, `fetch.max.bytes`.
 10. **Schema changes without compatibility** → deserialization failures in production.
+
+## Reference Guides
+
+Deep-dive references for advanced usage, troubleshooting, and operations:
+
+| Document | Path | Contents |
+|----------|------|----------|
+| **Advanced Patterns** | `references/advanced-patterns.md` | EOS internals, transactional produce-consume, Streams topology design, windowing (tumbling/hopping/sliding/session), state store management (RocksDB tuning, in-memory, changelog), interactive queries, KTable FK joins, punctuators, error handling, DLQ/retry patterns, event sourcing, CQRS, outbox pattern with Debezium |
+| **Troubleshooting** | `references/troubleshooting.md` | Consumer lag diagnosis, rebalancing storms (static group membership, cooperative rebalancing), under-replicated partitions, broker disk full, offset reset confusion, ordering guarantees, timeout tuning, producer failures, schema evolution conflicts, Connect task failures, JMX/Prometheus monitoring, log compaction gotchas |
+| **Operations Guide** | `references/operations-guide.md` | Cluster sizing (disk/CPU/memory/network), partition count strategy, replication factor selection, broker config tuning, rolling upgrades, partition reassignment with throttling, preferred leader election, monitoring/alerting thresholds, backup/DR strategies, multi-datacenter with MirrorMaker 2, KRaft migration from ZooKeeper |
+
+## Scripts
+
+Executable helper scripts in `scripts/`:
+
+| Script | Usage | Description |
+|--------|-------|-------------|
+| `kafka-local.sh` | `./scripts/kafka-local.sh start [topic1 ...]` | Start local KRaft Kafka cluster via Docker, create topics, produce test messages |
+| `consumer-lag-check.sh` | `./scripts/consumer-lag-check.sh [group]` | Check consumer lag for all groups or a specific group, with threshold warnings |
+| `topic-management.sh` | `./scripts/topic-management.sh create orders -p 12 -r 3` | Create, describe, alter, delete topics with partition/RF options |
+
+## Asset Templates
+
+Ready-to-use templates and configs in `assets/`:
+
+| Asset | Language/Format | Description |
+|-------|----------------|-------------|
+| `docker-compose.yml` | YAML | Full dev environment: KRaft broker, Schema Registry, Kafka Connect, AKHQ UI |
+| `producer-template.py` | Python | Avro producer with Schema Registry, delivery callbacks, graceful shutdown |
+| `consumer-template.py` | Python | Manual-commit consumer with DLQ routing, graceful shutdown, batch processing |
+| `streams-template.java` | Java | Kafka Streams topology with windowed aggregation, RocksDB tuning, EOS, error handling, interactive queries |

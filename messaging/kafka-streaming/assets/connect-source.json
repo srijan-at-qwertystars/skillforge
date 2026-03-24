@@ -1,0 +1,59 @@
+{
+  "name": "postgres-cdc-source",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "debezium",
+    "database.password": "${env:POSTGRES_PASSWORD}",
+    "database.dbname": "app_db",
+
+    "topic.prefix": "cdc",
+    "plugin.name": "pgoutput",
+
+    "table.include.list": "public.orders,public.customers,public.products",
+    "column.exclude.list": "public.customers.password_hash,public.customers.ssn",
+
+    "slot.name": "debezium_slot",
+    "publication.name": "debezium_pub",
+
+    "key.converter": "io.confluent.connect.avro.AvroConverter",
+    "key.converter.schema.registry.url": "http://schema-registry:8081",
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "http://schema-registry:8081",
+
+    "transforms": "route,unwrap",
+    "transforms.route.type": "org.apache.kafka.connect.transforms.RegexRouter",
+    "transforms.route.regex": "cdc\\.public\\.(.*)",
+    "transforms.route.replacement": "$1-events",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.add.fields": "op,table,source.ts_ms",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+
+    "snapshot.mode": "initial",
+    "snapshot.lock.timeout.ms": "10000",
+
+    "heartbeat.interval.ms": "10000",
+    "heartbeat.action.query": "INSERT INTO heartbeat (id, ts) VALUES (1, NOW()) ON CONFLICT (id) DO UPDATE SET ts = NOW()",
+
+    "errors.tolerance": "all",
+    "errors.deadletterqueue.topic.name": "dlq-postgres-cdc",
+    "errors.deadletterqueue.topic.replication.factor": 3,
+    "errors.deadletterqueue.context.headers.enable": true,
+    "errors.log.enable": true,
+    "errors.log.include.messages": true,
+
+    "tasks.max": "1",
+
+    "signal.data.collection": "public.debezium_signal",
+    "incremental.snapshot.chunk.size": "2048",
+
+    "tombstones.on.delete": true,
+
+    "topic.creation.default.replication.factor": 3,
+    "topic.creation.default.partitions": 6,
+    "topic.creation.default.cleanup.policy": "delete",
+    "topic.creation.default.retention.ms": "604800000"
+  }
+}

@@ -1,0 +1,30 @@
+---
+galaxy_info:
+  author: Your Name
+  description: Role description
+  license: MIT
+  min_ansible_version: "2.14"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+    - name: Debian
+      versions:
+        - bookworm
+
+  galaxy_tags:
+    - system
+    # Add tags relevant to this role
+
+dependencies: []
+  # List role dependencies here:
+  # - role: common
+  # - role: firewall
+  #   vars:
+  #     firewall_allowed_ports: [8080]

@@ -331,6 +331,38 @@ AWX (open-source) / AAP (Red Hat) add: web UI + REST API, RBAC, job templates wi
 | Ignoring variable precedence | Know the 15 levels; extra-vars for overrides only |
 | Unpinned collection versions | Pin in `requirements.yml` |
 
+## References
+
+Detailed deep-dive guides in `references/`:
+
+| Reference | Topics |
+|-----------|--------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Custom modules (Python), filter/lookup/callback/connection/strategy plugins, dynamic inventory (AWS/GCP/Azure), collections development, execution environments, Ansible Navigator, Molecule testing, Terraform integration |
+| [troubleshooting.md](references/troubleshooting.md) | SSH failures, privilege escalation, variable precedence, Jinja2 errors, handlers not running, idempotency failures, slow execution profiling, fact caching, vault passwords, module-not-found, Python interpreter discovery, WinRM setup, become issues, async tracking, debug techniques |
+| [security-hardening.md](references/security-hardening.md) | Vault best practices (multi-vault, vault-id, rekeying), secret rotation, SSH key management, least-privilege playbooks, CIS benchmark automation, security scanning (Trivy, OpenSCAP), certificate management, firewall automation, user/access management, audit logging, compliance-as-code |
+
+## Scripts
+
+Ready-to-use scaffolding tools in `scripts/`:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [ansible-init.sh](scripts/ansible-init.sh) | Scaffold full Ansible project (inventories, roles, ansible.cfg, .gitignore) | `./scripts/ansible-init.sh my-project` |
+| [role-init.sh](scripts/role-init.sh) | Create role with Molecule test scaffold | `./scripts/role-init.sh nginx --path roles/` |
+| [vault-helper.sh](scripts/vault-helper.sh) | Vault operations wrapper (encrypt, decrypt, rekey, find, check) | `./scripts/vault-helper.sh encrypt secrets.yml --vault-id prod` |
+
+## Assets
+
+Reusable templates and configs in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [ansible.cfg](assets/ansible.cfg) | Production config with SSH pipelining, fact caching, performance tuning |
+| [playbook-template.yml](assets/playbook-template.yml) | Full playbook with pre_tasks, roles, block/rescue/always, handlers, post_tasks |
+| [role-template/](assets/role-template/) | Complete role skeleton (tasks, defaults, handlers, meta, templates, vars) |
+| [inventory-template.yml](assets/inventory-template.yml) | YAML inventory with groups, children, host_vars, group_vars examples |
+| [docker-compose.yml](assets/docker-compose.yml) | Dev environment: control node + Ubuntu/Rocky/Debian managed nodes |
+
 ## Examples
 
 ### Input: "Set up Docker on Ubuntu"

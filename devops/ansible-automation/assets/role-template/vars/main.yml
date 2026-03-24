@@ -1,0 +1,3 @@
+---
+# vars/main.yml — High-precedence variables (internal to role, not meant for override)
+# Use defaults/main.yml for user-configurable variables.

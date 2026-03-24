@@ -171,6 +171,9 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["example.com", "*.examp
 
 ### Custom Middleware
 
+For high-performance middleware, use pure ASGI instead of `BaseHTTPMiddleware`.
+See `references/advanced-patterns.md` for details.
+
 ```python
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
@@ -181,11 +184,7 @@ class TimingMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-Process-Time"] = str(time.perf_counter() - start)
         return response
-
-app.add_middleware(TimingMiddleware)
 ```
-
-For high-performance middleware, use pure ASGI middleware instead of `BaseHTTPMiddleware`.
 
 ## Background Tasks
 
@@ -430,61 +429,35 @@ settings = Settings()  # Reads from env vars / .env file
 
 ```python
 app = FastAPI(
-    title="My API", version="2.0.0",
-    docs_url="/docs",       # Set to None to disable in production
-    redoc_url="/redoc",
+    title="My API", version="2.0.0", docs_url="/docs", redoc_url="/redoc",
     openapi_tags=[{"name": "items", "description": "Item operations"}],
 )
 
-@router.get("/health", include_in_schema=False)  # Exclude from OpenAPI
-async def health():
-    return {"status": "ok"}
+@router.get("/health", include_in_schema=False)
+async def health(): return {"status": "ok"}
 ```
 
 ## Deployment
 
 ```bash
-# Development
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Production (gunicorn + uvicorn workers)
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000           # Dev
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000  # Prod
 ```
 
-Dockerfile:
-
-```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["gunicorn", "app.main:app", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
-```
+See `assets/Dockerfile` and `assets/docker-compose.yml` for production templates.
 
 ## Performance
 
-- Use `async def` for I/O-bound endpoints, `def` for CPU-bound (auto-threadpooled).
-- Configure connection pooling: `pool_size`, `max_overflow`, `pool_pre_ping`.
-- Cache with Redis or `cachetools`. Use cursor-based pagination over offset.
-- Use `ORJSONResponse` for faster serialization. Set `response_model_exclude_unset=True`.
+- Use `async def` for I/O-bound, `def` for CPU-bound (auto-threadpooled).
+- Configure pooling: `pool_size`, `max_overflow`, `pool_pre_ping`.
+- Use `ORJSONResponse` for faster JSON. Cursor pagination over offset for large tables.
 
 ```python
 from fastapi.responses import ORJSONResponse
 app = FastAPI(default_response_class=ORJSONResponse)
-
-# Cursor pagination
-@router.get("/items/")
-async def list_items(cursor: int | None = None, limit: int = Query(20, le=100),
-                     db: AsyncSession = Depends(get_db)):
-    query = select(Item).order_by(Item.id).limit(limit + 1)
-    if cursor:
-        query = query.where(Item.id > cursor)
-    results = (await db.execute(query)).scalars().all()
-    next_cursor = results[-1].id if len(results) > limit else None
-    return {"items": results[:limit], "next_cursor": next_cursor}
 ```
+
+See `references/database-patterns.md` for cursor pagination and bulk operations.
 
 ## Common Pitfalls
 
@@ -498,4 +471,31 @@ async def list_items(cursor: int | None = None, limit: int = Query(20, le=100),
 8. **BackgroundTasks for heavy work**: Shares the event loop. Use Celery/ARQ instead.
 9. **Deprecated on_event**: Use `lifespan` context manager instead.
 10. **TestClient without context manager**: Use `with TestClient(app) as client:` for lifespan.
-10. **TestClient without context manager**: Use `with TestClient(app) as client:` for lifespan.
+
+---
+
+## Reference Guides
+
+Deep-dive docs in `references/` — each has a TOC.
+
+- **`advanced-patterns.md`** — Pure ASGI middleware, DI patterns (scoped, class-based, parameterized), background tasks + ARQ, streaming, SSE, Strawberry GraphQL + DataLoaders, WebSocket rooms, rate limiting (memory/Redis), request validation hooks, OpenAPI customization, multi-tenancy, API versioning.
+- **`troubleshooting.md`** — Async/sync traps, session leaks, circular DI, CORS failures, upload OOM, WebSocket zombies, Pydantic v2 migration, uvicorn crashes, slow startup, async testing, 422 debugging, schema conflicts.
+- **`database-patterns.md`** — Async SQLAlchemy 2.0, repository + UoW patterns, Alembic async migrations, connection pooling, read replicas, soft deletes, cursor/offset pagination, bulk ops, raw SQL, test fixtures, multi-DB setup.
+
+## Scripts
+
+Run with `bash scripts/<script>` or `./scripts/<script>` (all `chmod +x`).
+
+- **`fastapi-init.sh <name>`** — Full project scaffold (app/, tests/, alembic/, Docker, pyproject.toml).
+- **`generate-crud.sh <resource> [dir]`** — Model + schemas + service + router for a resource.
+- **`api-test-scaffold.sh <router> [dir]`** — Test file with async client, auth fixtures, method stubs.
+
+## Assets (Templates)
+
+| File | Description |
+|------|-------------|
+| `assets/docker-compose.yml` | FastAPI + Postgres + Redis dev environment with hot reload |
+| `assets/Dockerfile` | Multi-stage build: builder → slim runtime, non-root, healthcheck |
+| `assets/pyproject.toml` | Project deps + pytest/ruff/mypy/coverage config |
+| `assets/conftest.py` | Async test client, isolated DB sessions, JWT auth fixtures |
+| `assets/settings.py` | pydantic-settings with env validation, per-environment config |

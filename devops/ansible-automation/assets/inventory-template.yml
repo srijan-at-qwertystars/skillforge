@@ -1,0 +1,109 @@
+---
+# YAML Inventory Template
+# Demonstrates groups, children, host_vars, and group_vars
+
+all:
+  vars:
+    # Variables applied to ALL hosts
+    ansible_python_interpreter: auto_silent
+    ntp_servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+    dns_servers:
+      - 8.8.8.8
+      - 8.8.4.4
+
+  children:
+    # ── Environment Groups ──
+    production:
+      children:
+        prod_webservers:
+          hosts:
+            web1.prod.example.com:
+              ansible_host: 10.0.1.10
+              http_port: 80
+            web2.prod.example.com:
+              ansible_host: 10.0.1.11
+              http_port: 80
+          vars:
+            env: production
+            ssl_enabled: true
+
+        prod_dbservers:
+          hosts:
+            db1.prod.example.com:
+              ansible_host: 10.0.2.10
+              db_role: primary
+            db2.prod.example.com:
+              ansible_host: 10.0.2.11
+              db_role: replica
+          vars:
+            env: production
+            db_port: 5432
+            backup_enabled: true
+
+      vars:
+        env: production
+        monitoring_enabled: true
+
+    staging:
+      children:
+        staging_webservers:
+          hosts:
+            web1.staging.example.com:
+              ansible_host: 10.1.1.10
+        staging_dbservers:
+          hosts:
+            db1.staging.example.com:
+              ansible_host: 10.1.2.10
+      vars:
+        env: staging
+        monitoring_enabled: false
+
+    # ── Functional Groups (cross-environment) ──
+    webservers:
+      children:
+        prod_webservers:
+        staging_webservers:
+      vars:
+        http_port: 80
+        https_port: 443
+
+    dbservers:
+      children:
+        prod_dbservers:
+        staging_dbservers:
+      vars:
+        db_port: 5432
+
+    # ── Special Groups ──
+    monitoring:
+      hosts:
+        monitor.example.com:
+          ansible_host: 10.0.10.5
+          ansible_user: monitor
+      vars:
+        monitoring_role: server
+
+    bastion:
+      hosts:
+        bastion.example.com:
+          ansible_host: 203.0.113.50
+          ansible_port: 2222
+          ansible_user: jump
+
+# ─────────────────────────────────────
+# Companion files for clean separation:
+#
+# group_vars/
+#   all.yml           → vars for all hosts
+#   production.yml    → production-specific vars
+#   staging.yml       → staging-specific vars
+#   webservers.yml    → webserver vars
+#   dbservers.yml     → database vars
+#   production/
+#     vault.yml       → encrypted production secrets
+#
+# host_vars/
+#   web1.prod.example.com.yml  → per-host overrides
+#   db1.prod.example.com.yml   → per-host overrides

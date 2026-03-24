@@ -1,0 +1,20 @@
+---
+# defaults/main.yml — Lowest precedence variables (safe for users to override)
+
+# Enable/disable the entire role
+role_name_enabled: true
+
+# Service name
+# role_name_service: myservice
+
+# Package list
+role_name_packages: []
+
+# Configuration
+role_name_config_dir: /etc/role_name
+# role_name_user: appuser
+# role_name_group: appuser
+
+# Logging
+role_name_log_dir: /var/log/role_name
+role_name_log_level: info

@@ -1,0 +1,178 @@
+---
+# Playbook Template — Well-structured with all sections
+# Copy and adapt for your use case
+
+- name: Configure application servers
+  hosts: appservers
+  become: false
+  gather_facts: true
+  serial: "100%"          # or [1, 5, "100%"] for canary deploy
+  max_fail_percentage: 0  # 0 = fail on any host failure
+
+  vars:
+    app_name: myapp
+    app_port: 8080
+    app_user: appuser
+    app_config_dir: "/etc/{{ app_name }}"
+    deploy_timestamp: "{{ ansible_date_time.iso8601 }}"
+
+  vars_files:
+    - vars/common.yml
+    # - vault/secrets.yml
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - app_name is defined
+          - app_port | int > 0
+          - app_user is defined
+        fail_msg: "Required variables are missing"
+        quiet: true
+      tags: [always]
+
+    - name: Update package cache (Debian)
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      become: true
+      when: ansible_os_family == "Debian"
+      tags: [packages]
+
+    - name: Remove from load balancer
+      ansible.builtin.uri:
+        url: "https://lb.example.com/api/drain/{{ inventory_hostname }}"
+        method: POST
+      delegate_to: localhost
+      tags: [deploy]
+      when: false  # Enable when LB integration is ready
+
+  roles:
+    - role: common
+      tags: [common]
+    # - role: webserver
+    #   vars:
+    #     http_port: "{{ app_port }}"
+    #   tags: [webserver]
+
+  tasks:
+    - name: Ensure app directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+      loop:
+        - "{{ app_config_dir }}"
+        - "/var/log/{{ app_name }}"
+        - "/opt/{{ app_name }}"
+      become: true
+      tags: [install]
+
+    - name: Deploy application configuration
+      ansible.builtin.template:
+        src: "templates/{{ app_name }}.conf.j2"
+        dest: "{{ app_config_dir }}/{{ app_name }}.conf"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0644'
+        validate: "{{ app_name }} --validate-config %s"  # if app supports config validation
+        backup: true
+      become: true
+      notify: restart application
+      tags: [configure]
+
+    # Error handling with block/rescue/always
+    - name: Deploy application with rollback
+      tags: [deploy]
+      block:
+        - name: Deploy new version
+          ansible.builtin.copy:
+            src: "files/{{ app_name }}-latest.tar.gz"
+            dest: "/opt/{{ app_name }}/{{ app_name }}.tar.gz"
+            owner: "{{ app_user }}"
+            mode: '0644'
+          become: true
+
+        - name: Extract application
+          ansible.builtin.unarchive:
+            src: "/opt/{{ app_name }}/{{ app_name }}.tar.gz"
+            dest: "/opt/{{ app_name }}/"
+            remote_src: true
+            owner: "{{ app_user }}"
+          become: true
+          notify: restart application
+
+        - name: Flush handlers to restart now
+          ansible.builtin.meta: flush_handlers
+
+        - name: Verify application health
+          ansible.builtin.uri:
+            url: "http://localhost:{{ app_port }}/health"
+            status_code: 200
+            timeout: 10
+          retries: 5
+          delay: 5
+          register: health_check
+          until: health_check.status == 200
+
+      rescue:
+        - name: Rollback — restore previous version
+          ansible.builtin.copy:
+            src: "/opt/{{ app_name }}/{{ app_name }}.tar.gz.bak"
+            dest: "/opt/{{ app_name }}/{{ app_name }}.tar.gz"
+            remote_src: true
+          become: true
+
+        - name: Rollback — restart with old version
+          ansible.builtin.service:
+            name: "{{ app_name }}"
+            state: restarted
+          become: true
+
+        - name: Rollback — notify team
+          ansible.builtin.debug:
+            msg: "ROLLBACK performed on {{ inventory_hostname }} at {{ deploy_timestamp }}"
+
+      always:
+        - name: Log deployment result
+          ansible.builtin.lineinfile:
+            path: "/var/log/{{ app_name }}/deploy.log"
+            line: "{{ deploy_timestamp }} - {{ inventory_hostname }} - {{ 'SUCCESS' if health_check is defined and health_check.status == 200 else 'ROLLED BACK' }}"
+            create: true
+            mode: '0644'
+          become: true
+
+  post_tasks:
+    - name: Add back to load balancer
+      ansible.builtin.uri:
+        url: "https://lb.example.com/api/enable/{{ inventory_hostname }}"
+        method: POST
+      delegate_to: localhost
+      tags: [deploy]
+      when: false  # Enable when LB integration is ready
+
+    - name: Send deployment notification
+      ansible.builtin.uri:
+        url: "{{ slack_webhook_url | default('https://hooks.slack.com/services/CHANGE_ME') }}"
+        method: POST
+        body_format: json
+        body:
+          text: "✓ {{ app_name }} deployed to {{ inventory_hostname }}"
+      delegate_to: localhost
+      when: slack_webhook_url is defined
+      tags: [notify]
+
+  handlers:
+    - name: restart application
+      ansible.builtin.service:
+        name: "{{ app_name }}"
+        state: restarted
+      become: true
+
+    - name: reload application
+      ansible.builtin.service:
+        name: "{{ app_name }}"
+        state: reloaded
+      become: true

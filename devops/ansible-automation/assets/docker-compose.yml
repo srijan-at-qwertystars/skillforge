@@ -1,0 +1,99 @@
+# Ansible Development Environment
+# Control node + managed nodes for local testing
+#
+# Usage:
+#   docker compose up -d
+#   docker compose exec control ansible all -m ping
+#   docker compose exec control ansible-playbook /ansible/playbooks/site.yml
+#   docker compose down
+
+services:
+  # ── Ansible Control Node ──
+  control:
+    image: ubuntu:22.04
+    hostname: ansible-control
+    container_name: ansible-control
+    command: sleep infinity
+    volumes:
+      - ../:/ansible:ro          # mount project read-only
+      - ansible-ssh:/root/.ssh   # persist SSH keys
+    working_dir: /ansible
+    environment:
+      ANSIBLE_CONFIG: /ansible/ansible.cfg
+      ANSIBLE_HOST_KEY_CHECKING: "false"
+    networks:
+      ansible-net:
+        ipv4_address: 172.20.0.2
+    entrypoint: >
+      bash -c "
+        apt-get update -qq &&
+        apt-get install -y -qq python3 python3-pip sshpass openssh-client >/dev/null 2>&1 &&
+        pip3 install --quiet ansible ansible-lint molecule &&
+        ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N '' -q 2>/dev/null || true &&
+        exec sleep infinity
+      "
+
+  # ── Managed Node: Ubuntu ──
+  ubuntu-node:
+    image: geerlingguy/docker-ubuntu2204-ansible
+    hostname: ubuntu-node
+    container_name: ubuntu-node
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      ansible-net:
+        ipv4_address: 172.20.0.10
+    # SSH is pre-configured in the image
+
+  # ── Managed Node: Rocky Linux ──
+  rocky-node:
+    image: geerlingguy/docker-rockylinux9-ansible
+    hostname: rocky-node
+    container_name: rocky-node
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      ansible-net:
+        ipv4_address: 172.20.0.11
+
+  # ── Managed Node: Debian ──
+  debian-node:
+    image: geerlingguy/docker-debian12-ansible
+    hostname: debian-node
+    container_name: debian-node
+    privileged: true
+    cgroupns_mode: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    networks:
+      ansible-net:
+        ipv4_address: 172.20.0.12
+
+networks:
+  ansible-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+volumes:
+  ansible-ssh:
+
+# ─────────────────────────────────────
+# Test Inventory (save as inventories/docker/hosts.yml):
+#
+# all:
+#   hosts:
+#     ubuntu-node:
+#       ansible_host: 172.20.0.10
+#     rocky-node:
+#       ansible_host: 172.20.0.11
+#     debian-node:
+#       ansible_host: 172.20.0.12
+#   vars:
+#     ansible_user: root
+#     ansible_connection: ssh

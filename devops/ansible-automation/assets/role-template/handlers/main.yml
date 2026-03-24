@@ -1,0 +1,16 @@
+---
+# handlers/main.yml — Triggered by notify directives in tasks
+
+- name: restart role_name service
+  ansible.builtin.service:
+    name: "{{ role_name_service }}"
+    state: restarted
+  become: true
+  when: role_name_service is defined
+
+- name: reload role_name service
+  ansible.builtin.service:
+    name: "{{ role_name_service }}"
+    state: reloaded
+  become: true
+  when: role_name_service is defined

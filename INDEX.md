@@ -149,6 +149,6 @@
 | elixir | elixir-otp | Elixir/OTP patterns — GenServer, Supervisor, processes, ETS, distributed Elixir | tested |
 | networking | grpc-services | gRPC service design — protobuf, streaming, interceptors, Connect protocol, buf CLI | tested |
 | css | tailwind-css | Tailwind CSS v4 — utility-first styling, @theme, responsive design, dark mode, plugins | tested |
-| python | fastapi-patterns | FastAPI web framework — async APIs, dependency injection, auth, WebSockets, deployment | created |
-| messaging | kafka-streaming | Apache Kafka streaming — producers, consumers, Kafka Streams, Connect, Schema Registry | created |
-| devops | ansible-automation | Ansible automation — playbooks, roles, inventory, Vault, Molecule testing, AWX | created |
+| python | fastapi-patterns | FastAPI web framework — async APIs, dependency injection, auth, WebSockets, deployment | enriched |
+| messaging | kafka-streaming | Apache Kafka streaming — producers, consumers, Kafka Streams, Connect, Schema Registry | enriched |
+| devops | ansible-automation | Ansible automation — playbooks, roles, inventory, Vault, Molecule testing, AWX | enriched |

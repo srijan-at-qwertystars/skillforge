@@ -1,0 +1,62 @@
+---
+# tasks/main.yml — Primary task entry point
+# Include sub-task files for complex roles:
+#   - ansible.builtin.include_tasks: install.yml
+#   - ansible.builtin.include_tasks: configure.yml
+
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - role_name_enabled is defined
+    quiet: true
+  tags: [always]
+
+- name: Include OS-specific variables
+  ansible.builtin.include_vars: "{{ item }}"
+  with_first_found:
+    - files:
+        - "{{ ansible_distribution | lower }}-{{ ansible_distribution_major_version }}.yml"
+        - "{{ ansible_os_family | lower }}.yml"
+        - default.yml
+      paths: ../vars
+      skip: true
+  tags: [always]
+
+- name: Install required packages
+  ansible.builtin.package:
+    name: "{{ role_name_packages | default([]) }}"
+    state: present
+  become: true
+  when: role_name_packages | default([]) | length > 0
+  tags: [install]
+
+- name: Create configuration directory
+  ansible.builtin.file:
+    path: "{{ role_name_config_dir }}"
+    state: directory
+    owner: "{{ role_name_user | default('root') }}"
+    group: "{{ role_name_group | default('root') }}"
+    mode: '0755'
+  become: true
+  tags: [configure]
+
+- name: Deploy configuration
+  ansible.builtin.template:
+    src: config.j2
+    dest: "{{ role_name_config_dir }}/config.yml"
+    owner: "{{ role_name_user | default('root') }}"
+    group: "{{ role_name_group | default('root') }}"
+    mode: '0644'
+    backup: true
+  become: true
+  notify: restart role_name service
+  tags: [configure]
+
+- name: Ensure service is running
+  ansible.builtin.service:
+    name: "{{ role_name_service }}"
+    state: started
+    enabled: true
+  become: true
+  when: role_name_service is defined
+  tags: [service]
