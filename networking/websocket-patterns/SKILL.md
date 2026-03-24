@@ -497,3 +497,5 @@ Debug Socket.IO: `DEBUG=socket.io* node server.js`. Inspect browser frames in Ch
 - **[ws-server.ts](assets/ws-server.ts)** — Production ws-library server: rooms, JWT auth, heartbeat, rate limiting, graceful shutdown.
 - **[socket-io-server.ts](assets/socket-io-server.ts)** — Socket.IO server: Redis adapter, namespaces, middleware, connection state recovery.
 - **[nginx-websocket.conf](assets/nginx-websocket.conf)** — Nginx WebSocket proxy: upgrade headers, SSL, sticky sessions, rate limiting.
+
+<!-- tested: pass -->

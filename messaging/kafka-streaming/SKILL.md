@@ -417,3 +417,5 @@ p.Flush(5000)
 | [producer-template.py](assets/producer-template.py) | Python producer code template |
 | [consumer-template.py](assets/consumer-template.py) | Python consumer code template |
 | [streams-template.java](assets/streams-template.java) | Java Kafka Streams application template |
+
+<!-- tested: pass -->

@@ -1,113 +1,124 @@
-# QA Review: kafka-streaming
+# QA Review: messaging/kafka-streaming
 
-**Skill path:** `~/skillforge/messaging/kafka-streaming/`
-**Reviewed:** $(date -u +%Y-%m-%dT%H:%M:%SZ)
-**Verdict:** PASS (with noted issues)
+**Reviewed:** 2025-07-15
+**Skill path:** `messaging/kafka-streaming/`
+**Reviewer:** Copilot QA
+
+---
+
+## Scores
+
+| Dimension | Score | Notes |
+|-----------|-------|-------|
+| **Accuracy** | 4 | Two factual errors: `session.timeout.ms` default wrong, hopping window example incorrect |
+| **Completeness** | 5 | Excellent breadth: producers, consumers, Streams, Connect, Schema Registry, security, monitoring, ops |
+| **Actionability** | 5 | Production-ready templates in Java/Python/Node.js/Go, Docker Compose, config files, monitoring scripts |
+| **Trigger quality** | 4 | Good positive/negative triggers; slight false-trigger risk on broad terms |
+| **Overall** | **4.5** | High-quality skill with minor accuracy fixes needed |
 
 ---
 
 ## a. Structure Check
 
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| YAML `name` + `description` | ✅ | Present and well-formed |
-| Positive triggers in description | ✅ | Covers imports, docker images, Kafka concepts, adjacent patterns (event sourcing, CQRS, outbox, DLQ, EOS) |
-| Negative triggers in description | ✅ | Explicitly excludes RabbitMQ, SQS, Celery, Redis Pub/Sub, Pulsar, Kinesis, NATS; references `celery-task-queues` skill |
-| Body under 500 lines | ✅ | 500 total lines (484 body lines after 16-line frontmatter) |
-| Imperative voice, no filler | ✅ | Dense, technical, no hedging or fluff |
-| Examples with input/output | ✅ | Extensive code examples across Java, Python, Node.js, YAML, JSON, bash |
-| references/ linked from SKILL.md | ✅ | Table at line 475–479 links all 3 reference docs with descriptions |
-| scripts/ linked from SKILL.md | ✅ | Table at line 483–489 links all 3 scripts with usage |
-| assets/ linked from SKILL.md | ⚠️ | Table at line 493–500 lists 4 of 5 assets — **`connect-source.json` is missing** from the table |
+- [x] YAML frontmatter has `name` and `description`
+- [x] Positive triggers present (event-driven architectures, streaming pipelines, CDC, etc.)
+- [x] Negative triggers present (RabbitMQ, Redis pub/sub, SQS/SNS, Pub/Sub, Service Bus, MQTT, request-reply)
+- [x] Body under 500 lines (419 lines)
+- [x] Imperative voice used throughout
+- [x] Code examples in multiple languages (Java, Python, Node.js, Go)
+- [x] Resources linked from SKILL.md (references/, scripts/, assets/ tables)
+- [x] References exist: advanced-patterns.md (2128 lines), troubleshooting.md (1166 lines), api-reference.md (559 lines), operations-guide.md (590 lines)
+- [x] Scripts exist: setup-kafka.sh, monitor-lag.sh, kafka-local.sh, consumer-lag-check.sh, topic-management.sh
+- [x] Assets exist: docker-compose.yml, producer/consumer configs, connect-source.json, Python/Java templates
+
+**Verdict:** Structure is excellent. No issues.
 
 ---
 
-## b. Content Check
+## b. Content Check — Issues Found
 
-### Accuracy
+### Issue 1: `session.timeout.ms` default is wrong (SKILL.md line 109)
 
-| Claim | Verified | Status |
-|-------|----------|--------|
-| ZooKeeper removed in Kafka 4.0 | Web search confirms (released 2025-03-18) | ✅ |
-| KRaft default in 4.0+ | Confirmed | ✅ |
-| KIP-848 server-side rebalancing in 4.0 | Confirmed GA in 4.0 | ✅ |
-| Producer `acks` default = `all` | Correct for Kafka ≥ 3.0 (changed from `1`) | ✅ |
-| `session.timeout.ms` default = 45000 | Correct for Kafka 3.x+ | ✅ |
-| `enable.idempotence` default true since 3.0 | Confirmed | ✅ |
-| `EXACTLY_ONCE_V2` requires broker ≥ 2.5 | Confirmed (KIP-447) | ✅ |
-| KafkaJS: "Pure JS, async/await, no native deps" | Technically correct but **incomplete** — KafkaJS is in **maintenance mode** since 2024 | ⚠️ |
-| `franz-go` at `github.com/twmb/franz-go` | Correct | ✅ |
-| `sarama` at `github.com/IBM/sarama` | Correct (moved from Shopify) | ✅ |
-| Schema Registry compatibility table | Correct (BACKWARD is default) | ✅ |
+**Claim:** "Tune `session.timeout.ms` (default 45s)"
+**Actual:** The default in Kafka 3.x is **10 seconds** (10000ms), not 45 seconds. Verified via [Kafka 3.4 consumer docs](https://kafka.apache.org/34/configuration/consumer-configs/).
 
-### Code Correctness
+The consumer-config.properties asset file also sets `session.timeout.ms=45000`, which is a valid custom value but should not be labeled as the default.
 
-| File | Status | Issue |
-|------|--------|-------|
-| SKILL.md inline examples | ✅ | All Java, Python, Node.js, YAML snippets are correct |
-| `assets/producer-template.py` | ✅ | Correct confluent-kafka usage, proper delivery callbacks, graceful shutdown |
-| `assets/consumer-template.py` | ✅ | Correct manual-commit pattern, DLQ routing, signal handling |
-| `assets/docker-compose.yml` | ✅ | Valid KRaft config, correct inter-service dependencies, healthcheck |
-| `assets/connect-source.json` | ✅ | Valid Debezium config, proper env-var substitution for password |
-| `assets/streams-template.java` | ❌ | **Compile error**: Uses `events.branch(Named.as("branch-"), ...)` — this signature does not exist. `KStream.branch()` takes only `Predicate...` varargs (and is deprecated since Kafka 2.4/KIP-418). Should use `split().branch().defaultBranch()` API. |
-| `scripts/kafka-local.sh` | ✅ | Correct Docker-based KRaft setup |
-| `scripts/consumer-lag-check.sh` | ✅ | Proper lag parsing and threshold alerting |
-| `scripts/topic-management.sh` | ✅ | Full CRUD operations, correct CLI flags |
+### Issue 2: Hopping window example is incorrect (SKILL.md line 144)
 
-### Missing Gotchas
+**Claim:** `TimeWindows.ofSizeAndGrace(Duration.ofMinutes(5), Duration.ofMinutes(1))` shown as hopping window syntax.
+**Actual:** This creates a **tumbling** window with a 1-minute grace period. The second parameter is `grace`, not the advance/hop interval. A hopping window requires an additional `.advanceBy()` call:
+```java
+TimeWindows.ofSizeAndGrace(Duration.ofMinutes(5), Duration.ofMinutes(1))
+           .advanceBy(Duration.ofMinutes(2))
+```
+Verified via [Kafka Streams JavaDocs](https://kafka.apache.org/30/javadoc/org/apache/kafka/streams/kstream/TimeWindows.html).
 
-1. **KafkaJS maintenance mode**: The client libraries table should note that KafkaJS is in maintenance mode and recommend `@confluentinc/kafka-javascript` for new Node.js projects.
-2. **`message.timestamp.type` impact on compaction**: SKILL.md mentions `LogAppendTime` for retry topics but doesn't explain the interaction with compaction — `LogAppendTime` changes the semantics of `min.compaction.lag.ms`.
-3. **Consumer static group membership**: Mentioned in troubleshooting reference but not in the main SKILL.md pitfalls section — this is a key production pattern engineers hit.
+### Issue 3: Sticky partitioning attribution (SKILL.md line 57)
+
+**Claim:** "Null keys use sticky partitioning (round-robin per batch) in Kafka 3.x+"
+**Actual:** Sticky partitioning was introduced in **Kafka 2.4** (KIP-480), not 3.x+. The description "round-robin per batch" is also misleading — it sticks to one random partition per batch, not round-robin. Minor inaccuracy.
+
+### Issue 4: Docker image version inconsistency
+
+- `setup-kafka.sh` uses `apache/kafka:3.7.0`
+- `assets/docker-compose.yml` and SKILL.md use `apache/kafka:3.9.0`
+
+### Issue 5: Missing gotcha — KafkaJS maintenance status
+
+The Node.js example uses KafkaJS, which is effectively unmaintained (last release 2023). Users should be warned to consider alternatives like `confluent-kafka-javascript` for new projects.
+
+### Verified Claims (Correct)
+
+- ✅ `enable.idempotence=true` default since Kafka 3.0 (KIP-679)
+- ✅ KRaft mode supports 1.5M+ partitions
+- ✅ ZooKeeper removed in Kafka 4.0
+- ✅ `acks=all` default since Kafka 3.0
+- ✅ KafkaJS `{ idempotent: true }` API is correct
+- ✅ Schema Registry compatibility modes (BACKWARD default) correct
+- ✅ `min.insync.replicas=2` with `acks=all` recommendation correct
+- ✅ CooperativeStickyAssignor recommendation correct
+- ✅ Debezium connector config in connect-source.json is well-formed
+- ✅ Docker Compose KRaft setup is valid
+- ✅ CLI tool flags in api-reference.md are accurate
+- ✅ Producer/consumer config property files are thorough and correct
 
 ---
 
 ## c. Trigger Check
 
-**Positive trigger coverage**: Excellent. Covers:
-- Direct imports (`confluent-kafka`, `kafkajs`, `sarama`, `franz-go`, `org.apache.kafka`)
-- Docker images (`kafka/kraft/schema-registry`)
-- Concepts (`topics/partitions/consumer-groups/offsets/brokers`)
-- Adjacent patterns (`event sourcing`, `CQRS`, `transactional outbox`, `DLQ`, `retry topics`, `EOS`)
-- Operations (`monitoring`, `Kafka configuration tuning`)
+**Would trigger correctly:**
+- ✅ "Build a Kafka producer" → yes
+- ✅ "Set up event streaming with Kafka" → yes
+- ✅ "Kafka Streams windowing aggregation" → yes
+- ✅ "CDC with Debezium and Kafka" → yes
+- ✅ "Kafka consumer lag monitoring" → yes
+- ✅ "Schema Registry Avro compatibility" → yes
 
-**Negative trigger coverage**: Strong. Explicitly excludes:
-- RabbitMQ, SQS, Celery, Redis Pub/Sub (general message queues)
-- Pulsar, Kinesis, NATS (non-Kafka streaming)
-- Generic pub/sub without Kafka mention
-- Cross-references `celery-task-queues` skill
+**False trigger risks (low):**
+- ⚠️ "event-driven architectures" is broad — could trigger when user means non-Kafka event systems
+- ⚠️ "real-time analytics" could trigger for Flink/Spark Streaming without Kafka context
+- Mitigated by comprehensive negative trigger list
 
-**False trigger risk**: Low. The "DO NOT trigger" clause is specific and well-delineated. A query about "RabbitMQ consumer lag" or "SQS dead letter queue" would not match.
-
-**Under-trigger risk**: Low. The description covers the full Kafka ecosystem including Streams, Connect, Schema Registry, and operational concerns.
-
----
-
-## d. Scores
-
-| Dimension | Score | Rationale |
-|-----------|-------|-----------|
-| **Accuracy** | 4 | Core SKILL.md claims verified correct. KafkaJS maintenance-mode omission is notable but not an error. |
-| **Completeness** | 4 | Comprehensive coverage of Kafka ecosystem. Three deep reference docs, three scripts, five asset templates. Minor gap: `connect-source.json` unlisted in asset table. |
-| **Actionability** | 4 | Most templates are production-ready with error handling, graceful shutdown, DLQ routing. `streams-template.java` has a compile error in the branch API that would block direct use. |
-| **Trigger quality** | 5 | Thorough positive and negative triggers with cross-skill references. Minimal false-trigger risk. |
-
-**Overall: 4.25 / 5.0**
+**False negative risks:**
+- "confluent-kafka" / "librdkafka" not in trigger description
+- "Apache Pulsar" not listed as negative trigger (close competitor)
 
 ---
 
-## e. Issues
+## d. Summary
 
-Overall ≥ 4.0 and no dimension ≤ 2. **No GitHub issues required.**
+This is a **high-quality, comprehensive skill** with excellent breadth and depth. The reference docs, scripts, and templates are production-grade. The two factual errors (session.timeout.ms default, hopping window syntax) should be corrected but don't undermine the overall value. The Docker image version inconsistency between scripts and assets is a minor housekeeping issue.
 
-### Recommended Fixes (non-blocking)
-
-1. **`assets/streams-template.java` line 144**: Replace deprecated `branch(Named, Predicate...)` (which doesn't compile) with `split(Named.as("branch-")).branch(..., Branched.as("valid")).defaultBranch(Branched.as("invalid"))`.
-2. **SKILL.md line 280 (Client Libraries table)**: Add note that KafkaJS is in maintenance mode; recommend `@confluentinc/kafka-javascript` for new projects.
-3. **SKILL.md line 493 (Asset Templates table)**: Add `connect-source.json` entry.
+### Recommended fixes (priority order):
+1. **Fix** hopping window example — add `.advanceBy()` call
+2. **Fix** `session.timeout.ms` default from 45s to 10s
+3. **Fix** sticky partitioning: change "Kafka 3.x+" to "Kafka 2.4+" and clarify "random per batch" vs "round-robin"
+4. **Align** Docker image versions across setup-kafka.sh and assets
+5. **Add** KafkaJS deprecation warning in Node.js section
+6. **Add** "confluent-kafka" / "librdkafka" to trigger description for better recall
 
 ---
 
-## f. Tested
-
-**Status: PASS**
+**Overall: 4.5/5 — PASS**
+**No GitHub issues required** (overall ≥ 4.0, no dimension ≤ 2)

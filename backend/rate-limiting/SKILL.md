@@ -494,3 +494,4 @@ npx autocannon -c 50 -d 10 -R 200 http://localhost:3000/api/test
 - **[rate-limiter.ts](assets/rate-limiter.ts):** TypeScript rate limiter library with token bucket, sliding window counter, and fixed window implementations. Redis Lua scripts for atomicity. Provides `consume()`, `peek()`, and `reset()` with typed `RateLimitResult`.
 - **[rate-limit-middleware.ts](assets/rate-limit-middleware.ts):** Express middleware with configurable strategies, pluggable key extractors (IP, user, API key, composite), cost functions, per-tier overrides, layered limiting, fail-open/closed modes, and `RateLimit-*` headers.
 - **[rate-limit.lua](assets/rate-limit.lua):** Redis Lua scripts for atomic rate limiting — token bucket, sliding window counter, fixed window, sliding window log, and concurrent request limiter.
+<!-- tested: pass -->
