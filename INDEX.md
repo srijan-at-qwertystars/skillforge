@@ -164,3 +164,6 @@
 | python | [django-patterns](python/django-patterns/) | Django web framework patterns — models, views, ORM, DRF, middleware, signals, deployment | tested |
 | messaging | [nats-messaging](messaging/nats-messaging/) | NATS messaging system — pub/sub, JetStream, KV store, clustering, security | tested |
 | platforms | [supabase-platform](platforms/supabase-platform/) | Supabase platform — auth, RLS, realtime, storage, edge functions, self-hosting | tested |
+| observability | [prometheus-monitoring](observability/prometheus-monitoring/) | Prometheus monitoring — PromQL, metrics, alerting rules, Alertmanager, exporters | created |
+| messaging | [rabbitmq-patterns](messaging/rabbitmq-patterns/) | RabbitMQ messaging — AMQP, exchanges, queues, routing, clustering, streams | created |
+| testing | [cypress-testing](testing/cypress-testing/) | Cypress E2E testing — selectors, intercepts, component testing, CI integration | created |
