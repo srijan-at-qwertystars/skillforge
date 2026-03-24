@@ -164,15 +164,6 @@ curl -sfL https://get.k3s.io | K3S_TOKEN=<SHARED_SECRET> sh -s - server \
   --tls-san=<LB_IP>
 ```
 
-Manage etcd snapshots:
-
-```yaml
-# config.yaml
-etcd-snapshot-schedule-cron: "0 */6 * * *"
-etcd-snapshot-retention: 10
-etcd-snapshot-dir: /backup/etcd
-```
-
 ### External Database
 
 ```bash
@@ -183,14 +174,9 @@ curl -sfL https://get.k3s.io | sh -s - server \
 # MySQL
 curl -sfL https://get.k3s.io | sh -s - server \
   --datastore-endpoint="mysql://user:pass@tcp(db-host:3306)/k3s"
-
-# External etcd
-curl -sfL https://get.k3s.io | sh -s - server \
-  --datastore-endpoint="https://etcd1:2379,https://etcd2:2379,https://etcd3:2379" \
-  --datastore-cafile=/path/to/ca.crt \
-  --datastore-certfile=/path/to/client.crt \
-  --datastore-keyfile=/path/to/client.key
 ```
+
+For etcd snapshots, backup/restore, load balancer config, token management, and cluster recovery, see [ha-clustering.md](references/ha-clustering.md).
 
 ## Networking
 
@@ -432,7 +418,7 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=v1.30.2+k3s1 sh -
 
 ## Edge and IoT Patterns
 
-### Resource-Constrained Nodes
+For edge devices with limited resources, disable unnecessary components and tune kubelet:
 
 ```yaml
 # config.yaml for edge devices
@@ -447,31 +433,11 @@ kubelet-arg:
   - kube-reserved=cpu=200m,memory=256Mi
 ```
 
-### Single-Node Edge
-
-```bash
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --cluster-init" sh -s - \
-  --disable=traefik --disable=servicelb \
-  --write-kubeconfig-mode=0644
-```
+See [edge-deployment.md](references/edge-deployment.md) for air-gap installation, ARM support, read-only root filesystem, agent-only nodes, disconnected operation, and Fleet management.
 
 ### Fleet Management
 
-Use Rancher Fleet or GitOps (Flux, ArgoCD) to manage K3s clusters at the edge. Push manifests to a Git repository; each edge cluster syncs on connectivity.
-
-## K3s vs K8s Quick Reference
-
-| Aspect | K3s | Upstream K8s |
-|---|---|---|
-| Binary | Single ~70 MB | Multiple binaries, 100s MB |
-| Default datastore | SQLite | etcd (mandatory) |
-| Container runtime | Bundled containerd | Install separately |
-| CNI | Bundled Flannel | Install separately |
-| Ingress | Bundled Traefik | Install separately |
-| Alpha APIs | Removed | Included |
-| Cloud providers | Removed (add externally) | Built-in |
-| Min RAM | ~512 MB | ~2 GB |
-| Target | Edge, IoT, dev, CI | Large-scale production |
+Use Rancher Fleet or GitOps (Flux, ArgoCD) to manage K3s clusters at the edge. Push manifests to a Git repository; each edge cluster syncs on connectivity. See [edge-deployment.md](references/edge-deployment.md) for details.
 
 ## Common Operations
 
@@ -495,3 +461,37 @@ kubectl get helmcharts,helmchartconfigs -A  # Helm resources
 - **etcd leader failures:** Ensure odd server count. Use fast disks (not SD cards).
 - **Air-gap image pull errors:** Verify tarballs in `/var/lib/rancher/k3s/agent/images/` and `registries.yaml`.
 - **HelmChart stuck:** Check job logs: `kubectl logs -n kube-system job/<helmchart-name>`.
+
+## Additional Resources
+
+### References
+
+In-depth guides in `references/`:
+
+| File | Description |
+|------|-------------|
+| [ha-clustering.md](references/ha-clustering.md) | HA with embedded etcd and external databases, load balancer config, token management, etcd backup/restore, cluster recovery, node management |
+| [troubleshooting.md](references/troubleshooting.md) | Diagnosing installation failures, node join issues, certificate errors, CoreDNS, Traefik, storage, containerd, air-gap, upgrades, etcd, systemd logs |
+| [edge-deployment.md](references/edge-deployment.md) | Edge/IoT patterns: minimal resources, air-gap install, private registries, Fleet management, ARM support, read-only root FS, disconnected operation |
+
+### Scripts
+
+Operational scripts in `scripts/`:
+
+| Script | Description |
+|--------|-------------|
+| [install-k3s-ha.sh](scripts/install-k3s-ha.sh) | Set up a 3-node K3s HA cluster with embedded etcd. Supports init, join, and agent roles with pre-flight checks and config generation. |
+| [k3s-health-check.sh](scripts/k3s-health-check.sh) | Comprehensive cluster health check: service status, nodes, system pods, certificates, etcd, storage, networking, workloads. Supports `--json` output. |
+| [air-gap-prepare.sh](scripts/air-gap-prepare.sh) | Download K3s binary, air-gap images, and install script into a single tarball for offline deployment. Supports extra images and checksum verification. |
+
+### Assets
+
+Configuration templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [k3s-config.yaml](assets/k3s-config.yaml) | Production `/etc/rancher/k3s/config.yaml` with security hardening, etcd snapshots, kubelet tuning, and API server audit logging. |
+| [registries.yaml](assets/registries.yaml) | Private registry mirrors with auth, TLS, and examples for Docker Hub, GHCR, ECR, and Harbor. |
+| [traefik-values.yaml](assets/traefik-values.yaml) | Custom Traefik Helm values: TLS, HTTP→HTTPS redirect, access logs, metrics, pod anti-affinity, PDB. |
+| [helmchart-example.yaml](assets/helmchart-example.yaml) | HelmChart CRD examples: repo charts, OCI charts, authenticated repos, HelmChartConfig overrides. |
+| [system-upgrade-plan.yaml](assets/system-upgrade-plan.yaml) | System upgrade controller plans for automated rolling upgrades (servers first, then agents). |

@@ -1,0 +1,162 @@
+# Composed Supergraph Schema — Apollo Federation v2
+#
+# This is an example of the output from:
+#   rover supergraph compose --config supergraph.yaml
+#
+# The router uses this schema to plan and execute queries across subgraphs.
+# Do NOT edit manually — always regenerate via composition.
+
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.4", for: EXECUTION)
+{
+  query: Query
+  mutation: Mutation
+}
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean, overrideLabel: String) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+scalar join__FieldSet
+scalar link__Import
+
+enum link__Purpose {
+  SECURITY
+  EXECUTION
+}
+
+enum join__Graph {
+  PRODUCTS @join__graph(name: "products", url: "http://localhost:4001/graphql")
+  REVIEWS @join__graph(name: "reviews", url: "http://localhost:4002/graphql")
+}
+
+# ── Query Root ────────────────────────────────────────────────────────────────
+
+type Query {
+  product(upc: String!): Product
+    @join__field(graph: PRODUCTS)
+
+  topProducts(first: Int = 5): [Product!]!
+    @join__field(graph: PRODUCTS)
+
+  categories: [Category!]!
+    @join__field(graph: PRODUCTS)
+
+  review(id: ID!): Review
+    @join__field(graph: REVIEWS)
+
+  recentReviews(limit: Int = 10): [Review!]!
+    @join__field(graph: REVIEWS)
+}
+
+# ── Mutation Root ─────────────────────────────────────────────────────────────
+
+type Mutation {
+  updateProductPrice(upc: String!, price: Int!): Product
+    @join__field(graph: PRODUCTS)
+
+  createReview(input: CreateReviewInput!): Review!
+    @join__field(graph: REVIEWS)
+
+  deleteReview(id: ID!): Boolean!
+    @join__field(graph: REVIEWS)
+}
+
+# ── Entities ──────────────────────────────────────────────────────────────────
+
+type Product
+  @join__type(graph: PRODUCTS, key: "upc")
+  @join__type(graph: REVIEWS, key: "upc")
+{
+  upc: String!
+
+  "Product name — owned by products subgraph"
+  name: String!
+    @join__field(graph: PRODUCTS)
+
+  "Price in cents"
+  price: Int!
+    @join__field(graph: PRODUCTS)
+
+  "Weight in grams"
+  weight: Int
+    @join__field(graph: PRODUCTS)
+
+  category: Category!
+    @join__field(graph: PRODUCTS)
+
+  createdAt: String!
+    @join__field(graph: PRODUCTS)
+
+  "All reviews for this product"
+  reviews: [Review!]!
+    @join__field(graph: REVIEWS)
+
+  "Average rating across all reviews (1-5)"
+  averageRating: Float
+    @join__field(graph: REVIEWS)
+
+  "Total number of reviews"
+  reviewCount: Int!
+    @join__field(graph: REVIEWS)
+
+  "Human-readable review summary — requires product name from products subgraph"
+  reviewSummary: String
+    @join__field(graph: REVIEWS, requires: "name")
+}
+
+type Category
+  @join__type(graph: PRODUCTS, key: "id")
+{
+  id: ID!
+  name: String!
+  products: [Product!]!
+}
+
+type Review
+  @join__type(graph: REVIEWS, key: "id")
+{
+  id: ID!
+  body: String!
+  rating: Int!
+  createdAt: String!
+  product: Product!
+    @join__field(graph: REVIEWS, provides: "name")
+  author: User!
+}
+
+type User
+  @join__type(graph: REVIEWS, key: "id")
+{
+  id: ID!
+  reviews: [Review!]!
+    @join__field(graph: REVIEWS)
+  reviewCount: Int!
+    @join__field(graph: REVIEWS)
+}
+
+# ── Value Types ───────────────────────────────────────────────────────────────
+
+"Monetary value — shared value type across subgraphs"
+type Money
+  @join__type(graph: PRODUCTS)
+{
+  amount: Int!
+  currency: String!
+}
+
+# ── Input Types ───────────────────────────────────────────────────────────────
+
+input CreateReviewInput
+  @join__type(graph: REVIEWS)
+{
+  productUpc: String!
+  authorId: String!
+  body: String!
+  rating: Int!
+}

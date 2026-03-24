@@ -1,0 +1,158 @@
+# Custom Traefik Helm values for K3s
+#
+# Apply via HelmChartConfig in /var/lib/rancher/k3s/server/manifests/traefik-config.yaml:
+#
+#   apiVersion: helm.cattle.io/v1
+#   kind: HelmChartConfig
+#   metadata:
+#     name: traefik
+#     namespace: kube-system
+#   spec:
+#     valuesContent: |-
+#       <paste values below>
+#
+# Or use these values with a standalone Helm install after disabling the bundled Traefik.
+
+# --- Deployment ---
+deployment:
+  replicas: 2
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9100"
+
+# --- Resources ---
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# --- Ports ---
+ports:
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+    protocol: TCP
+    # Redirect HTTP to HTTPS
+    redirectTo:
+      port: websecure
+      priority: 10
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+    protocol: TCP
+    tls:
+      enabled: true
+      # Use Let's Encrypt or custom cert
+      # certResolver: letsencrypt
+  metrics:
+    port: 9100
+    expose:
+      default: false
+
+# --- Entrypoints ---
+additionalArguments:
+  # Dashboard (disable in production or secure with auth)
+  - "--api.dashboard=true"
+  - "--api.insecure=false"
+  # Access logs
+  - "--accesslog=true"
+  - "--accesslog.format=json"
+  - "--accesslog.fields.defaultmode=keep"
+  # Metrics
+  - "--metrics.prometheus=true"
+  - "--metrics.prometheus.entryPoint=metrics"
+  # Request timeouts
+  - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=300"
+  - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=300"
+  # Trusted IPs for X-Forwarded-For
+  # - "--entrypoints.websecure.proxyProtocol.trustedIPs=10.0.0.0/8"
+  # - "--entrypoints.websecure.forwardedHeaders.trustedIPs=10.0.0.0/8"
+
+# --- Logging ---
+logs:
+  general:
+    level: INFO      # DEBUG, INFO, WARN, ERROR
+  access:
+    enabled: true
+    format: json
+    filters:
+      statusCodes:
+        - "400-599"  # Only log errors (reduce volume)
+
+# --- TLS ---
+# Let's Encrypt certificate resolver
+# certificatesResolvers:
+#   letsencrypt:
+#     acme:
+#       email: admin@example.com
+#       storage: /data/acme.json
+#       httpChallenge:
+#         entryPoint: web
+#       # Or use DNS challenge:
+#       # dnsChallenge:
+#       #   provider: cloudflare
+
+# TLS options (minimum TLS 1.2 for production)
+tlsOptions:
+  default:
+    minVersion: VersionTLS12
+    cipherSuites:
+      - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+
+# --- Service ---
+service:
+  type: LoadBalancer
+  # For ServiceLB (klipper-lb), use specific annotations:
+  # annotations:
+  #   svccontroller.k3s.cattle.io/lbpool: default
+  spec: {}
+    # loadBalancerIP: 10.0.0.200  # Fixed IP (MetalLB/cloud LB)
+    # externalTrafficPolicy: Local  # Preserve source IP
+
+# --- Persistence ---
+persistence:
+  enabled: true
+  size: 128Mi
+  path: /data
+  accessMode: ReadWriteOnce
+  # storageClass: local-path
+
+# --- Pod Disruption Budget ---
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# --- Affinity ---
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+          topologyKey: kubernetes.io/hostname
+
+# --- Node Selector ---
+# nodeSelector:
+#   node-role.kubernetes.io/control-plane: "true"
+
+# --- Tolerations ---
+tolerations:
+  - key: "CriticalAddonsOnly"
+    operator: "Exists"
+  - key: "node-role.kubernetes.io/control-plane"
+    operator: "Exists"
+    effect: "NoSchedule"

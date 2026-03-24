@@ -1,0 +1,160 @@
+# System Upgrade Controller — Automated K3s upgrade plans
+#
+# Prerequisites:
+#   1. Install the system-upgrade-controller:
+#      kubectl apply -f https://github.com/rancher/system-upgrade-controller/releases/latest/download/system-upgrade-controller.yaml
+#
+#   2. Apply this manifest:
+#      kubectl apply -f system-upgrade-plan.yaml
+#
+# Workflow:
+#   - server-plan upgrades control-plane nodes first (concurrency: 1)
+#   - agent-plan waits for server-plan, then upgrades worker nodes (concurrency: 2)
+#   - Nodes are cordoned/drained before upgrade and uncordoned after
+#
+# Docs: https://docs.k3s.io/upgrades/automated
+
+---
+# ServiceAccount for the upgrade jobs
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: system-upgrade
+  namespace: system-upgrade
+
+---
+# ClusterRoleBinding — grant permissions to the upgrade SA
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: system-upgrade
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: system-upgrade
+    namespace: system-upgrade
+
+---
+# Server (control-plane) upgrade plan
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: server-plan
+  namespace: system-upgrade
+  labels:
+    k3s-upgrade: server
+spec:
+  # Upgrade one server at a time to maintain quorum
+  concurrency: 1
+
+  # Cordon the node before upgrading
+  cordon: true
+
+  # Drain workloads before upgrading
+  drain:
+    force: true
+    skipWaitForDeleteTimeout: 60
+    ignoreDaemonSets: true
+    deleteEmptyDirData: true
+
+  # Select control-plane nodes
+  nodeSelector:
+    matchExpressions:
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+      # Optional: require an upgrade label to control rollout
+      # - key: k3s-upgrade
+      #   operator: In
+      #   values: ["enabled"]
+
+  serviceAccountName: system-upgrade
+
+  # Target K3s version — UPDATE THIS to trigger an upgrade
+  # Use either 'version' or 'channel', not both
+  version: v1.30.2+k3s1
+
+  # Or use a release channel for automatic latest:
+  # channel: https://update.k3s.io/v1-release/channels/stable
+
+  upgrade:
+    image: rancher/k3s-upgrade
+
+  # Tolerations for control-plane taints
+  tolerations:
+    - key: "CriticalAddonsOnly"
+      operator: "Exists"
+    - key: "node-role.kubernetes.io/control-plane"
+      operator: "Exists"
+      effect: "NoSchedule"
+    - key: "node-role.kubernetes.io/master"
+      operator: "Exists"
+      effect: "NoSchedule"
+
+---
+# Agent (worker) upgrade plan
+apiVersion: upgrade.cattle.io/v1
+kind: Plan
+metadata:
+  name: agent-plan
+  namespace: system-upgrade
+  labels:
+    k3s-upgrade: agent
+spec:
+  # Upgrade 2 agents at a time (adjust based on cluster size)
+  concurrency: 2
+
+  cordon: true
+
+  drain:
+    force: true
+    skipWaitForDeleteTimeout: 60
+    ignoreDaemonSets: true
+    deleteEmptyDirData: true
+
+  # Select worker nodes (non-control-plane)
+  nodeSelector:
+    matchExpressions:
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
+      # Optional: require an upgrade label
+      # - key: k3s-upgrade
+      #   operator: In
+      #   values: ["enabled"]
+
+  serviceAccountName: system-upgrade
+
+  # Wait for server-plan to complete before upgrading agents
+  prepare:
+    args:
+      - prepare
+      - server-plan
+    image: rancher/k3s-upgrade
+
+  # Must match server-plan version
+  version: v1.30.2+k3s1
+  # channel: https://update.k3s.io/v1-release/channels/stable
+
+  upgrade:
+    image: rancher/k3s-upgrade
+
+# ---
+# Usage Notes:
+#
+# Trigger an upgrade:
+#   1. Edit this file and update 'version' on both plans
+#   2. kubectl apply -f system-upgrade-plan.yaml
+#   3. Monitor: kubectl get plans -n system-upgrade
+#              kubectl get jobs -n system-upgrade
+#
+# Label-gated rollout:
+#   1. Uncomment the k3s-upgrade label selector in both plans
+#   2. Label nodes to opt-in: kubectl label node <name> k3s-upgrade=enabled
+#   3. Remove label to skip: kubectl label node <name> k3s-upgrade-
+#
+# Rollback:
+#   1. Update version to previous version in both plans
+#   2. Apply: kubectl apply -f system-upgrade-plan.yaml
+#   3. Note: Rollback may require etcd snapshot restore for data consistency

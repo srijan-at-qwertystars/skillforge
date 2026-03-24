@@ -1,0 +1,193 @@
+{
+  "_comment": "Meilisearch index settings for an e-commerce 'products' index. Apply with: curl -X PATCH 'http://localhost:7700/indexes/products/settings' -H 'Authorization: Bearer <MASTER_KEY>' -H 'Content-Type: application/json' -d @index-settings.json   —   Attributes are ordered by relevance/priority where applicable.",
+
+  "searchableAttributes": [
+    "name",
+    "brand",
+    "description",
+    "category",
+    "tags",
+    "sku"
+  ],
+
+  "filterableAttributes": [
+    "category",
+    "brand",
+    "price",
+    "rating",
+    "in_stock",
+    "color",
+    "size",
+    "tags",
+    "created_at",
+    "_geo"
+  ],
+
+  "sortableAttributes": [
+    "price",
+    "rating",
+    "popularity",
+    "created_at",
+    "name"
+  ],
+
+  "displayedAttributes": [
+    "id",
+    "name",
+    "brand",
+    "description",
+    "category",
+    "price",
+    "currency",
+    "rating",
+    "review_count",
+    "image_url",
+    "in_stock",
+    "color",
+    "size",
+    "tags",
+    "sku",
+    "popularity",
+    "_geo"
+  ],
+
+  "rankingRules": [
+    "words",
+    "typo",
+    "proximity",
+    "attribute",
+    "sort",
+    "exactness",
+    "popularity:desc",
+    "rating:desc"
+  ],
+
+  "distinctAttribute": "sku",
+
+  "stopWords": [
+    "a",
+    "an",
+    "the",
+    "is",
+    "are",
+    "was",
+    "were",
+    "be",
+    "been",
+    "being",
+    "have",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "will",
+    "would",
+    "shall",
+    "should",
+    "may",
+    "might",
+    "can",
+    "could",
+    "of",
+    "at",
+    "by",
+    "for",
+    "with",
+    "about",
+    "to",
+    "from",
+    "in",
+    "on",
+    "and",
+    "or",
+    "not",
+    "it",
+    "this",
+    "that"
+  ],
+
+  "synonyms": {
+    "phone": ["mobile", "cell", "cellphone", "smartphone"],
+    "mobile": ["phone", "cell", "cellphone", "smartphone"],
+    "laptop": ["notebook", "portable computer"],
+    "notebook": ["laptop", "portable computer"],
+    "tv": ["television", "monitor", "screen", "display"],
+    "television": ["tv", "monitor", "screen"],
+    "sneakers": ["trainers", "running shoes", "athletic shoes"],
+    "trainers": ["sneakers", "running shoes"],
+    "hoodie": ["hooded sweatshirt", "pullover"],
+    "pants": ["trousers", "slacks"],
+    "trousers": ["pants", "slacks"],
+    "headphones": ["earphones", "earbuds", "headset"],
+    "earbuds": ["headphones", "earphones"],
+    "charger": ["charging cable", "power adapter"],
+    "backpack": ["rucksack", "knapsack", "daypack"],
+    "rucksack": ["backpack", "knapsack"]
+  },
+
+  "typoTolerance": {
+    "enabled": true,
+    "minWordSizeForTypos": {
+      "oneTypo": 4,
+      "twoTypos": 8
+    },
+    "disableOnAttributes": [
+      "sku",
+      "isbn",
+      "upc",
+      "color"
+    ],
+    "disableOnWords": [
+      "USB",
+      "HDMI",
+      "LED",
+      "OLED",
+      "4K",
+      "5G",
+      "WiFi"
+    ]
+  },
+
+  "faceting": {
+    "maxValuesPerFacet": 200,
+    "sortFacetValuesBy": {
+      "*": "count",
+      "color": "alpha",
+      "size": "alpha"
+    }
+  },
+
+  "pagination": {
+    "maxTotalHits": 10000
+  },
+
+  "separatorTokens": [
+    "&",
+    "|",
+    "/",
+    "\\"
+  ],
+
+  "dictionary": [
+    "C++",
+    "C#",
+    ".NET",
+    "Wi-Fi",
+    "e-ink",
+    "iOS",
+    "macOS"
+  ],
+
+  "proximityPrecision": "byWord",
+
+  "embedders": {
+    "_comment": "Uncomment and configure to enable hybrid/semantic search. Requires Meilisearch v1.3+ with vector search enabled.",
+    "default": {
+      "source": "openAi",
+      "apiKey": "<OPENAI_API_KEY>",
+      "model": "text-embedding-3-small",
+      "documentTemplate": "A product called '{{doc.name}}' made by {{doc.brand}}. Category: {{doc.category}}. Description: {{doc.description}}"
+    }
+  }
+}

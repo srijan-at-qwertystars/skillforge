@@ -1,0 +1,180 @@
+# HelmChart CRD example for K3s
+#
+# K3s includes a Helm controller that deploys Helm charts declaratively
+# using the HelmChart custom resource (API: helm.cattle.io/v1).
+#
+# Place this file in /var/lib/rancher/k3s/server/manifests/ for auto-deploy,
+# or apply with kubectl apply -f helmchart-example.yaml
+#
+# Docs: https://docs.k3s.io/helm
+
+---
+# Example 1: Deploy a chart from a Helm repository
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cert-manager
+  namespace: kube-system
+spec:
+  repo: https://charts.jetstack.io
+  chart: cert-manager
+  version: "v1.14.5"
+  targetNamespace: cert-manager
+  createNamespace: true
+  set:
+    installCRDs: "true"
+  valuesContent: |-
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+    prometheus:
+      enabled: true
+      servicemonitor:
+        enabled: false
+
+---
+# Example 2: Deploy a chart from an OCI registry
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: ingress-nginx
+  namespace: kube-system
+spec:
+  repo: oci://ghcr.io/kubernetes/ingress-nginx
+  chart: ingress-nginx
+  version: "4.10.0"
+  targetNamespace: ingress-nginx
+  createNamespace: true
+  valuesContent: |-
+    controller:
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+      service:
+        type: LoadBalancer
+
+---
+# Example 3: Deploy a chart with authentication
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: private-app
+  namespace: kube-system
+spec:
+  repo: https://charts.private.example.com
+  chart: my-application
+  version: "2.1.0"
+  targetNamespace: apps
+  createNamespace: true
+  # Reference a Secret for repo authentication
+  authSecret:
+    name: helm-repo-creds
+  valuesContent: |-
+    image:
+      repository: registry.example.com/my-app
+      tag: "v2.1.0"
+    replicas: 2
+    ingress:
+      enabled: true
+      className: traefik
+      hosts:
+        - host: app.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+
+---
+# Secret for authenticated Helm repo access
+apiVersion: v1
+kind: Secret
+metadata:
+  name: helm-repo-creds
+  namespace: kube-system
+type: Opaque
+stringData:
+  username: helm-user
+  password: helm-password
+
+---
+# Example 4: Deploy from a local chart (embedded in a ConfigMap)
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kube-prometheus-stack
+  namespace: kube-system
+spec:
+  repo: https://prometheus-community.github.io/helm-charts
+  chart: kube-prometheus-stack
+  version: "57.0.0"
+  targetNamespace: monitoring
+  createNamespace: true
+  # Jobs have a default timeout of 300s; increase for large charts
+  timeout: "600s"
+  valuesContent: |-
+    # Minimal config for edge/resource-constrained environments
+    prometheus:
+      prometheusSpec:
+        retention: 24h
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            memory: 1Gi
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
+    grafana:
+      enabled: true
+      resources:
+        requests:
+          cpu: 50m
+          memory: 128Mi
+      persistence:
+        enabled: true
+        size: 2Gi
+    alertmanager:
+      enabled: true
+      alertmanagerSpec:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+    # Disable components not needed on edge
+    kubeEtcd:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeProxy:
+      enabled: false
+
+---
+# Example 5: HelmChartConfig — override values of a bundled chart
+# Use this to customize Traefik, CoreDNS, or other charts that ship with K3s
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      websecure:
+        tls:
+          enabled: true
+    logs:
+      access:
+        enabled: true
+    additionalArguments:
+      - "--api.dashboard=true"

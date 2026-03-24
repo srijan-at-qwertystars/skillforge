@@ -221,14 +221,14 @@ subgraphs:
 
 ### Composition errors to watch for
 
-- **Type conflict**: Same field with different types across subgraphs. Fix by aligning types or using `@shareable`.
-- **Missing @key**: Entity referenced in one subgraph but key not declared in another.
-- **@requires referencing non-existent fields**: The external field must exist in the owning subgraph.
-- **Inconsistent nullability**: Align nullable/non-nullable across subgraph definitions of shared fields.
+- **Type conflict**: Same field with different types across subgraphs.
+- **Missing @key**: Entity referenced but key not declared.
+- **@requires referencing non-existent fields**: External field must exist in owning subgraph.
+- **Inconsistent nullability**: Align nullable/non-nullable across subgraphs.
 
 ## Apollo Router Configuration
 
-### router.yaml
+See [assets/router.yaml](assets/router.yaml) for a full production-ready configuration.
 
 ```yaml
 supergraph:
@@ -239,15 +239,10 @@ headers:
     request:
       - propagate:
           named: "Authorization"
-      - propagate:
-          named: "X-Request-ID"
 traffic_shaping:
   all:
     deduplicate_query: true
     timeout: 30s
-  subgraphs:
-    products:
-      timeout: 10s
 telemetry:
   exporters:
     tracing:
@@ -273,8 +268,6 @@ APOLLO_KEY=service:my-graph:key APOLLO_GRAPH_REF=my-graph@prod router --config r
 
 ### Pattern 1: Gateway-level JWT validation (recommended)
 
-Configure Apollo Router to validate JWTs and propagate claims:
-
 ```yaml
 authentication:
   router:
@@ -283,9 +276,8 @@ authentication:
         - url: https://auth.example.com/.well-known/jwks.json
       header_name: Authorization
       header_value_prefix: "Bearer "
-
 authorization:
-  require_authentication: false  # set true to block unauthenticated
+  require_authentication: false
 ```
 
 ### Pattern 2: Propagate claims to subgraphs via headers
@@ -388,37 +380,11 @@ Align subgraphs to bounded contexts. Each team owns one or more subgraphs:
 
 ### Entity ownership rules
 
-- **One owner per entity**: A single subgraph defines the canonical entity with `@key` and core fields.
-- **Contributors extend**: Other subgraphs add fields by declaring the entity type with `@key` and only their fields.
-- **Never duplicate business logic**: If two subgraphs need the same computed field, extract to a shared subgraph or use `@shareable`.
+- **One owner per entity**: A single subgraph defines the canonical entity with `@key` and core fields
+- **Contributors extend**: Other subgraphs add fields by declaring the entity with `@key` and their fields only
+- **Never duplicate business logic**: Use `@shareable` or extract to a shared subgraph
 
-### Contributing fields to an entity from another subgraph
-
-Products subgraph (owner):
-
-```graphql
-type Product @key(fields: "upc") {
-  upc: String!
-  name: String!
-  price: Int!
-}
-```
-
-Reviews subgraph (contributor):
-
-```graphql
-type Product @key(fields: "upc") {
-  upc: String!
-  reviews: [Review!]!
-  averageRating: Float
-}
-
-type Review {
-  id: ID!
-  body: String!
-  rating: Int!
-}
-```
+See [subgraph-patterns.md](references/subgraph-patterns.md) for deep dives on entity design, @key variations, interface entities, and more.
 
 ## Managed Federation with GraphOS
 
@@ -432,48 +398,30 @@ type Review {
 ### CI/CD integration
 
 ```yaml
-# .github/workflows/schema-check.yml — run on every PR
+# .github/workflows/schema-check.yml
 - name: Check subgraph schema
   run: rover subgraph check $APOLLO_GRAPH_REF --name $SUBGRAPH_NAME --schema ./schema.graphql
   env:
     APOLLO_KEY: ${{ secrets.APOLLO_KEY }}
-
-# Publish on merge to main
-- name: Publish subgraph
-  if: github.ref == 'refs/heads/main'
-  run: |
-    rover subgraph publish $APOLLO_GRAPH_REF \
-      --name $SUBGRAPH_NAME --schema ./schema.graphql --routing-url $SUBGRAPH_URL
 ```
+
+See [schema-check.sh](scripts/schema-check.sh) for a comprehensive local + remote validation script.
 
 ### Benefits
 
-- Prevents breaking changes from reaching production.
-- Tracks field usage metrics for deprecation decisions.
-- Provides schema change history and audit log.
-- Enables contract variants for different API consumers.
+- Prevents breaking changes from reaching production
+- Tracks field usage metrics; provides schema history and audit log
+- Enables contract variants for different API consumers
 
 ## Migrating from Monolithic GraphQL
 
-### Step-by-step approach
+1. Deploy router in front of monolith as the sole subgraph (zero behavior change)
+2. Annotate entities with `@key`; add `__resolveReference` stubs
+3. Extract one domain at a time using `@override` for gradual field migration
+4. Validate with `rover subgraph check` on every change
+5. Repeat for each bounded context
 
-1. **Deploy router in front of monolith**: Run the monolith as the sole subgraph. Clients switch to the router endpoint. Zero behavior change.
-2. **Annotate entities with @key**: Identify domain entities in the monolith schema and add `@key` directives.
-3. **Extract one domain at a time**: Create a new subgraph for one bounded context. Move types, fields, and resolvers. Use `@override` to shift resolution.
-4. **Validate with schema checks**: Run `rover subgraph check` on every change.
-5. **Repeat**: Extract the next domain. Each extraction is independently deployable.
-
-### Use @override for gradual migration
-
-```graphql
-# New subgraph takes over "name" from monolith; use label for progressive rollout
-type Product @key(fields: "upc") {
-  upc: String!
-  name: String! @override(from: "monolith", label: "percent(10)")
-}
-```
-
-Increase the percentage as confidence grows.
+See [migration-guide.md](references/migration-guide.md) for detailed patterns including schema stitching migration, progressive `@override`, data migration, testing, and rollback strategies.
 
 ## Alternatives Comparison
 
@@ -485,14 +433,48 @@ Increase the percentage as confidence grows.
 | WunderGraph Cosmo   | Vendor-neutral federation alternative  | Smaller ecosystem, newer                      |
 | GraphQL Hive        | Open-source schema registry + gateway  | Requires self-hosting or Hive Cloud           |
 
-Choose **Apollo Federation** for greenfield distributed GraphQL. Use **Mesh** when integrating heterogeneous non-GraphQL APIs. Use **schema stitching** only for rapid prototyping or small internal aggregations.
+Choose **Apollo Federation** for greenfield distributed GraphQL. Use **Mesh** when integrating heterogeneous non-GraphQL APIs.
 
 ## Common Pitfalls
 
-- **Missing __resolveReference**: Every entity-contributing subgraph needs one. Composition succeeds but runtime fails.
+- **Missing __resolveReference**: Composition succeeds but runtime fails.
 - **N+1 in entity resolvers**: Always use DataLoader or batch fetching.
-- **Over-sharing with @shareable**: Only share fields that truly have identical semantics across subgraphs.
-- **Circular entity dependencies**: Keep subgraph dependency graphs acyclic. If A needs B and B needs A, extract shared types.
-- **Large monolith subgraph**: Avoid a "monolith subgraph" that owns most types. Decompose aggressively.
-- **Ignoring composition errors**: Treat composition failures as build failures in CI.
-- **Not using managed federation in production**: Local composition is for dev only. Use GraphOS or equivalent in production.
+- **Over-sharing with @shareable**: Only share fields with identical semantics across subgraphs.
+- **Circular entity dependencies**: Keep dependency graphs acyclic.
+- **Large monolith subgraph**: Decompose aggressively; avoid one subgraph owning most types.
+- **Ignoring composition errors**: Treat as build failures in CI.
+- **Not using managed federation in production**: Local composition is for dev only.
+
+See [troubleshooting.md](references/troubleshooting.md) for diagnosis and fixes.
+
+## References
+
+In-depth guides in `references/`:
+
+| Document | Topics |
+|----------|--------|
+| [subgraph-patterns.md](references/subgraph-patterns.md) | Entity design (single vs shared ownership), @key variations (composite, compound, multi), value types, @requires, interface/union entities, subscriptions, error handling, N+1/DataLoader, pagination |
+| [troubleshooting.md](references/troubleshooting.md) | Composition errors, router failures, subgraph unreachable, query plan performance, entity resolution, circular deps, schema checks, supergraph drift, CORS |
+| [migration-guide.md](references/migration-guide.md) | Migrating from monolith or schema stitching, incremental @override, splitting subgraphs, data migration, client migration, testing, rollback strategies |
+
+## Scripts
+
+Automation scripts in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| [setup-federation.sh](scripts/setup-federation.sh) | Scaffold a local federation dev environment (router + 2 subgraphs), install deps, compose supergraph |
+| [schema-check.sh](scripts/schema-check.sh) | Validate subgraph schemas and supergraph composition locally and against GraphOS |
+| [federation-health.sh](scripts/federation-health.sh) | Check router health, subgraph reachability, composition status, and latency |
+
+## Assets
+
+Ready-to-use configuration and code in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [router.yaml](assets/router.yaml) | Apollo Router config with caching, CORS, JWT auth, telemetry, limits, subscriptions |
+| [subgraph-products.ts](assets/subgraph-products.ts) | Products subgraph (TypeScript/Apollo Server) with DataLoader and entity resolution |
+| [subgraph-reviews.ts](assets/subgraph-reviews.ts) | Reviews subgraph with @requires, @provides, @external, and contributing fields |
+| [docker-compose.yml](assets/docker-compose.yml) | Full federation stack (router + 2 subgraphs) with health checks |
+| [supergraph.graphql](assets/supergraph.graphql) | Example composed supergraph schema |

@@ -1,0 +1,96 @@
+# Apollo Federation Stack — Docker Compose
+#
+# Services:
+#   - router:    Apollo Router (port 4000, health 8088, metrics 9090)
+#   - products:  Products subgraph (port 4001)
+#   - reviews:   Reviews subgraph (port 4002)
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f router
+#   curl http://localhost:4000/graphql -H 'Content-Type: application/json' \
+#     -d '{"query":"{ topProducts { name reviews { body } } }"}'
+
+services:
+  # ── Products Subgraph ────────────────────────────────────────────────────
+
+  products:
+    build:
+      context: ./subgraphs/products
+      dockerfile: Dockerfile
+    ports:
+      - "4001:4001"
+    environment:
+      PORT: "4001"
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4001/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{__typename}\"}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - federation
+
+  # ── Reviews Subgraph ─────────────────────────────────────────────────────
+
+  reviews:
+    build:
+      context: ./subgraphs/reviews
+      dockerfile: Dockerfile
+    ports:
+      - "4002:4002"
+    environment:
+      PORT: "4002"
+      NODE_ENV: production
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4002/graphql -H 'Content-Type: application/json' -d '{\"query\":\"{__typename}\"}' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - federation
+
+  # ── Apollo Router ────────────────────────────────────────────────────────
+
+  router:
+    image: ghcr.io/apollographql/router:v1.57.1
+    ports:
+      - "4000:4000"     # GraphQL endpoint
+      - "8088:8088"     # Health check
+      - "9090:9090"     # Prometheus metrics
+    volumes:
+      - ./router.yaml:/dist/config/router.yaml:ro
+      - ./supergraph.graphql:/dist/config/supergraph.graphql:ro
+    environment:
+      APOLLO_ROUTER_LOG: info
+      # For managed federation, uncomment and set:
+      # APOLLO_KEY: ${APOLLO_KEY}
+      # APOLLO_GRAPH_REF: ${APOLLO_GRAPH_REF}
+    command:
+      - --config
+      - /dist/config/router.yaml
+      - --supergraph
+      - /dist/config/supergraph.graphql
+      - --dev
+    depends_on:
+      products:
+        condition: service_healthy
+      reviews:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - federation
+
+networks:
+  federation:
+    driver: bridge

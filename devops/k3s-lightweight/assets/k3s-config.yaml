@@ -1,0 +1,109 @@
+# /etc/rancher/k3s/config.yaml — Production K3s server configuration
+#
+# This is a reference config for production K3s server deployments.
+# Adjust values based on your environment and requirements.
+# Docs: https://docs.k3s.io/installation/configuration
+
+# --- Cluster ---
+# Uncomment one of the following based on your HA mode:
+# cluster-init: true                     # First server: initialize embedded etcd
+# server: https://<EXISTING_SERVER>:6443 # Additional servers: join cluster
+
+# Shared token for server-to-server and agent authentication
+token: "${K3S_TOKEN}"
+
+# Optional separate token for agents (security isolation)
+# agent-token: "${K3S_AGENT_TOKEN}"
+
+# --- TLS ---
+# Add all IPs/hostnames that clients will use to reach the API server
+tls-san:
+  - "k3s.example.com"
+  - "10.0.0.100"
+  # - "<LOAD_BALANCER_IP>"
+
+# --- Kubeconfig ---
+write-kubeconfig-mode: "0644"
+
+# --- Networking ---
+# Flannel backend: vxlan (default), host-gw, wireguard-native, none
+flannel-backend: vxlan
+
+# Cluster and service CIDRs (defaults shown)
+cluster-cidr: "10.42.0.0/16"
+service-cidr: "10.43.0.0/16"
+cluster-dns: "10.43.0.10"
+cluster-domain: "cluster.local"
+
+# --- Components ---
+# Disable bundled components you don't need or plan to replace
+disable:
+  # - traefik           # Disable if using nginx-ingress, istio, etc.
+  # - servicelb         # Disable if using MetalLB
+  # - metrics-server    # Disable if using custom metrics
+  # - local-path-provisioner  # Disable if using Longhorn, Rook, etc.
+
+# --- Security ---
+secrets-encryption: true
+protect-kernel-defaults: true
+
+# --- etcd Snapshots (embedded etcd only) ---
+etcd-snapshot-schedule-cron: "0 */6 * * *"
+etcd-snapshot-retention: 10
+etcd-snapshot-compress: true
+# etcd-snapshot-dir: /backup/etcd    # Custom snapshot directory
+
+# S3 backup (uncomment and configure for off-site backups):
+# etcd-s3: true
+# etcd-s3-endpoint: s3.amazonaws.com
+# etcd-s3-bucket: k3s-etcd-backups
+# etcd-s3-region: us-east-1
+# etcd-s3-access-key: "${AWS_ACCESS_KEY_ID}"
+# etcd-s3-secret-key: "${AWS_SECRET_ACCESS_KEY}"
+# etcd-s3-folder: production
+
+# --- Node Configuration ---
+node-label:
+  - "environment=production"
+  # - "topology.kubernetes.io/zone=us-east-1a"
+
+# node-taint:
+#   - "CriticalAddonsOnly=true:NoExecute"  # Prevent workloads on control-plane
+
+# --- Kubelet ---
+kubelet-arg:
+  - "max-pods=110"
+  - "eviction-hard=memory.available<200Mi,nodefs.available<10%,imagefs.available<15%"
+  - "eviction-soft=memory.available<500Mi,nodefs.available<15%,imagefs.available<20%"
+  - "eviction-soft-grace-period=memory.available=1m,nodefs.available=1m,imagefs.available=1m"
+  - "system-reserved=cpu=250m,memory=256Mi"
+  - "kube-reserved=cpu=250m,memory=256Mi"
+  - "image-gc-high-threshold=85"
+  - "image-gc-low-threshold=80"
+  - "serialize-image-pulls=false"
+  - "streaming-connection-idle-timeout=5m"
+  - "read-only-port=0"
+
+# --- API Server ---
+kube-apiserver-arg:
+  - "enable-admission-plugins=NodeRestriction,PodSecurity"
+  - "audit-log-path=/var/lib/rancher/k3s/server/logs/audit.log"
+  - "audit-log-maxage=30"
+  - "audit-log-maxbackup=10"
+  - "audit-log-maxsize=100"
+  - "request-timeout=300s"
+  - "anonymous-auth=false"
+
+# --- Controller Manager ---
+kube-controller-manager-arg:
+  - "terminated-pod-gc-threshold=10"
+  - "node-monitor-period=5s"
+  - "node-monitor-grace-period=40s"
+
+# --- Scheduler ---
+# kube-scheduler-arg:
+#   - "v=2"
+
+# --- Proxy ---
+# kube-proxy-arg:
+#   - "metrics-bind-address=0.0.0.0:10249"

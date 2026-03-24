@@ -422,57 +422,26 @@ Follow the same pattern: instantiate client → get index → add documents → 
 
 ## Docker Deployment
 
-```yaml
-# docker-compose.yml
-services:
-  meilisearch:
-    image: getmeili/meilisearch:v1.12
-    ports:
-      - "7700:7700"
-    volumes:
-      - meili_data:/meili_data
-    environment:
-      MEILI_MASTER_KEY: "your-master-key-min-16-bytes"
-      MEILI_ENV: production
-      MEILI_HTTP_ADDR: 0.0.0.0:7700
-      MEILI_MAX_INDEXING_MEMORY: 2Gb
-      MEILI_MAX_INDEXING_THREADS: 4
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-volumes:
-  meili_data:
+Quick start — see [assets/docker-compose.yml](assets/docker-compose.yml) for full production config and [references/deployment-guide.md](references/deployment-guide.md) for complete deployment patterns.
+
+```bash
+# Minimal production start
+docker run -d --name meilisearch -p 7700:7700 \
+  -v meili_data:/meili_data \
+  -e MEILI_MASTER_KEY="your-master-key-min-16-bytes" \
+  -e MEILI_ENV=production \
+  getmeili/meilisearch:v1.12
 ```
 
-Production checklist:
-- Always set `MEILI_MASTER_KEY` (min 16 bytes) and `MEILI_ENV=production`
-- Mount persistent volume for `/meili_data`
-- Place behind a reverse proxy (nginx/Caddy) with TLS
-- Set `MEILI_MAX_INDEXING_MEMORY` based on available RAM
-- Use health checks for orchestration readiness
+Production checklist: set `MEILI_MASTER_KEY` (min 16 bytes) + `MEILI_ENV=production`, mount persistent volume for `/meili_data`, place behind reverse proxy with TLS, set `MEILI_MAX_INDEXING_MEMORY` based on available RAM, use health checks.
 
 ## Snapshots and Dumps
 
-```bash
-# Create a dump (portable backup)
-curl -X POST 'http://localhost:7700/dumps' -H 'Authorization: Bearer MASTER_KEY'
+See [scripts/backup-restore.sh](scripts/backup-restore.sh) for automated backup operations.
 
-# Enable scheduled snapshots via env
-MEILI_SCHEDULE_SNAPSHOT=true
-MEILI_SNAPSHOT_DIR=/meili_data/snapshots
-
-# Restore from dump on startup
-meilisearch --import-dump /path/to/dump.dump
-
-# Restore from snapshot
-meilisearch --import-snapshot /path/to/snapshot
-```
-
-- **Dumps**: portable, cross-version compatible. Use for migrations and version upgrades.
-- **Snapshots**: exact binary copy. Use for fast disaster recovery on same version.
+- **Dumps** (`POST /dumps`): portable, cross-version compatible. Use for migrations and version upgrades.
+- **Snapshots** (`MEILI_SCHEDULE_SNAPSHOT=true`): exact binary copy. Use for fast disaster recovery on same version.
+- Restore: `meilisearch --import-dump <file>` or `meilisearch --import-snapshot <file>`.
 
 ## Common Patterns
 
@@ -494,3 +463,37 @@ Configure an embedder (OpenAI, HuggingFace, or custom REST endpoint). Set `seman
 ## Task Monitoring
 
 All write operations return `taskUid`. Poll with `GET /tasks/{taskUid}`. Filter tasks: `GET /tasks?statuses=failed&indexUids=products`. Statuses: `enqueued`, `processing`, `succeeded`, `failed`, `canceled`. Always check for `failed` tasks after bulk operations. Set `searchableAttributes` explicitly and batch writes for production performance.
+
+## Additional Resources
+
+### References
+
+Detailed guides in `references/`:
+
+| File | Description |
+|------|-------------|
+| [advanced-search.md](references/advanced-search.md) | Deep dive into hybrid/vector search, multi-search, federated search, geosearch (radius, bounding box, geo sort), facet distribution and stats, distinct attributes, typo tolerance tuning, stop words, synonyms, pagination strategies, highlighting and cropping |
+| [troubleshooting.md](references/troubleshooting.md) | Common issues: indexing stuck/slow, large dataset imports, memory usage, search relevancy debugging, ranking rules misconfiguration, filterable attributes errors, API key permission issues, Docker data persistence, snapshot/dump restore failures, version upgrades |
+| [deployment-guide.md](references/deployment-guide.md) | Production deployment: Docker with persistent volumes, systemd service, cloud deployment (AWS/GCP/Azure), Meilisearch Cloud, reverse proxy (Nginx/Caddy), TLS, backup strategies, monitoring with Prometheus/Grafana, scaling, high availability |
+
+### Scripts
+
+Automation scripts in `scripts/` (all executable):
+
+| Script | Usage |
+|--------|-------|
+| [setup-meilisearch.sh](scripts/setup-meilisearch.sh) | `./setup-meilisearch.sh` — Docker setup, API key creation, sample "movies" index with data |
+| [bulk-import.sh](scripts/bulk-import.sh) | `./bulk-import.sh -f data.json -i products [-b 10000]` — Bulk import JSON/NDJSON/CSV with progress tracking |
+| [backup-restore.sh](scripts/backup-restore.sh) | `./backup-restore.sh dump-create \| dump-restore <file> \| dump-download \| snapshot-info` — Backup and restore operations |
+
+### Assets
+
+Ready-to-use configuration and client files in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [docker-compose.yml](assets/docker-compose.yml) | Production Meilisearch with persistent volumes, health checks, resource limits, and optional Prometheus/Grafana monitoring |
+| [search-client.ts](assets/search-client.ts) | TypeScript client with typed search, InstantSearch.js integration, hybrid search, multi-search, tenant tokens, document CRUD |
+| [search-client.py](assets/search-client.py) | Python client class with index management, bulk import, geo/hybrid search, task monitoring, CLI interface |
+| [nginx-proxy.conf](assets/nginx-proxy.conf) | Nginx reverse proxy with TLS, rate limiting, CORS, security headers |
+| [index-settings.json](assets/index-settings.json) | E-commerce example: ranked searchable attributes, synonyms, typo tolerance, faceting, embedder config |

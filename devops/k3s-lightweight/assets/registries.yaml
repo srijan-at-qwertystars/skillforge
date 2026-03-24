@@ -1,0 +1,67 @@
+# /etc/rancher/k3s/registries.yaml — Private registry mirrors configuration
+#
+# Configure container image registry mirrors and authentication.
+# K3s reads this file on startup (restart k3s/k3s-agent after changes).
+# Docs: https://docs.k3s.io/installation/private-registry
+
+mirrors:
+  # Mirror Docker Hub through a local/private registry
+  docker.io:
+    endpoint:
+      - "https://registry.example.com"
+      # Fallback mirrors (tried in order):
+      # - "https://mirror.gcr.io"
+
+  # Mirror GitHub Container Registry
+  ghcr.io:
+    endpoint:
+      - "https://registry.example.com"
+
+  # Mirror Quay.io
+  quay.io:
+    endpoint:
+      - "https://registry.example.com"
+
+  # Mirror a specific private registry (e.g., ECR, ACR, GCR)
+  # "123456789.dkr.ecr.us-east-1.amazonaws.com":
+  #   endpoint:
+  #     - "https://registry.example.com"
+
+  # Wildcard — mirror all registries through a proxy/cache
+  # "*":
+  #   endpoint:
+  #     - "https://registry-cache.example.com"
+
+configs:
+  # Authentication and TLS for the private registry
+  "registry.example.com":
+    auth:
+      username: "registry-user"
+      password: "registry-password"
+      # Or use identity token (e.g., for cloud registries):
+      # auth: "<base64-encoded-user:password>"
+      # identitytoken: "<token>"
+    tls:
+      cert_file: "/etc/rancher/k3s/certs/registry-client.crt"
+      key_file: "/etc/rancher/k3s/certs/registry-client.key"
+      ca_file: "/etc/rancher/k3s/certs/registry-ca.crt"
+      # insecure_skip_verify: false
+
+  # Local development registry (HTTP, no auth)
+  # "registry.local:5000":
+  #   tls:
+  #     insecure_skip_verify: true
+
+  # AWS ECR — use credential helper instead of static auth
+  # "123456789.dkr.ecr.us-east-1.amazonaws.com":
+  #   auth:
+  #     username: "AWS"
+  #     password: "<ecr-token>"  # Rotate every 12 hours via cron
+
+  # Harbor registry with robot account
+  # "harbor.example.com":
+  #   auth:
+  #     username: "robot$k3s-puller"
+  #     password: "<robot-token>"
+  #   tls:
+  #     ca_file: "/etc/rancher/k3s/certs/harbor-ca.crt"

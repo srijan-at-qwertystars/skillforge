@@ -1,0 +1,135 @@
+# =============================================================================
+# Meilisearch Production Docker Compose
+# =============================================================================
+# Usage:
+#   Start Meilisearch:             docker compose up -d
+#   Start with monitoring stack:   docker compose --profile monitoring up -d
+#   Stop all services:             docker compose --profile monitoring down
+#
+# Prerequisites:
+#   - Create a .env file with MEILI_MASTER_KEY=<your-secret-key>
+#   - For production, generate a strong key: openssl rand -base64 48
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Meilisearch – the search engine
+  # ---------------------------------------------------------------------------
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: meilisearch
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      # Master key – gates access to all API routes. Keep secret.
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?Set MEILI_MASTER_KEY in .env}
+      # Run in production mode (disables the mini-dashboard, enforces auth).
+      MEILI_ENV: production
+      # Bind address inside the container.
+      MEILI_HTTP_ADDR: 0.0.0.0:7700
+      # Cap RAM used during indexing to avoid OOM on shared hosts.
+      MEILI_MAX_INDEXING_MEMORY: 2Gb
+      # Limit indexing threads so the search thread-pool stays responsive.
+      MEILI_MAX_INDEXING_THREADS: 4
+      # Log verbosity – use TRACE or DEBUG only while troubleshooting.
+      MEILI_LOG_LEVEL: INFO
+      # Automatic periodic snapshots for point-in-time recovery.
+      MEILI_SCHEDULE_SNAPSHOT: "true"
+      MEILI_SNAPSHOT_DIR: /meili_data/snapshots
+    volumes:
+      # Named volume keeps indexes, updates, and snapshots across restarts.
+      - meili_data:/meili_data
+    networks:
+      - meilinet
+    # Health check – Meilisearch exposes GET /health (returns 200 when ready).
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    # Resource limits prevent runaway memory/CPU on the host.
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "4.0"
+        reservations:
+          memory: 512M
+          cpus: "0.5"
+
+  # ---------------------------------------------------------------------------
+  # Prometheus – metrics collection (optional, enable with --profile monitoring)
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: meili_prometheus
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      # Mount a minimal scrape config (created below via configs or bind-mount).
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - meilinet
+    depends_on:
+      meilisearch:
+        condition: service_healthy
+
+  # ---------------------------------------------------------------------------
+  # Grafana – dashboards & alerting (optional, enable with --profile monitoring)
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: meili_grafana
+    profiles:
+      - monitoring
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - meilinet
+    depends_on:
+      - prometheus
+
+# =============================================================================
+# Named volumes – data survives container recreation
+# =============================================================================
+volumes:
+  meili_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+# =============================================================================
+# Networks – isolate traffic between services
+# =============================================================================
+networks:
+  meilinet:
+    driver: bridge
+
+# =============================================================================
+# Companion file: prometheus.yml (place next to this docker-compose.yml)
+# =============================================================================
+# global:
+#   scrape_interval: 15s
+#
+# scrape_configs:
+#   - job_name: meilisearch
+#     metrics_path: /stats
+#     # Meilisearch /stats requires an API key when auth is enabled.
+#     authorization:
+#       credentials: "<your-api-key>"
+#     static_configs:
+#       - targets: ["meilisearch:7700"]

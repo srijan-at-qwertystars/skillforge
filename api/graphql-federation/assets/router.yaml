@@ -1,0 +1,161 @@
+# Apollo Router Configuration
+# Docs: https://www.apollographql.com/docs/router/configuration/overview
+
+supergraph:
+  listen: 0.0.0.0:4000
+  path: /graphql
+  introspection: true     # disable in production
+
+  query_planning:
+    cache:
+      in_memory:
+        limit: 512        # cached query plans
+
+sandbox:
+  enabled: true           # Apollo Sandbox UI at /
+
+homepage:
+  enabled: false
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+
+cors:
+  origins:
+    - https://app.example.com
+    - https://staging.example.com
+    - http://localhost:3000
+  allow_headers:
+    - Content-Type
+    - Authorization
+    - X-Request-ID
+    - X-Correlation-ID
+    - Apollo-Require-Preflight
+  methods:
+    - GET
+    - POST
+    - OPTIONS
+  allow_credentials: true
+  max_age: 86400          # 24h — reduces preflight requests
+
+# ── Authentication ────────────────────────────────────────────────────────────
+
+authentication:
+  router:
+    jwt:
+      jwks:
+        - url: https://auth.example.com/.well-known/jwks.json
+          poll_interval: 60s
+      header_name: Authorization
+      header_value_prefix: "Bearer "
+
+authorization:
+  require_authentication: false   # set true to block all unauthenticated requests
+  preview_directives:
+    enabled: true                 # enable @authenticated and @requiresScopes
+
+# ── Header Propagation ────────────────────────────────────────────────────────
+
+headers:
+  all:
+    request:
+      - propagate:
+          named: Authorization
+      - propagate:
+          named: X-Request-ID
+      - propagate:
+          named: X-Correlation-ID
+      - insert:
+          name: X-Router-Source
+          value: "apollo-router"
+
+# ── Traffic Shaping ───────────────────────────────────────────────────────────
+
+traffic_shaping:
+  router:
+    timeout: 60s
+  all:
+    deduplicate_query: true
+    timeout: 30s
+    compression: gzip
+  subgraphs:
+    products:
+      timeout: 10s
+      experimental_batching:
+        enabled: true
+    reviews:
+      timeout: 15s
+      experimental_batching:
+        enabled: true
+
+# ── Caching ───────────────────────────────────────────────────────────────────
+
+preview_entity_cache:
+  enabled: false          # enable for entity-level caching
+  subgraph:
+    all:
+      enabled: false
+      ttl: 60s
+
+apq:
+  enabled: true           # Automatic Persisted Queries
+  router:
+    cache:
+      in_memory:
+        limit: 10000
+
+# ── Telemetry ─────────────────────────────────────────────────────────────────
+
+telemetry:
+  exporters:
+    logging:
+      stdout:
+        enabled: true
+        format:
+          json:
+            display_filename: false
+            display_line_number: false
+    tracing:
+      otlp:
+        enabled: true
+        endpoint: http://jaeger:4317
+        protocol: grpc
+    metrics:
+      prometheus:
+        enabled: true
+        listen: 0.0.0.0:9090
+        path: /metrics
+
+  instrumentation:
+    spans:
+      mode: spec_compliant
+      default_attribute_requirement_level: recommended
+    instruments:
+      default_requirement_level: info
+
+# ── Health Check ──────────────────────────────────────────────────────────────
+
+health_check:
+  listen: 0.0.0.0:8088
+  enabled: true
+  path: /health
+
+# ── Limits ────────────────────────────────────────────────────────────────────
+
+limits:
+  http_max_request_bytes: 2000000   # 2MB
+  max_depth: 15
+  max_height: 200
+  max_aliases: 30
+  max_root_fields: 20
+  parser_max_tokens: 15000
+  parser_max_recursion: 500
+
+# ── Subscription Support ─────────────────────────────────────────────────────
+
+subscription:
+  enabled: true
+  mode:
+    passthrough:
+      all:
+        path: /ws
+  heartbeat_interval: 5s
