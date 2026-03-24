@@ -1,0 +1,240 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Translation File Schema",
+  "description": "JSON Schema for validating translation files. Use to catch missing keys, type mismatches, and structural errors. Validate with: npx ajv validate -s translation-schema.json -d messages/en.json",
+  "type": "object",
+  "required": ["common"],
+  "additionalProperties": true,
+  "properties": {
+    "common": {
+      "type": "object",
+      "description": "Shared translations used across the entire application.",
+      "required": ["siteName", "nav", "actions"],
+      "properties": {
+        "siteName": {
+          "type": "string",
+          "description": "Application display name.",
+          "minLength": 1
+        },
+        "nav": {
+          "type": "object",
+          "description": "Navigation labels.",
+          "required": ["home", "about"],
+          "properties": {
+            "home": { "type": "string", "minLength": 1 },
+            "about": { "type": "string", "minLength": 1 },
+            "dashboard": { "type": "string" },
+            "settings": { "type": "string" },
+            "profile": { "type": "string" }
+          },
+          "additionalProperties": { "type": "string" }
+        },
+        "actions": {
+          "type": "object",
+          "description": "Common action button labels.",
+          "required": ["save", "cancel"],
+          "properties": {
+            "save": { "type": "string", "minLength": 1 },
+            "cancel": { "type": "string", "minLength": 1 },
+            "delete": { "type": "string" },
+            "confirm": { "type": "string" },
+            "edit": { "type": "string" },
+            "create": { "type": "string" },
+            "close": { "type": "string" },
+            "loading": { "type": "string" },
+            "retry": { "type": "string" },
+            "submit": { "type": "string" }
+          },
+          "additionalProperties": { "type": "string" }
+        },
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "previous": { "type": "string" },
+            "next": { "type": "string" },
+            "page": {
+              "type": "string",
+              "description": "Page indicator. Use ICU: 'Page {current} of {total}'"
+            },
+            "showing": {
+              "type": "string",
+              "description": "Results indicator. Use ICU: 'Showing {from}-{to} of {total}'"
+            }
+          }
+        }
+      },
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          { "type": "object", "additionalProperties": true }
+        ]
+      }
+    },
+    "auth": {
+      "type": "object",
+      "description": "Authentication-related translations.",
+      "properties": {
+        "login": {
+          "type": "object",
+          "required": ["title", "submit"],
+          "properties": {
+            "title": { "type": "string", "minLength": 1 },
+            "email": { "type": "string" },
+            "password": { "type": "string" },
+            "submit": { "type": "string", "minLength": 1 },
+            "forgotPassword": { "type": "string" },
+            "noAccount": {
+              "type": "string",
+              "description": "May contain rich text tags like <link>Sign up</link>"
+            },
+            "error": {
+              "type": "object",
+              "properties": {
+                "invalidCredentials": { "type": "string" },
+                "accountLocked": { "type": "string" },
+                "tooManyAttempts": { "type": "string" }
+              }
+            }
+          }
+        },
+        "register": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string" },
+            "submit": { "type": "string" },
+            "hasAccount": { "type": "string" }
+          }
+        },
+        "logout": {
+          "type": "object",
+          "properties": {
+            "button": { "type": "string" },
+            "confirm": { "type": "string" }
+          }
+        }
+      }
+    },
+    "errors": {
+      "type": "object",
+      "description": "Error messages displayed to users.",
+      "required": ["generic"],
+      "properties": {
+        "generic": { "type": "string", "minLength": 1 },
+        "network": { "type": "string" },
+        "notFound": { "type": "string" },
+        "unauthorized": { "type": "string" },
+        "forbidden": { "type": "string" },
+        "serverError": { "type": "string" },
+        "timeout": { "type": "string" },
+        "validation": {
+          "type": "object",
+          "description": "Form validation error messages.",
+          "properties": {
+            "required": { "type": "string" },
+            "email": { "type": "string" },
+            "minLength": {
+              "type": "string",
+              "description": "Use ICU placeholder: 'Must be at least {min} characters.'"
+            },
+            "maxLength": {
+              "type": "string",
+              "description": "Use ICU placeholder: 'Must be at most {max} characters.'"
+            },
+            "pattern": { "type": "string" },
+            "mismatch": { "type": "string" }
+          }
+        }
+      }
+    },
+    "home": {
+      "type": "object",
+      "description": "Homepage translations.",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "hero": {
+          "type": "object",
+          "properties": {
+            "heading": { "type": "string" },
+            "subheading": { "type": "string" },
+            "cta": { "type": "string" }
+          }
+        },
+        "features": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "dashboard": {
+      "type": "object",
+      "description": "Dashboard page translations.",
+      "properties": {
+        "title": { "type": "string" },
+        "welcome": {
+          "type": "string",
+          "description": "Use ICU placeholder: 'Welcome back, {name}!'"
+        },
+        "stats": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "settings": {
+      "type": "object",
+      "description": "Settings page translations.",
+      "properties": {
+        "title": { "type": "string" },
+        "sections": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "title": { "type": "string" },
+              "description": { "type": "string" }
+            },
+            "additionalProperties": { "type": "string" }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "SEO metadata translations.",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "siteName": { "type": "string" },
+        "ogTitle": { "type": "string" },
+        "ogDescription": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "icuString": {
+      "type": "string",
+      "description": "A string that may contain ICU MessageFormat syntax ({variable}, {count, plural, ...}, {gender, select, ...})."
+    },
+    "richTextString": {
+      "type": "string",
+      "description": "A string that may contain rich text tags like <bold>text</bold> or <link>text</link>."
+    },
+    "translationNamespace": {
+      "type": "object",
+      "description": "A namespace containing translation key-value pairs. Values can be strings or nested objects.",
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string" },
+          { "$ref": "#/definitions/translationNamespace" }
+        ]
+      }
+    }
+  }
+}

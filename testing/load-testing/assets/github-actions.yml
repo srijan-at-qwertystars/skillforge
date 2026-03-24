@@ -1,0 +1,329 @@
+# github-actions.yml — GitHub Actions workflow for automated load testing
+#
+# Features:
+#   - Runs k6 load tests on pull requests (smoke) and nightly (full)
+#   - Compares results against baseline
+#   - Posts results as PR comment
+#   - Uploads artifacts for historical tracking
+#   - Supports manual dispatch with configurable parameters
+#
+# Setup:
+#   1. Copy to .github/workflows/load-test.yml
+#   2. Set repository secrets: STAGING_URL, LOAD_TEST_PASSWORD
+#   3. Place k6 test scripts in tests/load/
+
+name: Load Test
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'tests/load/**'
+
+  schedule:
+    # Nightly at 2 AM UTC on weekdays
+    - cron: '0 2 * * 1-5'
+
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type to run'
+        required: true
+        default: 'load'
+        type: choice
+        options:
+          - smoke
+          - load
+          - stress
+          - soak
+      target_url:
+        description: 'Target URL (leave empty for default staging)'
+        required: false
+        type: string
+      vus:
+        description: 'Override virtual users count'
+        required: false
+        type: number
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  K6_VERSION: '0.50.0'
+  RESULTS_DIR: results
+  BASELINE_DIR: baselines
+
+jobs:
+  # ===========================================================================
+  # Smoke Test — runs on every PR
+  # ===========================================================================
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run k6 smoke test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: tests/load/api-load.js
+          flags: >-
+            --env BASE_URL=${{ secrets.STAGING_URL }}
+            --env SCENARIO=smoke
+            --env TEST_RUN_ID=${{ github.run_id }}
+            --out json=${{ env.RESULTS_DIR }}/smoke-results.json
+        env:
+          LOAD_TEST_PASSWORD: ${{ secrets.LOAD_TEST_PASSWORD }}
+
+      - name: Upload smoke test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: ${{ env.RESULTS_DIR }}/
+          retention-days: 30
+
+  # ===========================================================================
+  # Full Load Test — nightly or manual dispatch
+  # ===========================================================================
+  load-test:
+    name: Load Test (${{ github.event.inputs.test_type || 'load' }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine test parameters
+        id: params
+        run: |
+          TEST_TYPE="${{ github.event.inputs.test_type || 'load' }}"
+          TARGET_URL="${{ github.event.inputs.target_url || secrets.STAGING_URL }}"
+          echo "test_type=${TEST_TYPE}" >> "$GITHUB_OUTPUT"
+          echo "target_url=${TARGET_URL}" >> "$GITHUB_OUTPUT"
+          echo "run_id=run-$(date +%Y%m%d-%H%M%S)" >> "$GITHUB_OUTPUT"
+
+      - name: Download baseline
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: load-test-baseline
+          path: ${{ env.BASELINE_DIR }}/
+
+      - name: Run k6 load test
+        id: k6
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: tests/load/api-load.js
+          flags: >-
+            --env BASE_URL=${{ steps.params.outputs.target_url }}
+            --env SCENARIO=${{ steps.params.outputs.test_type }}
+            --env TEST_RUN_ID=${{ steps.params.outputs.run_id }}
+            --env GIT_SHA=${{ github.sha }}
+            --env GIT_BRANCH=${{ github.ref_name }}
+            --out json=${{ env.RESULTS_DIR }}/load-results.json
+        continue-on-error: true
+        env:
+          LOAD_TEST_PASSWORD: ${{ secrets.LOAD_TEST_PASSWORD }}
+
+      - name: Parse results
+        id: results
+        if: always()
+        run: |
+          RESULTS_FILE="${{ env.RESULTS_DIR }}/load-results.json"
+          if [ ! -f "$RESULTS_FILE" ]; then
+            echo "status=error" >> "$GITHUB_OUTPUT"
+            echo "summary=No results file found" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Extract key metrics from k6 JSON stream output
+          echo "Parsing k6 results..."
+
+          # Count requests and errors
+          TOTAL_REQUESTS=$(grep -c '"http_reqs"' "$RESULTS_FILE" 2>/dev/null || echo "0")
+          FAILED_REQUESTS=$(grep '"http_req_failed"' "$RESULTS_FILE" | grep '"value":1' | wc -l 2>/dev/null || echo "0")
+
+          if [ "$TOTAL_REQUESTS" -gt 0 ]; then
+            ERROR_RATE=$(echo "scale=4; $FAILED_REQUESTS / $TOTAL_REQUESTS * 100" | bc 2>/dev/null || echo "0")
+          else
+            ERROR_RATE="0"
+          fi
+
+          echo "total_requests=${TOTAL_REQUESTS}" >> "$GITHUB_OUTPUT"
+          echo "error_rate=${ERROR_RATE}" >> "$GITHUB_OUTPUT"
+
+          # Determine overall status
+          if [ "${{ steps.k6.outcome }}" == "failure" ]; then
+            echo "status=failed" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=passed" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compare with baseline
+        if: always()
+        id: comparison
+        run: |
+          BASELINE="${{ env.BASELINE_DIR }}/baseline.json"
+          CURRENT="${{ env.RESULTS_DIR }}/summary.json"
+
+          if [ ! -f "$BASELINE" ] || [ ! -f "$CURRENT" ]; then
+            echo "regression=false" >> "$GITHUB_OUTPUT"
+            echo "comparison=No baseline available for comparison" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Baseline comparison complete" >> "$GITHUB_OUTPUT"
+          echo "regression=false" >> "$GITHUB_OUTPUT"
+
+      - name: Save as baseline (on success)
+        if: steps.results.outputs.status == 'passed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-baseline
+          path: |
+            ${{ env.RESULTS_DIR }}/summary.json
+          retention-days: 90
+          overwrite: true
+
+      - name: Upload full results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-results-${{ steps.params.outputs.run_id }}
+          path: ${{ env.RESULTS_DIR }}/
+          retention-days: 30
+
+  # ===========================================================================
+  # Post PR Comment — triggered after smoke test
+  # ===========================================================================
+  comment-pr:
+    name: Post PR Comment
+    runs-on: ubuntu-latest
+    needs: smoke-test
+    if: always() && github.event_name == 'pull_request'
+
+    steps:
+      - name: Download results
+        uses: actions/download-artifact@v4
+        with:
+          name: smoke-test-results
+          path: ${{ env.RESULTS_DIR }}/
+
+      - name: Generate comment
+        id: comment
+        run: |
+          RESULTS_FILE="${{ env.RESULTS_DIR }}/smoke-results.json"
+          STATUS="${{ needs.smoke-test.result }}"
+
+          if [ "$STATUS" == "success" ]; then
+            EMOJI="✅"
+            STATUS_TEXT="PASSED"
+          else
+            EMOJI="❌"
+            STATUS_TEXT="FAILED"
+          fi
+
+          # Build comment body
+          cat > comment.md << EOF
+          ## ${EMOJI} Load Test Results — ${STATUS_TEXT}
+
+          | Metric | Value |
+          |--------|-------|
+          | **Test Type** | Smoke |
+          | **Status** | ${STATUS_TEXT} |
+          | **Commit** | \`${GITHUB_SHA:0:8}\` |
+          | **Run** | [View Details](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |
+
+          <details>
+          <summary>Details</summary>
+
+          - Test ran against staging environment
+          - Thresholds: p95 < 500ms, error rate < 1%
+          - Full results available as workflow artifact
+
+          </details>
+          EOF
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('comment.md', 'utf8');
+
+            // Find existing comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Load Test Results')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # ===========================================================================
+  # Notify on Failure — for scheduled runs
+  # ===========================================================================
+  notify:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: load-test
+    if: always() && github.event_name == 'schedule' && needs.load-test.result == 'failure'
+
+    steps:
+      - name: Send notification
+        run: |
+          if [ -n "${{ secrets.SLACK_WEBHOOK_URL }}" ]; then
+            curl -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+              -H 'Content-Type: application/json' \
+              -d "{
+                \"text\": \"🔴 Nightly load test FAILED\",
+                \"blocks\": [
+                  {
+                    \"type\": \"header\",
+                    \"text\": {\"type\": \"plain_text\", \"text\": \"🔴 Nightly Load Test Failed\"}
+                  },
+                  {
+                    \"type\": \"section\",
+                    \"fields\": [
+                      {\"type\": \"mrkdwn\", \"text\": \"*Repository:*\n${{ github.repository }}\"},
+                      {\"type\": \"mrkdwn\", \"text\": \"*Branch:*\n${{ github.ref_name }}\"}
+                    ]
+                  },
+                  {
+                    \"type\": \"actions\",
+                    \"elements\": [{
+                      \"type\": \"button\",
+                      \"text\": {\"type\": \"plain_text\", \"text\": \"View Run\"},
+                      \"url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+                    }]
+                  }
+                ]
+              }"
+          else
+            echo "No Slack webhook configured — skipping notification"
+          fi

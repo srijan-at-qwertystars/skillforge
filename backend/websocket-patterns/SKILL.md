@@ -436,55 +436,64 @@ export default function () {
 | Max connections/origin | Browser-limited (6-13) | ~6 per origin | ~6 per origin |
 | Proxy-friendly | Sometimes blocked | Yes | Yes |
 
-**Decision guide:**
-- Need bidirectional or binary → **WebSocket**
-- Server-push only, text data, simplicity → **SSE**
-- Legacy browser support, hostile network → **Long Polling**
-- Chat, gaming, collab editing → **WebSocket**
-- Notifications, feeds, dashboards → **SSE** (simpler) or **WebSocket** (if also sending)
+**Decision guide:** Bidirectional/binary → **WebSocket** • Server-push text → **SSE** • Legacy/hostile → **Long Polling** • Chat/gaming/collab → **WebSocket** • Notifications/feeds → **SSE** or **WebSocket**
 
 ## Real-World Architecture Patterns
 
-### Chat Room
-```
-Client → WS → Server → Redis Pub/Sub → All Server Instances → Clients in Room
-```
-Store messages in DB. Use room-scoped channels. Deliver history via REST on connect.
-
-### Live Notifications
-Maintain per-user connection map. On event (order update, mention), publish to user's channel. Fall back to push notification if WS disconnected.
-
-### Collaborative Editing
-Use Operational Transform (OT) or CRDT. Send operations (not full document). Sequence operations server-side. Broadcast transformed ops to other clients.
-
-### Live Dashboard
-Server pushes metric snapshots at intervals (1-5s). Use binary encoding for large datasets. Client interpolates between updates for smooth rendering.
+- **Chat**: Client → WS → Server → Redis Pub/Sub → All Instances → Room Clients. Store in DB, deliver history via REST.
+- **Notifications**: Per-user connection map. Publish to user channel on events. Fall back to push if WS disconnected.
+- **Collaborative editing**: OT or CRDT. Send operations (not full doc). Sequence server-side. See `references/advanced-patterns.md`.
+- **Live dashboard**: Push metric snapshots at 1-5s intervals. Binary encoding for large datasets.
 
 ## Production Gotchas
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
-| Connections drop after 60s | Proxy/LB idle timeout | Set `proxy_read_timeout 86400s` in nginx |
+| Connections drop after 60s | Proxy/LB idle timeout | `proxy_read_timeout 86400s` in nginx |
 | Can't scale past 1 server | No message bus | Add Redis Pub/Sub adapter |
-| Memory grows unbounded | Leaked connection references | Clean up Maps/Sets on `close` event |
-| Reconnection storm after deploy | All clients reconnect simultaneously | Use jittered exponential backoff |
-| 502 errors on connect | LB doesn't support Upgrade | Enable WebSocket support in LB config |
-| File descriptor exhaustion | Default ulimit too low | Set `ulimit -n 65535`, tune `LimitNOFILE` |
-| Messages lost during reconnect | No offline queue | Queue + sequence numbers + server replay |
-| Browser tab limits | 6-13 connections per origin | Multiplex via single connection + channels |
-| TLS handshake storms | Mass reconnect after outage | Circuit breaker + staggered backoff |
-| Stale connections not detected | No heartbeat | Server-side ping every 30s, terminate after 2 missed pongs |
+| Memory grows unbounded | Leaked refs | Clean up Maps/Sets on `close` event |
+| Reconnection storm | All clients reconnect at once | Jittered exponential backoff |
+| 502 on connect | LB doesn't support Upgrade | Enable WS support in LB config |
+| File descriptor exhaustion | Low ulimit | `ulimit -n 65535`, tune `LimitNOFILE` |
+| Messages lost on reconnect | No offline queue | Queue + seq numbers + server replay |
+| Browser tab limits | 6-13 conns per origin | Multiplex via single connection + channels |
+| Stale connections | No heartbeat | Ping every 30s, terminate after 2 missed pongs |
 
 ## Example Interactions
 
-**User prompt:** "Add WebSocket support to my Express app for real-time notifications"
-**Expected output:** ws server attached to Express HTTP server, JWT auth middleware, typed message envelope, heartbeat, graceful shutdown, client reconnection class.
+- **"Add WebSocket support to my Express app"** → ws server attached to Express, JWT auth, typed envelope, heartbeat, graceful shutdown, client reconnection.
+- **"Scale my Socket.IO app"** → Redis adapter, nginx sticky sessions + upgrade headers, health checks.
+- **"WebSocket connections keep dropping"** → Diagnostic checklist (proxy timeouts, heartbeat, LB), nginx fixes, reconnection backoff.
+- **"WebSocket or SSE for dashboard?"** → Decision matrix, recommendation with tradeoffs, implementation skeleton.
 
-**User prompt:** "Scale my Socket.IO app to multiple servers"
-**Expected output:** Redis adapter setup, nginx config with sticky sessions and WebSocket upgrade headers, connection state management, health check endpoint.
+## Reference Docs
 
-**User prompt:** "My WebSocket connections keep dropping in production"
-**Expected output:** Diagnostic checklist (proxy timeouts, heartbeat config, LB upgrade support), nginx config fixes, client-side reconnection with backoff, monitoring recommendations.
+In-depth guides in `references/`:
 
-**User prompt:** "Should I use WebSocket or SSE for my live dashboard?"
-**Expected output:** Decision matrix analysis based on requirements (direction, data type, scale), recommendation with tradeoffs, implementation skeleton for chosen approach.
+| Document | Topics |
+|----------|--------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Multiplexing, custom subprotocols, permessage-deflate compression, binary framing, connection state machines, graceful degradation to SSE/polling, gateway patterns, distributed pub/sub (Redis/NATS), presence tracking, cursor sharing |
+| [troubleshooting.md](references/troubleshooting.md) | Connection drops behind Nginx/HAProxy/AWS ALB, CORS/origin issues, memory leaks from uncleared listeners, buffered messages on slow connections, reconnection storms, Chrome DevTools debugging, Wireshark WebSocket inspection, health checks, SSL/TLS termination |
+| [scaling-guide.md](references/scaling-guide.md) | Horizontal scaling with sticky sessions, Redis pub/sub adapter for Socket.IO, NATS cross-server messaging, connection limits, connection pooling, Kubernetes ingress config, AWS API Gateway WebSocket API, lifecycle management, memory estimation per connection |
+
+## Scripts
+
+Executable tools in `scripts/` (run with `./scripts/<name>.sh`):
+
+| Script | Purpose |
+|--------|---------|
+| [init-ws-project.sh](scripts/init-ws-project.sh) | Scaffold a complete WebSocket project: server with rooms/broadcast/heartbeat, client HTML page with auto-reconnect, npm dependencies |
+| [ws-load-test.sh](scripts/ws-load-test.sh) | Load test WebSocket servers using k6, Artillery, or built-in Node.js tester. Measures connection time, message latency, max concurrent connections |
+| [ws-debug-proxy.sh](scripts/ws-debug-proxy.sh) | Transparent WebSocket debug proxy that logs all frames between client and server. Supports text, JSON, and compact output formats |
+
+## Assets (Copy-Paste Templates)
+
+Production-ready templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [ws-server.ts](assets/ws-server.ts) | TypeScript WebSocket server: rooms, heartbeat, JWT auth middleware, message validation, rate limiting, graceful shutdown, health/metrics endpoints |
+| [ws-client.ts](assets/ws-client.ts) | TypeScript WebSocket client: auto-reconnect with exponential backoff, offline message queue, heartbeat, event emitter, request/response correlation, state machine |
+| [socket-io-server.ts](assets/socket-io-server.ts) | Socket.IO server: namespaces (/chat, /notifications), rooms, JWT middleware, Redis adapter, typed events, rate limiting, graceful shutdown |
+| [nginx-websocket.conf](assets/nginx-websocket.conf) | Nginx config: WebSocket upgrade headers, 24h timeouts, sticky sessions (ip_hash), SSL/TLS, rate limiting, Socket.IO path, health checks |
+| [k6-ws-test.js](assets/k6-ws-test.js) | k6 load test: staged VU ramp-up, connection lifecycle, message latency measurement, room operations, custom metrics, pass/fail thresholds |

@@ -94,45 +94,7 @@ export function teardown(data) {
 
 ### Scenarios and Executors
 
-```javascript
-export const options = {
-  scenarios: {
-    // Simulate browsing users ramping up
-    browse: {
-      executor: 'ramping-vus',
-      startVUs: 0,
-      stages: [
-        { duration: '2m', target: 100 },
-        { duration: '5m', target: 100 },
-        { duration: '2m', target: 0 },
-      ],
-      exec: 'browseFlow',
-    },
-    // Maintain constant API throughput
-    api_load: {
-      executor: 'constant-arrival-rate',
-      rate: 200,           // 200 iterations per timeUnit
-      timeUnit: '1s',
-      duration: '5m',
-      preAllocatedVUs: 50,
-      maxVUs: 200,
-      exec: 'apiFlow',
-    },
-    // Distribute fixed iterations across VUs
-    batch_job: {
-      executor: 'shared-iterations',
-      vus: 10,
-      iterations: 1000,
-      maxDuration: '10m',
-      exec: 'batchFlow',
-    },
-  },
-};
-
-export function browseFlow() { /* browsing logic */ }
-export function apiFlow() { /* API call logic */ }
-export function batchFlow() { /* batch processing logic */ }
-```
+Use `scenarios` to define multiple concurrent workloads with different executors. See `references/k6-advanced.md` for full examples.
 
 **Executor selection guide:**
 - `ramping-vus` — simulate user ramp-up/ramp-down; use for load and stress tests
@@ -487,3 +449,35 @@ Use the k6-operator for Kubernetes-native distributed execution.
 
 **Input**: "Set up Locust for our Python team to load test"
 **Output**: Write `locustfile.py` with `HttpUser` class, `@task`-decorated methods with appropriate weights, `on_start` for auth, `catch_response=True` for custom validation. Include `LoadTestShape` for custom ramp pattern. Provide CLI commands for headless and distributed modes.
+
+## Reference Documentation
+
+Deep-dive guides in `references/`:
+
+| Document | Topics |
+|----------|--------|
+| **[k6-advanced.md](references/k6-advanced.md)** | Custom metrics, executors, xk6-browser, gRPC/WebSocket testing, SharedArray, custom summary handlers, extensions ecosystem, k6 Cloud, lifecycle hooks, scenario-based testing, environment configs |
+| **[troubleshooting.md](references/troubleshooting.md)** | Coordinated omission, client-side bottlenecks (CPU/memory/network), OS tuning (ulimits, TCP, ephemeral ports), latency distribution interpretation, false positives, network saturation, JVM warm-up, connection pooling, debugging slow tests |
+| **[reporting-guide.md](references/reporting-guide.md)** | Grafana + InfluxDB setup, Prometheus + Grafana for Locust, k6 Cloud dashboards, custom HTML reports, SLA/SLO validation, trend analysis, executive summaries, performance budgets, regression alerting |
+
+## Scripts
+
+Executable scripts in `scripts/` — run with `./scripts/<name>.sh`:
+
+| Script | Purpose |
+|--------|---------|
+| **[init-k6-project.sh](scripts/init-k6-project.sh)** | Initialize k6 project: directory structure, starter tests, Makefile, Grafana+InfluxDB docker-compose, sample data |
+| **[run-test-suite.sh](scripts/run-test-suite.sh)** | Run smoke → load → stress sequentially, collect results, compare against baselines, generate summary |
+| **[setup-monitoring.sh](scripts/setup-monitoring.sh)** | Start/stop InfluxDB + Grafana monitoring stack, import k6 dashboard, configure outputs |
+
+## Assets (Copy-Paste Templates)
+
+Production-ready templates in `assets/`:
+
+| Template | Description |
+|----------|-------------|
+| **[k6-api-test.js](assets/k6-api-test.js)** | Full k6 test: smoke/load/stress/soak scenarios, thresholds, checks, groups, custom metrics, data parameterization, Slack notifications |
+| **[k6-browser-test.js](assets/k6-browser-test.js)** | Browser testing: page load metrics, Web Vitals (LCP/FCP/CLS/TTFB), user flow simulation, screenshots on failure |
+| **[locustfile.py](assets/locustfile.py)** | Locust template: task sets with weights, user classes, custom load shapes (step/spike), event hooks, distributed setup |
+| **[docker-compose-monitoring.yml](assets/docker-compose-monitoring.yml)** | Docker Compose for InfluxDB + Grafana with auto-provisioned datasource and dashboard |
+| **[github-actions.yml](assets/github-actions.yml)** | CI/CD workflow: smoke on PRs, nightly load tests, baseline comparison, PR comments, Slack alerts |

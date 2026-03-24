@@ -459,3 +459,29 @@ t('greeting', { name })
 - Sort order is locale-dependent — always use `Intl.Collator`.
 - Calendar systems differ: Buddhist, Islamic, Japanese Imperial. Use `calendar` option in Intl.
 - First day of week varies: Sunday (US), Monday (EU/ISO), Saturday (Middle East).
+
+## Reference Documents
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Context-aware translations, Trans component interpolation, namespaced translations for micro-frontends, dynamic locale loading (webpack/vite), key naming conventions, missing translation handling, Intl.Segmenter text processing, relative time formatting, currency display patterns, number system support.
+- **[rtl-guide.md](references/rtl-guide.md)** — Complete RTL support: CSS logical properties reference table, direction-aware flexbox/grid, bidi algorithm and Unicode control characters, icon mirroring rules, chart/graph RTL adaptation, form layout, pseudo-localization testing, Tailwind CSS RTL plugin, CSS specificity with `[dir]` selectors.
+- **[nextjs-i18n.md](references/nextjs-i18n.md)** — Next.js App Router i18n with next-intl: routing/request/navigation config, middleware locale detection, static generation, dynamic routes, metadata/SEO per locale, API route i18n, ISR with translations, server/client component patterns, locale navigation, cookie-based preferences.
+
+## Scripts
+
+Executable utilities in `scripts/` (run with `./scripts/<name>.sh --help`):
+
+- **[init-i18n-project.sh](scripts/init-i18n-project.sh)** — Bootstrap i18n in a React or Next.js project. Installs deps, creates locale directory structure, generates config files, adds extraction scripts to package.json. Usage: `./scripts/init-i18n-project.sh --framework nextjs --locales en,fr,de`
+- **[extract-strings.sh](scripts/extract-strings.sh)** — Scan source code for `t()`, `<FormattedMessage>`, `<Trans>` calls. Extracts keys to JSON or POT format. Reports untranslated and unused keys. Usage: `./scripts/extract-strings.sh --src src/ --format json`
+- **[pseudo-localize.sh](scripts/pseudo-localize.sh)** — Generate pseudo-localized translation files with diacritics, 30% expansion, bracket wrapping. Use to catch truncation, encoding issues, and untranslated strings. Usage: `./scripts/pseudo-localize.sh --input messages/en.json`
+
+## Assets (Copy-Paste Templates)
+
+Production-ready code in `assets/`:
+
+- **[i18n-config.ts](assets/i18n-config.ts)** — Complete react-i18next configuration with namespace loading, browser language detection, regional fallback chains, type-safe keys, custom formatters, and missing key handler.
+- **[next-intl-setup.ts](assets/next-intl-setup.ts)** — All-in-one Next.js App Router i18n setup: routing, request config, navigation helpers, middleware, root layout with provider, and usage examples for server/client components.
+- **[translation-schema.json](assets/translation-schema.json)** — JSON Schema for validating translation file structure. Enforces required keys, correct types, and namespace organization. Use with `ajv` or IDE validation.
+- **[locale-switcher.tsx](assets/locale-switcher.tsx)** — Accessible locale switcher dropdown component with native locale names, flag emoji, keyboard navigation, current locale indicator. Works with next-intl and react-i18next.
+- **[date-formatter.ts](assets/date-formatter.ts)** — Zero-dependency utility module wrapping Intl API: date/time formatting, relative time, smart format (relative vs absolute), date ranges, calendar systems, timezone utilities, duration formatting.
