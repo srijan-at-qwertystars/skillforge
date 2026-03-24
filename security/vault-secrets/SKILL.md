@@ -406,3 +406,5 @@ Reusable configuration templates in [`assets/`](assets/):
 | [`docker-compose-vault.yml`](assets/docker-compose-vault.yml) | Docker Compose with Vault, Consul backend, Vault Agent sidecar, and sample Nginx app for local development. |
 | [`vault-agent-config.hcl`](assets/vault-agent-config.hcl) | Production Agent config with Kubernetes auto-auth, response caching, API proxy listener, and templates for DB creds, TLS certs, and env files. |
 | [`github-actions-vault.yml`](assets/github-actions-vault.yml) | GitHub Actions workflow using JWT/OIDC auth (no stored secrets), AppRole fallback, and multi-environment matrix deployment. |
+
+<!-- tested: pass -->

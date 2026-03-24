@@ -494,3 +494,5 @@ Check in order:
 - **[`assets/mtls-config.yaml`](assets/mtls-config.yaml)** — Full mTLS: downstream client cert validation with SAN matching, upstream client cert, HTTP→HTTPS redirect, SDS alternative, and cert generation commands.
 - **[`assets/docker-compose-envoy.yml`](assets/docker-compose-envoy.yml)** — Docker Compose with Envoy, two backend versions (canary), Jaeger tracing (OTLP), and Prometheus. Includes companion configs.
 - **[`assets/wasm-filter-template/`](assets/wasm-filter-template/)** — Proxy-WASM Rust scaffold: `Cargo.toml`, `src/lib.rs` with config parsing, header manipulation, logging. Build: `cargo build --target wasm32-wasip1 --release`.
+
+<!-- tested: needs-fix -->

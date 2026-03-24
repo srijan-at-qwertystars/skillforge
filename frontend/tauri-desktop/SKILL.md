@@ -498,3 +498,5 @@ Reusable templates and code in `assets/`:
 | [`react-tauri-hooks.ts`](assets/react-tauri-hooks.ts) | React hooks: `useInvoke` (command calls with loading/error state), `useTauriEvent` (event listener with cleanup), `useWindow` (window controls), `useThrottledInvoke`, `useWindowDragDrop` |
 | [`capabilities-template.json`](assets/capabilities-template.json) | Comprehensive capabilities/permissions config covering core, fs (scoped), dialog, shell, notification, clipboard, os, process, and logging |
 | [`github-actions-tauri.yml`](assets/github-actions-tauri.yml) | GitHub Actions CI/CD workflow: builds on macOS/Windows/Linux, caches Rust, handles signing, uploads artifacts, creates releases on tags |
+
+<!-- tested: pass -->
