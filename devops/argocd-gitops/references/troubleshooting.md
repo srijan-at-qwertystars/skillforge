@@ -35,6 +35,21 @@
   - [Full Backup Strategy](#full-backup-strategy)
   - [Restore Procedure](#restore-procedure)
   - [Partial Recovery Scenarios](#partial-recovery-scenarios)
+- [RBAC and Permission Errors](#rbac-and-permission-errors)
+  - [Common RBAC Denials](#common-rbac-denials)
+  - [Debugging RBAC Policies](#debugging-rbac-policies)
+  - [Project-Scope Permission Issues](#project-scope-permission-issues)
+- [SSO and Authentication Problems](#sso-and-authentication-problems)
+  - [OIDC Configuration Errors](#oidc-configuration-errors)
+  - [Dex Issues](#dex-issues)
+  - [Group Mapping Failures](#group-mapping-failures)
+- [Webhook and Notification Issues](#webhook-and-notification-issues)
+  - [Git Webhook Not Triggering Sync](#git-webhook-not-triggering-sync)
+  - [Notification Delivery Failures](#notification-delivery-failures)
+- [Image Updater Troubleshooting](#image-updater-troubleshooting)
+  - [Image Not Updating](#image-not-updating)
+  - [Write-Back Failures](#write-back-failures)
+  - [Registry Authentication](#registry-authentication)
 
 ---
 
@@ -787,4 +802,321 @@ argocd cluster add my-production-context --name production
 
 # Or restore from backup:
 kubectl apply -f cluster-secrets-backup.yaml
+```
+
+---
+
+## RBAC and Permission Errors
+
+### Common RBAC Denials
+
+**Symptom:** `permission denied: applications, sync, default/my-app, sub: user@example.com`
+
+```bash
+# Check what a user/group can do
+argocd admin settings rbac can role:developer sync applications 'default/my-app' \
+  --policy-file argocd-rbac-cm.yaml
+
+# Validate entire RBAC policy
+argocd admin settings rbac validate --policy-file argocd-rbac-cm.yaml
+
+# Test with argocd CLI to see effective permissions
+argocd account can-i sync applications 'default/*'
+argocd account can-i get applications '*/*'
+```
+
+**Common causes:**
+1. **Wrong project scope** — Policy says `dev-project/*` but app is in `default` project
+2. **Missing group mapping** — `g, my-group, role:developer` not matching SSO group claim
+3. **Scopes misconfigured** — `scopes` in `argocd-rbac-cm` doesn't include `groups`
+4. **Default policy too restrictive** — `policy.default: ''` blocks all unlisted users
+
+### Debugging RBAC Policies
+
+```yaml
+# argocd-rbac-cm — full debug example
+data:
+  policy.default: role:readonly
+  scopes: '[groups, email]'
+  policy.csv: |
+    # Format: p, <subject>, <resource>, <action>, <appproject>/<app-or-*>, <allow|deny>
+    
+    # Common mistake: using user email vs group name
+    # WRONG — this matches an individual user, not a group:
+    p, user@example.com, applications, sync, default/*, allow
+    
+    # RIGHT — map SSO group to role, then grant role permissions:
+    g, sso-group-developers, role:developer
+    p, role:developer, applications, get, */*, allow
+    p, role:developer, applications, sync, default/*, allow
+    
+    # Gotcha: project-scoped roles use different syntax
+    # This global policy does NOT grant project-role permissions:
+    # p, role:developer, applications, sync, team-a/*, allow
+    # Project roles are defined in the AppProject spec, not argocd-rbac-cm
+```
+
+```bash
+# Dump the effective RBAC configuration
+kubectl get cm argocd-rbac-cm -n argocd -o yaml
+
+# Check argocd-server logs for RBAC denials
+kubectl logs -n argocd deploy/argocd-server | grep -i "denied\|rbac\|permission"
+```
+
+### Project-Scope Permission Issues
+
+```bash
+# Verify app belongs to expected project
+argocd app get my-app | grep Project
+
+# Check project allows the source repo
+argocd proj get my-project | grep "Source Repos"
+
+# Check project allows the destination
+argocd proj get my-project | grep "Destinations"
+
+# Common error: "application references project 'X' which does not exist"
+argocd proj list
+```
+
+**Fix: App's source/destination not allowed by project:**
+```yaml
+# AppProject must whitelist the repo and destination
+spec:
+  sourceRepos:
+    - 'https://github.com/org/*'     # Wildcard match
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: 'my-app-*'           # Wildcard namespace
+```
+
+---
+
+## SSO and Authentication Problems
+
+### OIDC Configuration Errors
+
+**Symptom:** Login redirects to a blank page or returns "failed to get token" error.
+
+```bash
+# Check argocd-server logs for OIDC errors
+kubectl logs -n argocd deploy/argocd-server | grep -i "oidc\|oauth\|token\|login"
+
+# Verify OIDC config in argocd-cm
+kubectl get cm argocd-cm -n argocd -o jsonpath='{.data.oidc\.config}' | yq .
+```
+
+**Common OIDC issues:**
+
+1. **Wrong callback URL** — IDP must have `https://argocd.example.com/auth/callback` registered
+2. **clientSecret not found** — Must be stored in `argocd-secret` as the key referenced with `$`:
+   ```yaml
+   # argocd-cm
+   oidc.config: |
+     clientSecret: $oidc.okta.clientSecret    # References argocd-secret key
+   ```
+   ```bash
+   # Verify the secret exists
+   kubectl get secret argocd-secret -n argocd -o jsonpath='{.data.oidc\.okta\.clientSecret}' | base64 -d
+   ```
+3. **TLS/certificate issues** — ArgoCD can't reach the IDP:
+   ```bash
+   # Test connectivity from argocd-server pod
+   kubectl exec -n argocd deploy/argocd-server -- \
+     curl -s https://login.example.com/.well-known/openid-configuration
+   ```
+4. **Missing `url` in argocd-cm** — Required for callback URL generation:
+   ```yaml
+   data:
+     url: https://argocd.example.com    # Must match actual URL
+   ```
+
+### Dex Issues
+
+```bash
+# Check Dex logs
+kubectl logs -n argocd deploy/argocd-dex-server
+
+# Common: Dex not starting because of invalid config
+# Verify dex config syntax
+kubectl get cm argocd-cm -n argocd -o jsonpath='{.data.dex\.config}' | yq .
+
+# Restart Dex after config changes
+kubectl rollout restart deploy/argocd-dex-server -n argocd
+```
+
+**Dex connector issues:**
+- GitHub Enterprise: set `hostName` and ensure `apiUrl` ends without trailing slash
+- LDAP: test bind DN credentials independently; check `usernamePrompt` is set
+- Dex requires its own TLS cert — verify `argocd-dex-server-tls` secret exists
+
+### Group Mapping Failures
+
+**Symptom:** User authenticates but gets `role:readonly` (the default) instead of expected permissions.
+
+```bash
+# Decode the user's JWT token to see claims
+# 1. Login and get token
+argocd account get-user-info
+
+# 2. Check the token claims (from browser dev tools or CLI)
+# Look for 'groups' claim — must match what argocd-rbac-cm expects
+echo '<JWT_TOKEN>' | cut -d. -f2 | base64 -d 2>/dev/null | jq .
+
+# 3. Verify scopes config includes 'groups'
+kubectl get cm argocd-rbac-cm -n argocd -o jsonpath='{.data.scopes}'
+# Should output: [groups]
+```
+
+**Fixes:**
+```yaml
+# argocd-cm — request groups in OIDC claims
+oidc.config: |
+  requestedScopes: ["openid", "profile", "email", "groups"]
+  requestedIDTokenClaims:
+    groups:
+      essential: true
+
+# argocd-rbac-cm — match exact group names from IDP
+data:
+  scopes: '[groups]'
+  policy.csv: |
+    g, my-org:platform-team, role:admin      # GitHub: org:team format
+    g, Platform Engineers, role:admin         # Azure AD / Okta group name
+```
+
+---
+
+## Webhook and Notification Issues
+
+### Git Webhook Not Triggering Sync
+
+**Symptom:** Pushing to Git doesn't trigger immediate sync; ArgoCD waits for 3-minute polling interval.
+
+```bash
+# Check webhook endpoint is accessible
+curl -s -o /dev/null -w "%{http_code}" https://argocd.example.com/api/webhook
+
+# Check argocd-server logs for webhook events
+kubectl logs -n argocd deploy/argocd-server | grep -i webhook
+
+# Verify webhook secret matches (argocd-secret)
+kubectl get secret argocd-secret -n argocd -o jsonpath='{.data.webhook\.github\.secret}' | base64 -d
+```
+
+**Checklist:**
+1. **Webhook URL**: Must be `https://argocd.example.com/api/webhook` (not `/api/v1/...`)
+2. **Content type**: Must be `application/json`
+3. **Secret**: Must match the value in `argocd-secret` under the provider-specific key:
+   - GitHub: `webhook.github.secret`
+   - GitLab: `webhook.gitlab.secret`
+   - Bitbucket: `webhook.bitbucket.uuid`
+4. **Events**: GitHub should send `push` events (and optionally `pull_request`)
+5. **TLS**: Webhook must reach ArgoCD over HTTPS with valid cert (or disable SSL verification in GitHub)
+6. **Ingress**: Ensure the ingress passes through the webhook path
+
+### Notification Delivery Failures
+
+```bash
+# Check notification controller logs
+kubectl logs -n argocd deploy/argocd-notifications-controller
+
+# Common: "failed to deliver notification: service 'slack' is not configured"
+# Verify notification config
+kubectl get cm argocd-notifications-cm -n argocd -o yaml
+
+# Verify secrets
+kubectl get secret argocd-notifications-secret -n argocd -o yaml
+
+# Test a notification manually
+argocd admin notifications template notify app-sync-succeeded my-app \
+  --config-map argocd-notifications-cm \
+  --secret argocd-notifications-secret
+```
+
+**Common notification failures:**
+- Slack token expired or revoked — regenerate bot token
+- Channel name changed or bot removed from channel
+- Template syntax error — test with `argocd admin notifications template get`
+- Trigger condition never matches — verify `when` expression against actual app status
+
+---
+
+## Image Updater Troubleshooting
+
+### Image Not Updating
+
+```bash
+# Check image updater logs
+kubectl logs -n argocd deploy/argocd-image-updater
+
+# Verify annotations on the Application
+argocd app get my-app -o yaml | grep -A5 image-updater
+
+# List images being tracked
+argocd-image-updater test myregistry/myapp --registries-conf-path /etc/registries.conf
+```
+
+**Required annotations (all must be present):**
+```yaml
+metadata:
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: myalias=myregistry/myapp
+    argocd-image-updater.argoproj.io/myalias.update-strategy: semver  # or latest, digest, name
+    argocd-image-updater.argoproj.io/write-back-method: git           # or argocd (default)
+```
+
+**Common issues:**
+1. **Wrong image alias** — The alias in `image-list` must match the prefix in other annotations
+2. **Tag constraint too restrictive** — Check `allow-tags` regex: `argocd-image-updater.argoproj.io/myalias.allow-tags: regexp:^v[0-9]+\.[0-9]+\.[0-9]+$`
+3. **Update strategy mismatch** — `semver` requires semver-compliant tags; use `latest` for timestamp-based or `digest` for immutable tags
+4. **Application not using the tracked image** — The image name in the annotation must exactly match the image reference in the Helm values or Kustomize config
+
+### Write-Back Failures
+
+```bash
+# Common error: "could not update application: failed to commit changes"
+# Check git credentials for write-back
+kubectl logs -n argocd deploy/argocd-image-updater | grep -i "write-back\|commit\|push"
+```
+
+**Git write-back requires:**
+```yaml
+annotations:
+  argocd-image-updater.argoproj.io/write-back-method: git
+  argocd-image-updater.argoproj.io/write-back-target: kustomization  # or helmvalues
+  argocd-image-updater.argoproj.io/git-branch: main                  # target branch
+  # Credentials: uses the repo credentials configured in ArgoCD
+  # For SSH: ensure the SSH key has write access
+  # For HTTPS: ensure the token has repo write scope
+```
+
+### Registry Authentication
+
+```bash
+# Test registry access from the image updater
+kubectl exec -n argocd deploy/argocd-image-updater -- \
+  argocd-image-updater test myregistry.example.com/myapp
+
+# Registry credentials are configured via registries.conf or pull secrets
+# Check registries config
+kubectl get cm argocd-image-updater-config -n argocd -o yaml
+```
+
+**Configure private registry:**
+```yaml
+# argocd-image-updater-config ConfigMap
+data:
+  registries.conf: |
+    registries:
+      - name: ECR
+        api_url: https://123456789.dkr.ecr.us-east-1.amazonaws.com
+        prefix: 123456789.dkr.ecr.us-east-1.amazonaws.com
+        credentials: ext:/scripts/ecr-login.sh    # External credential script
+        credsexpire: 10h
+      - name: GCR
+        api_url: https://gcr.io
+        prefix: gcr.io/my-project
+        credentials: pullsecret:argocd/gcr-pull-secret
 ```

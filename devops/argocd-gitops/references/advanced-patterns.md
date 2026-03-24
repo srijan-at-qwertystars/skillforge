@@ -9,6 +9,7 @@
   - [Matrix Generator](#matrix-generator)
   - [Merge Generator](#merge-generator)
   - [Pull Request Generator](#pull-request-generator)
+  - [SCM Provider Generator](#scm-provider-generator)
 - [Sync Waves and Resource Hooks](#sync-waves-and-resource-hooks)
   - [Sync Wave Ordering](#sync-wave-ordering)
   - [Resource Hooks](#resource-hooks)
@@ -40,6 +41,11 @@
   - [Polyrepo Pattern](#polyrepo-pattern)
   - [Hybrid Pattern](#hybrid-pattern)
   - [Environment Promotion](#environment-promotion)
+- [Diffing Customization](#diffing-customization)
+  - [ignoreDifferences Configuration](#ignoredifferences-configuration)
+  - [System-Level Diff Overrides](#system-level-diff-overrides)
+  - [Server-Side Diff](#server-side-diff)
+  - [Diff Strategies for Common Scenarios](#diff-strategies-for-common-scenarios)
 
 ---
 
@@ -268,6 +274,81 @@ template:
 Available parameters: `{{ .number }}`, `{{ .branch }}`, `{{ .head_sha }}`, `{{ .head_short_sha }}`, `{{ .labels }}`. Supports GitHub, GitLab, Gitea, and Bitbucket.
 
 **Important**: Set `requeueAfterSeconds` to poll for PR changes. Use labels to gate which PRs get preview environments.
+
+### SCM Provider Generator
+
+Discovers repositories from a GitHub org, GitLab group, or other SCM providers and creates Applications automatically. Unlike the Git generator (which reads from a single known repo), the SCM provider queries the SCM API to enumerate repos.
+
+**GitHub Organization:**
+```yaml
+generators:
+  - scmProvider:
+      github:
+        organization: my-org
+        tokenRef:
+          secretName: github-token
+          key: token
+        # Optional filters
+        allBranches: false         # Only default branch
+      filters:
+        - repositoryMatch: ^service-.*     # Regex on repo name
+          pathsExist:
+            - deploy/k8s                   # Repo must have this path
+          branchMatch: ^main$
+          labelMatch: argocd-managed       # GitHub topic label
+template:
+  metadata:
+    name: '{{ .repository }}'
+  spec:
+    source:
+      repoURL: '{{ .url }}'
+      targetRevision: '{{ .branch }}'
+      path: deploy/k8s
+    destination:
+      server: https://kubernetes.default.svc
+      namespace: '{{ .repository }}'
+    syncPolicy:
+      automated:
+        prune: true
+        selfHeal: true
+      syncOptions: [CreateNamespace=true]
+```
+
+**GitLab Group:**
+```yaml
+generators:
+  - scmProvider:
+      gitlab:
+        group: "my-group"               # Group path or ID
+        includeSubgroups: true
+        tokenRef:
+          secretName: gitlab-token
+          key: token
+      filters:
+        - repositoryMatch: ^svc-
+          pathsExist: [k8s/]
+```
+
+Available template parameters: `{{ .organization }}`, `{{ .repository }}`, `{{ .url }}`, `{{ .branch }}`, `{{ .sha }}`, `{{ .labels }}`. Combine with matrix generator to deploy discovered repos across multiple clusters.
+
+**SCM Provider with Matrix (deploy every discovered repo to every cluster):**
+```yaml
+generators:
+  - matrix:
+      generators:
+        - scmProvider:
+            github:
+              organization: my-org
+              tokenRef:
+                secretName: github-token
+                key: token
+            filters:
+              - pathsExist: [deploy/k8s]
+        - clusters:
+            selector:
+              matchLabels:
+                env: production
+```
 
 ---
 
@@ -1071,3 +1152,159 @@ metadata:
     argocd-image-updater.argoproj.io/myapp.allow-tags: regexp:^v[0-9]+\.[0-9]+\.[0-9]+$
     argocd-image-updater.argoproj.io/write-back-method: git
 ```
+
+---
+
+## Diffing Customization
+
+Argo CD compares the desired state (Git) with the live state (cluster) to detect drift. Some fields are modified by controllers, webhooks, or the API server, causing perpetual OutOfSync. Diffing customization tells Argo CD which differences to ignore.
+
+### ignoreDifferences Configuration
+
+Per-application ignore rules in the Application spec:
+
+```yaml
+spec:
+  ignoreDifferences:
+    # HPA manages replicas — don't treat as drift
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+
+    # Webhook CA bundles injected by cert-manager
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - '.webhooks[]?.clientConfig.caBundle'
+
+    # Ignore specific fields on a named resource
+    - group: apps
+      kind: Deployment
+      name: my-special-deploy
+      namespace: production
+      jsonPointers:
+        - /metadata/annotations/deployment.kubernetes.io~1revision
+
+    # Ignore all annotation changes on Services
+    - group: ""
+      kind: Service
+      jqPathExpressions:
+        - .metadata.annotations
+
+    # Managed fields added by server-side apply
+    - group: "*"
+      kind: "*"
+      managedFieldsManagers:
+        - kube-controller-manager
+        - cluster-autoscaler
+```
+
+**jsonPointers** uses RFC 6901 syntax. Escape `/` as `~1` and `~` as `~0`. **jqPathExpressions** uses jq filter syntax for more complex matching.
+
+### System-Level Diff Overrides
+
+Apply ignore rules globally across all Applications in `argocd-cm`:
+
+```yaml
+# argocd-cm ConfigMap
+data:
+  # Ignore last-applied-configuration on ALL resources
+  resource.customizations.ignoreDifferences.all: |
+    jsonPointers:
+      - /metadata/annotations/kubectl.kubernetes.io~1last-applied-configuration
+
+  # Ignore specific fields by resource type
+  resource.customizations.ignoreDifferences.apps_Deployment: |
+    jsonPointers:
+      - /spec/replicas
+    jqPathExpressions:
+      - .spec.template.metadata.annotations."kubectl.kubernetes.io/restartedAt"
+
+  resource.customizations.ignoreDifferences.admissionregistration.k8s.io_MutatingWebhookConfiguration: |
+    jqPathExpressions:
+      - '.webhooks[]?.clientConfig.caBundle'
+      - '.webhooks[]?.failurePolicy'
+
+  # Ignore status on all custom resources in a group
+  resource.customizations.ignoreDifferences.cert-manager.io_Certificate: |
+    jsonPointers:
+      - /status
+```
+
+### Server-Side Diff
+
+Server-side diff (v2.5+) sends manifests to the Kubernetes API server's dry-run endpoint, which normalizes defaults and mutations. This eliminates many false-positive diffs caused by defaulting webhooks and API server normalization.
+
+Enable globally in `argocd-cmd-params-cm`:
+```yaml
+data:
+  controller.diff.server.side: "true"
+```
+
+Or per-application via sync option:
+```yaml
+spec:
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true     # Also implies server-side diff
+```
+
+**When server-side diff helps:**
+- API server adds defaulted fields (e.g., `spec.revisionHistoryLimit` on Deployments)
+- Mutating webhooks inject/modify fields (e.g., Istio sidecar injection, Vault agent)
+- CRDs with complex defaulting logic
+
+**Caveats:**
+- Requires cluster connectivity during diff (increased API server load)
+- Some CRDs may not support dry-run correctly
+- May reveal drift that was previously hidden by client-side normalization
+
+### Diff Strategies for Common Scenarios
+
+**HPA + Deployment replicas:**
+```yaml
+# Option 1: ignoreDifferences (simple)
+ignoreDifferences:
+  - group: apps
+    kind: Deployment
+    jsonPointers: [/spec/replicas]
+
+# Option 2: RespectIgnoreDifferences sync option (prevents sync from resetting replicas)
+syncPolicy:
+  syncOptions:
+    - RespectIgnoreDifferences=true
+```
+
+**Kustomize-managed resources with controller mutations:**
+```yaml
+ignoreDifferences:
+  - group: ""
+    kind: Service
+    jqPathExpressions:
+      - .spec.clusterIP
+      - .spec.clusterIPs
+      - '.spec.ports[]?.nodePort'
+```
+
+**CRDs with status subresource not properly configured:**
+```yaml
+# argocd-cm — ignore status globally for a CRD
+data:
+  resource.customizations.ignoreDifferences.mygroup.io_MyResource: |
+    jsonPointers:
+      - /status
+    jqPathExpressions:
+      - .metadata.generation
+```
+
+**Argo Rollouts AnalysisRun fields:**
+```yaml
+ignoreDifferences:
+  - group: argoproj.io
+    kind: Rollout
+    jqPathExpressions:
+      - .spec.template.metadata.annotations."rollout.argoproj.io/revision"
+```
+
+> **Tip:** Run `argocd app diff my-app` to see exactly what fields differ before configuring ignoreDifferences. Use `--server-side` flag to compare with server-side diff.

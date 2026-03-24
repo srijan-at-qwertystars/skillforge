@@ -65,22 +65,9 @@ indent-style = "space"
 line-ending = "auto"
 ```
 
-### Equivalent ruff.toml (standalone)
-
-```toml
-line-length = 88
-target-version = "py312"
-
-[lint]
-select = ["E", "F", "W", "I", "UP", "B", "N"]
-
-[format]
-quote-style = "double"
-```
-
 ## Rule Categories Reference
 
-Select rules via prefix codes in `select`. Core categories:
+Select rules via prefix codes in `select`. Core categories (see `references/rule-categories.md` for full details):
 
 | Prefix | Origin | What it checks |
 |--------|--------|---------------|
@@ -254,60 +241,41 @@ unfixable = ["F401"]  # Never auto-remove unused imports
 
 ## Migration from Legacy Tools
 
+See `references/migration-guide.md` for comprehensive step-by-step migration from all tools. Quick overview:
+
 ### From Flake8
 
 ```bash
-# 1. Remove flake8 and plugins
-pip uninstall flake8 flake8-bugbear flake8-comprehensions flake8-isort
-
-# 2. Convert .flake8 or setup.cfg to pyproject.toml
-# Map max-line-length → line-length
-# Map select/extend-select → [tool.ruff.lint] select
-# Map ignore → [tool.ruff.lint] ignore
-# Map per-file-ignores → [tool.ruff.lint.per-file-ignores]
-# Map flake8 plugin codes → equivalent Ruff prefixes (usually same codes)
+# 1. Map flake8 settings to [tool.ruff.lint] (same rule codes)
+# 2. Run: scripts/migrate-config.sh to auto-generate config
+# 3. Uninstall: pip uninstall flake8 flake8-bugbear flake8-comprehensions ...
 ```
 
 ### From Black
 
 ```bash
-# 1. Remove black
-pip uninstall black
-
-# 2. Use ruff format (drop-in replacement)
-# Copy line-length from [tool.black] to [tool.ruff]
-# Copy target-version
-# skip-string-normalization = true → quote-style = "preserve"
+# 1. ruff format is a drop-in replacement (>99.9% identical output)
+# 2. Copy line-length and target-version to [tool.ruff]
+# 3. skip-string-normalization = true → quote-style = "preserve"
+# 4. Uninstall: pip uninstall black
 ```
 
 ### From isort
 
 ```bash
-# 1. Remove isort
-pip uninstall isort
-
-# 2. Enable "I" rules in Ruff
-# Map known_first_party → [tool.ruff.lint.isort] known-first-party
-# Map known_third_party → known-third-party
-# Map profile = "black" → Ruff default already matches
+# 1. Enable "I" rules in Ruff
+# 2. Map known_first_party → [tool.ruff.lint.isort] known-first-party
+# 3. profile = "black" → Ruff default already matches
+# 4. Uninstall: pip uninstall isort
 ```
 
 ### From Pylint
 
 ```toml
-# Enable PL rules for Pylint parity
+# Enable PL rules for partial Pylint parity (~30% of rules)
 [tool.ruff.lint]
 select = ["PL"]
-# PLC = Pylint Convention, PLE = Error, PLR = Refactor, PLW = Warning
-# Not all Pylint rules have Ruff equivalents; keep Pylint for advanced checks if needed
-```
-
-### Migration command helper
-
-```bash
-# See which Flake8 rules map to Ruff
-ruff rule F401   # Show details for a specific rule
-ruff linter      # List all supported linters/origins
+# Keep Pylint for advanced checks (duplicate-code, cyclic-import, no-member)
 ```
 
 ## Pre-commit Integration
@@ -480,3 +448,45 @@ ruff check . --statistics --select ALL
 | `ruff linter` | List all supported linter origins |
 | `ruff check --output-format json .` | JSON output for tooling |
 | `ruff check --diff .` | Show what --fix would change |
+
+## Reference Guides
+
+Deep-dive documentation in `references/`:
+
+### Rule Categories (`references/rule-categories.md`)
+Comprehensive guide to all Ruff rule categories with top rules, code examples, fixability info, and per-file-ignores patterns. Covers: pycodestyle (E/W), Pyflakes (F), isort (I), pep8-naming (N), pyupgrade (UP), bandit (S), bugbear (B), comprehensions (C4), pydocstyle (D), Perflint (PERF), refurb (FURB), Ruff-specific (RUF), Pylint (PL), simplify (SIM), pytest-style (PT), and more. Includes a selection strategy matrix by project type.
+
+### Migration Guide (`references/migration-guide.md`)
+Step-by-step migration from flake8 (with all plugins), Black, isort, Pylint, Bandit, pyupgrade, pydocstyle, autopep8, and yapf. Contains config mapping tables (setting-by-setting), equivalent rule code tables, pre-commit migration, CI/CD migration, combined all-in-one migration script, gap analysis for rules Ruff doesn't implement, and a verification checklist.
+
+### Advanced Configuration (`references/advanced-config.md`)
+Complex config patterns: `extend` vs override semantics, per-file-ignores glob recipes, target-version gating, preview rules, rule deprecation, custom fixable/unfixable sets, namespace packages, monorepo config with per-package overrides, and framework-specific configs for Django, FastAPI, pytest, and data science projects. Also covers output formats, performance tuning, and cache management.
+
+## Helper Scripts
+
+Executable scripts in `scripts/`:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/migrate-config.sh` | Migrate flake8/isort/black config to Ruff `pyproject.toml` | `./scripts/migrate-config.sh [project-dir]` |
+| `scripts/setup-precommit.sh` | Set up pre-commit hooks with Ruff linting + formatting | `./scripts/setup-precommit.sh [project-dir]` |
+| `scripts/audit-rules.sh` | Analyze codebase violations, suggest adoption strategy | `./scripts/audit-rules.sh [project-dir]` |
+
+### migrate-config.sh
+Detects existing `.flake8`, `setup.cfg [flake8]`, `[tool.isort]`, and `[tool.black]` configs. Extracts line-length, select/ignore rules, known-first-party, max-complexity, and quote style. Outputs a ready-to-paste `[tool.ruff]` config block. Does not modify files.
+
+### setup-precommit.sh
+Creates `.pre-commit-config.yaml` with `ruff` (lint + fix) and `ruff-format` hooks. Auto-detects installed Ruff version. Supports `--ruff-version`, `--unsafe-fixes`, `--no-install`, `--dry-run` flags. Installs `pre-commit` if missing and runs initial check.
+
+### audit-rules.sh
+Runs `ruff check --select ALL --statistics` on your codebase. Reports total violations, top rules by count, violations grouped by category, worst files, auto-fix potential percentage, and a phased adoption strategy (low → medium → high violation categories). Supports `--top N`, `--output FILE`, `--select RULES`.
+
+## Config Templates (Assets)
+
+Ready-to-use templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| `assets/pyproject.toml` | Production Ruff config with recommended rules for web projects. Heavily commented — every rule category explained. |
+| `assets/pre-commit-config.yaml` | Pre-commit config with Ruff hooks + general file hygiene hooks. Optional mypy and detect-secrets hooks commented out. |
+| `assets/github-actions.yml` | GitHub Actions workflow for Ruff linting and formatting. Uses official `astral-sh/ruff-action`. Includes optional auto-fix job. |

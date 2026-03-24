@@ -31,6 +31,21 @@
   - [Attestation with SLSA](#attestation-with-slsa)
   - [Manifest Verification with GPG](#manifest-verification-with-gpg)
   - [Hardening the Argo CD Installation](#hardening-the-argo-cd-installation)
+- [SAML SSO Configuration](#saml-sso-configuration)
+  - [SAML with Dex](#saml-with-dex)
+  - [Direct SAML Providers](#direct-saml-providers)
+  - [SAML Troubleshooting](#saml-troubleshooting)
+- [Project-Level Security Restrictions](#project-level-security-restrictions)
+  - [Namespace Isolation](#namespace-isolation)
+  - [Source Repository Restrictions](#source-repository-restrictions)
+  - [Resource Whitelisting and Blacklisting](#resource-whitelisting-and-blacklisting)
+  - [Sync Windows for Change Control](#sync-windows-for-change-control)
+  - [Destination Service Accounts](#destination-service-accounts)
+- [Repository and Cluster Credentials](#repository-and-cluster-credentials)
+  - [Repository Credential Management](#repository-credential-management)
+  - [Credential Templates](#credential-templates)
+  - [Cluster Secret Structure](#cluster-secret-structure)
+  - [Rotating Credentials](#rotating-credentials)
 
 ---
 
@@ -1053,4 +1068,381 @@ metadata:
 # Security advisories: https://github.com/argoproj/argo-cd/security/advisories
 # Check for CVEs:
 argocd version
+```
+
+---
+
+## SAML SSO Configuration
+
+### SAML with Dex
+
+Dex acts as an identity broker that supports SAML. Configure a SAML connector in `argocd-cm`:
+
+```yaml
+# argocd-cm ConfigMap
+data:
+  dex.config: |
+    connectors:
+      - type: saml
+        id: saml
+        name: "Corporate SSO"
+        config:
+          ssoURL: https://idp.example.com/sso/saml
+          caData: |
+            <base64-encoded-CA-certificate>
+          # OR reference a file:
+          # ca: /path/to/ca.pem
+          redirectURI: https://argocd.example.com/api/dex/callback
+          entityIssuer: https://argocd.example.com/api/dex/callback
+          ssoIssuer: https://idp.example.com
+          usernameAttr: name
+          emailAttr: email
+          groupsAttr: groups
+          # For ADFS, uncomment:
+          # nameIDPolicyFormat: persistent
+```
+
+**IDP Configuration requirements:**
+- ACS URL (Assertion Consumer Service): `https://argocd.example.com/api/dex/callback`
+- Entity ID: `https://argocd.example.com/api/dex/callback`
+- Attributes: Include `name`, `email`, `groups` in SAML assertion
+- Sign assertions (not just the response)
+
+Enable Dex in Helm values:
+```yaml
+dex:
+  enabled: true
+```
+
+### Direct SAML Providers
+
+**OneLogin:**
+```yaml
+dex.config: |
+  connectors:
+    - type: saml
+      id: onelogin
+      name: OneLogin
+      config:
+        ssoURL: https://company.onelogin.com/trust/saml2/http-post/sso/123456
+        caData: <base64-cert>
+        redirectURI: https://argocd.example.com/api/dex/callback
+        usernameAttr: User.Username
+        emailAttr: User.email
+        groupsAttr: memberOf
+```
+
+**PingFederate:**
+```yaml
+dex.config: |
+  connectors:
+    - type: saml
+      id: pingfederate
+      name: PingFederate
+      config:
+        ssoURL: https://sso.example.com/idp/SSO.saml2
+        caData: <base64-cert>
+        redirectURI: https://argocd.example.com/api/dex/callback
+        entityIssuer: urn:argocd
+        usernameAttr: uid
+        emailAttr: mail
+        groupsAttr: groups
+        insecureSkipSignatureValidation: false
+```
+
+### SAML Troubleshooting
+
+```bash
+# Check Dex logs for SAML errors
+kubectl logs -n argocd deploy/argocd-dex-server | grep -i "saml\|assertion\|binding"
+
+# Common errors and fixes:
+# "cannot unmarshal SAML response" — IDP is sending HTTP-Redirect binding, Dex needs HTTP-POST
+# "signature validation failed" — Wrong CA certificate; download the IDP's signing cert
+# "no groups claim" — groupsAttr name doesn't match what IDP sends; inspect SAML assertion XML
+```
+
+**Debug SAML assertion:**
+1. Use browser dev tools → Network tab during login
+2. Find the POST to `/api/dex/callback`
+3. The `SAMLResponse` form value is base64-encoded XML
+4. Decode and inspect attributes: `echo '<SAMLResponse>' | base64 -d | xmllint --format -`
+
+---
+
+## Project-Level Security Restrictions
+
+AppProjects are the primary mechanism for multi-tenant security in Argo CD. They restrict what an application can do.
+
+### Namespace Isolation
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: team-frontend
+  namespace: argocd
+spec:
+  # Team can ONLY deploy to their own namespaces
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: frontend-*
+    - server: https://kubernetes.default.svc
+      namespace: shared-services
+  # DENY all other namespaces (implicit — if not listed, it's denied)
+```
+
+**Critical rule:** Never use `namespace: '*'` in production projects. This allows any namespace, defeating isolation.
+
+### Source Repository Restrictions
+
+```yaml
+spec:
+  # Only allow repos owned by this team
+  sourceRepos:
+    - 'https://github.com/org/frontend-*.git'
+    - 'https://github.com/org/shared-charts.git'
+    - 'https://charts.bitnami.com/bitnami'
+    # NEVER use '*' in production — allows any repo
+```
+
+### Resource Whitelisting and Blacklisting
+
+```yaml
+spec:
+  # Cluster-scoped: only allow Namespace creation (deny ClusterRole, etc.)
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+
+  # Namespace-scoped: deny dangerous resources
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota       # Prevent teams from modifying quotas
+    - group: ''
+      kind: LimitRange
+    - group: networking.k8s.io
+      kind: NetworkPolicy       # Only platform team manages network policies
+    - group: rbac.authorization.k8s.io
+      kind: Role                # Prevent privilege escalation
+    - group: rbac.authorization.k8s.io
+      kind: RoleBinding
+
+  # Alternative: strict allowlist (only these resources)
+  # namespaceResourceWhitelist:
+  #   - group: ''
+  #     kind: ConfigMap
+  #   - group: ''
+  #     kind: Secret
+  #   - group: ''
+  #     kind: Service
+  #   - group: apps
+  #     kind: Deployment
+  #   - group: apps
+  #     kind: StatefulSet
+  #   - group: networking.k8s.io
+  #     kind: Ingress
+```
+
+### Sync Windows for Change Control
+
+```yaml
+spec:
+  syncWindows:
+    # Production: only allow syncs during business hours (Mon-Fri 9am-5pm UTC)
+    - kind: allow
+      schedule: '0 9 * * 1-5'
+      duration: 8h
+      applications: ['*']
+      namespaces: ['frontend-prod-*']
+      manualSync: true              # Allow manual sync within the window
+      timeZone: "America/New_York"  # v2.8+
+
+    # Block all syncs during holiday change freeze
+    - kind: deny
+      schedule: '0 0 20 12 *'       # Dec 20
+      duration: 336h                 # 14 days
+      applications: ['*']
+      clusters: ['*']
+
+    # Allow emergency syncs for critical fixes (manual only)
+    - kind: allow
+      schedule: '* * * * *'          # Always
+      duration: 24h
+      applications: ['frontend-hotfix-*']
+      manualSync: true
+```
+
+### Destination Service Accounts
+
+Limit the Kubernetes permissions Argo CD uses when deploying to a namespace (v2.9+):
+
+```yaml
+spec:
+  destinationServiceAccounts:
+    - server: https://kubernetes.default.svc
+      namespace: frontend-prod
+      defaultServiceAccount: argocd-frontend-deployer
+    - server: https://kubernetes.default.svc
+      namespace: frontend-staging
+      defaultServiceAccount: argocd-frontend-deployer
+```
+
+Create the scoped ServiceAccount in the target namespace:
+```yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: argocd-frontend-deployer
+  namespace: frontend-prod
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argocd-frontend-deployer
+  namespace: frontend-prod
+rules:
+  - apiGroups: ["", "apps", "networking.k8s.io"]
+    resources: ["deployments", "services", "configmaps", "secrets", "ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-frontend-deployer
+  namespace: frontend-prod
+subjects:
+  - kind: ServiceAccount
+    name: argocd-frontend-deployer
+    namespace: frontend-prod
+roleRef:
+  kind: Role
+  name: argocd-frontend-deployer
+  apiGroup: rbac.authorization.k8s.io
+```
+
+---
+
+## Repository and Cluster Credentials
+
+### Repository Credential Management
+
+Argo CD stores repository credentials as Kubernetes Secrets with a specific label:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: repo-github-org
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repository
+type: Opaque
+stringData:
+  type: git
+  url: https://github.com/org/private-repo.git
+  # HTTPS authentication:
+  username: argocd-bot
+  password: ghp_xxxxxxxxxxxx     # Use fine-grained PAT with Contents: read
+  # SSH authentication (alternative):
+  # sshPrivateKey: |
+  #   -----BEGIN OPENSSH PRIVATE KEY-----
+  #   ...
+  #   -----END OPENSSH PRIVATE KEY-----
+```
+
+**Best practices for repo credentials:**
+- Use GitHub App or fine-grained PATs with minimal scope (Contents: read-only)
+- Store credentials in a secrets manager (External Secrets Operator, Sealed Secrets)
+- Never use personal tokens — use bot/machine accounts
+- Set `insecure: "true"` only for self-signed internal Git servers (never in production)
+
+### Credential Templates
+
+Credential templates auto-apply to any matching repository URL:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-org-creds
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repo-creds
+type: Opaque
+stringData:
+  type: git
+  url: https://github.com/org           # Matches ALL repos under this org
+  # GitHub App authentication (recommended):
+  githubAppID: "12345"
+  githubAppInstallationID: "67890"
+  githubAppPrivateKey: |
+    -----BEGIN RSA PRIVATE KEY-----
+    ...
+    -----END RSA PRIVATE KEY-----
+```
+
+### Cluster Secret Structure
+
+External clusters are stored as Secrets with connection details:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: production-cluster
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+    env: production                      # Labels used by cluster generator
+    region: us-east-1
+type: Opaque
+stringData:
+  name: production
+  server: https://k8s-prod.example.com
+  config: |
+    {
+      "bearerToken": "<service-account-token>",
+      "tlsClientConfig": {
+        "insecure": false,
+        "caData": "<base64-ca-cert>"
+      }
+    }
+```
+
+**For EKS clusters:** Use `eksctl` or `aws eks update-kubeconfig` to generate the kubeconfig, then `argocd cluster add`. For IAM authentication:
+```json
+{
+  "awsAuthConfig": {
+    "clusterName": "my-eks-cluster",
+    "roleARN": "arn:aws:iam::123456789:role/argocd-deployer"
+  },
+  "tlsClientConfig": {
+    "insecure": false,
+    "caData": "<base64-ca-cert>"
+  }
+}
+```
+
+### Rotating Credentials
+
+```bash
+# Rotate repo credentials
+kubectl create secret generic repo-github-org -n argocd \
+  --from-literal=type=git \
+  --from-literal=url=https://github.com/org/repo.git \
+  --from-literal=username=bot \
+  --from-literal=password=NEW_TOKEN \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Rotate cluster credentials
+# 1. Generate new ServiceAccount token in target cluster
+# 2. Update the cluster secret
+kubectl edit secret production-cluster -n argocd
+# 3. Verify connectivity
+argocd cluster list
+argocd cluster get production
+
+# Force repo-server to pick up new credentials
+kubectl rollout restart deploy/argocd-repo-server -n argocd
 ```

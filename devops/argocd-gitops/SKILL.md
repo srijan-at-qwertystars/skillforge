@@ -443,3 +443,23 @@ spec:
       restartPolicy: Never
   backoffLimit: 1
 ```
+## References
+Deep-dive documentation in `references/`:
+- **`references/advanced-patterns.md`** — ApplicationSet generators (matrix, merge, pull request, SCM provider), progressive delivery with Argo Rollouts, config management plugins, resource hooks lifecycle, custom health checks, diffing customization, multi-tenancy, GitOps repo structure patterns.
+- **`references/troubleshooting.md`** — Sync failures, OutOfSync diagnosis, resource hook failures, ComparisonError/diff issues, repo access failures, namespace gotchas, resource tracking conflicts, performance tuning (repo-server, controller, Redis), disaster recovery, RBAC permission errors, SSO/OIDC problems, webhook issues, Image Updater troubleshooting.
+- **`references/security-guide.md`** — RBAC policies and Casbin syntax, SSO (OIDC, Dex, SAML, Azure AD, Okta), secrets management (Sealed Secrets, External Secrets, SOPS, Vault), network policies, audit logging, supply chain security (image signing, GPG), project-level restrictions, repository/cluster credential management.
+
+## Scripts
+Operational helpers in `scripts/` (all executable):
+- **`scripts/install-argocd.sh`** — Install ArgoCD via Helm or manifests, HA/non-HA, custom version, dry-run mode.
+- **`scripts/bootstrap-apps.sh`** — Set up App of Apps pattern: create root Application, scaffold gitops repo directory structure with Kustomize overlays.
+- **`scripts/sync-check.sh`** — Check sync status of all applications, report drift, identify failed syncs. Supports table/JSON/brief output, CI exit codes, wait mode.
+- **`scripts/app-health-check.sh`** — Health dashboard: filter by project, show unhealthy/out-of-sync apps with color-coded table output.
+- **`scripts/backup-restore.sh`** — Backup and restore Applications, AppProjects, repo/cluster secrets, ConfigMaps, notification config.
+
+## Assets
+Production-ready templates in `assets/`:
+- **`assets/application.yaml`** — Application CRD template with sync policy, Helm/Kustomize/directory options, multi-source, ignoreDifferences, Image Updater annotations.
+- **`assets/applicationset.yaml`** — ApplicationSet template with git directory generator, commented examples for list/cluster/matrix/PR generators, rolling sync strategy, templatePatch.
+- **`assets/project.yaml`** — AppProject template with RBAC roles (developer/lead/CI/viewer), sync windows, orphaned resource monitoring, resource blacklists, destination service accounts.
+- **`assets/argocd-values.yaml`** — Production Helm values: HA, OIDC/Dex SSO, RBAC, notifications, Redis HA, resource limits, metrics/ServiceMonitor.

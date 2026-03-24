@@ -1,0 +1,349 @@
+# Traefik Dynamic Configuration Template
+#
+# Hot-reloaded by the file provider — no restart required.
+# Mount into the directory specified by providers.file.directory.
+#
+# Contains: Routers, Services, Middlewares, TLS options.
+
+# ─── HTTP Configuration ─────────────────────────────────────────────────────
+
+http:
+
+  # ── Routers ────────────────────────────────────────────────────────────────
+  routers:
+    # Dashboard — secured with auth
+    dashboard:
+      rule: "Host(`traefik.example.com`)"
+      entryPoints: [websecure]
+      service: api@internal
+      middlewares: [dashboard-auth, secure-headers]
+      tls:
+        certResolver: letsencrypt
+
+    # Web application — standard HTTPS
+    webapp:
+      rule: "Host(`app.example.com`)"
+      entryPoints: [websecure]
+      service: webapp-svc
+      middlewares: [secure-headers, compress, rate-limit]
+      tls:
+        certResolver: letsencrypt
+
+    # API — path-based routing with higher priority
+    api:
+      rule: "Host(`app.example.com`) && PathPrefix(`/api`)"
+      entryPoints: [websecure]
+      service: api-svc
+      middlewares: [strip-api, rate-limit-api, cors, secure-headers]
+      priority: 100
+      tls:
+        certResolver: letsencrypt
+
+    # WebSocket endpoint
+    websocket:
+      rule: "Host(`ws.example.com`)"
+      entryPoints: [websecure]
+      service: ws-svc
+      middlewares: [secure-headers]
+      tls:
+        certResolver: letsencrypt
+
+    # Legacy application — external backend
+    legacy:
+      rule: "Host(`legacy.example.com`)"
+      entryPoints: [websecure]
+      service: legacy-svc
+      middlewares: [secure-headers, retry]
+      tls:
+        certResolver: letsencrypt
+
+    # www → apex redirect
+    www-redirect:
+      rule: "Host(`www.example.com`)"
+      entryPoints: [websecure]
+      middlewares: [www-to-apex]
+      service: webapp-svc
+      tls:
+        certResolver: letsencrypt
+
+  # ── Services ───────────────────────────────────────────────────────────────
+  services:
+    webapp-svc:
+      loadBalancer:
+        servers:
+          - url: "http://webapp:80"
+        healthCheck:
+          path: /health
+          interval: 15s
+          timeout: 3s
+
+    api-svc:
+      loadBalancer:
+        servers:
+          - url: "http://api:8080"
+        healthCheck:
+          path: /health
+          interval: 10s
+          timeout: 3s
+
+    ws-svc:
+      loadBalancer:
+        servers:
+          - url: "http://websocket:8080"
+        sticky:
+          cookie:
+            name: ws_session
+            secure: true
+            httpOnly: true
+
+    legacy-svc:
+      loadBalancer:
+        servers:
+          - url: "http://10.0.1.10:3000"
+          - url: "http://10.0.1.11:3000"
+        healthCheck:
+          path: /healthz
+          interval: 15s
+          timeout: 5s
+
+    # Canary deployment — weighted split
+    app-canary:
+      weighted:
+        services:
+          - name: webapp-svc
+            weight: 90
+          - name: api-svc     # Replace with actual canary service
+            weight: 10
+
+    # Traffic mirroring — shadow testing
+    app-mirrored:
+      mirroring:
+        service: webapp-svc
+        maxBodySize: 1048576    # 1MB
+        mirrors:
+          - name: api-svc      # Replace with shadow service
+            percent: 5
+
+  # ── Middlewares ─────────────────────────────────────────────────────────────
+  middlewares:
+
+    # Security Headers (OWASP best practices)
+    secure-headers:
+      headers:
+        sslRedirect: true
+        forceSTSHeader: true
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        frameDeny: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        permissionsPolicy: "camera=(), microphone=(), geolocation=()"
+        customResponseHeaders:
+          X-Powered-By: ""              # Remove server info
+          Server: ""
+        contentSecurityPolicy: >-
+          default-src 'self';
+          script-src 'self';
+          style-src 'self' 'unsafe-inline';
+          img-src 'self' data:;
+          font-src 'self';
+          connect-src 'self';
+          frame-ancestors 'none'
+
+    # Dashboard Authentication
+    dashboard-auth:
+      basicAuth:
+        # Generate: htpasswd -nbB admin password
+        users:
+          - "admin:$2y$05$CHANGE_ME_WITH_HTPASSWD_OUTPUT"
+        removeHeader: true
+
+    # Rate Limiting — general
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    # Rate Limiting — API (stricter)
+    rate-limit-api:
+      rateLimit:
+        average: 50
+        burst: 100
+        period: 1s
+        sourceCriterion:
+          requestHeaderName: "X-API-Key"
+
+    # CORS for API
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - "GET"
+          - "POST"
+          - "PUT"
+          - "DELETE"
+          - "PATCH"
+          - "OPTIONS"
+        accessControlAllowHeaders:
+          - "Content-Type"
+          - "Authorization"
+          - "X-API-Key"
+          - "X-Request-Id"
+        accessControlAllowOriginList:
+          - "https://app.example.com"
+          - "https://staging.example.com"
+        accessControlMaxAge: 3600
+        accessControlExposeHeaders:
+          - "X-Request-Id"
+          - "X-RateLimit-Remaining"
+        addVaryHeader: true
+
+    # Compression
+    compress:
+      compress:
+        excludedContentTypes:
+          - "text/event-stream"
+        minResponseBodyBytes: 1024
+
+    # Retry on failures
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: 500ms
+
+    # Circuit Breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: "ResponseCodeRatio(500, 600, 0, 600) > 0.25"
+        checkPeriod: 10s
+        fallbackDuration: 30s
+        recoveryDuration: 60s
+
+    # Path manipulation
+    strip-api:
+      stripPrefix:
+        prefixes:
+          - "/api"
+
+    add-v2:
+      addPrefix:
+        prefix: "/v2"
+
+    # Redirect www → apex
+    www-to-apex:
+      redirectRegex:
+        regex: "^https?://www\\.(.+)"
+        replacement: "https://${1}"
+        permanent: true
+
+    # IP Allowlist — internal only
+    internal-only:
+      ipAllowList:
+        sourceRange:
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+
+    # Middleware chain — production stack
+    production-stack:
+      chain:
+        middlewares:
+          - secure-headers
+          - rate-limit
+          - compress
+          - retry
+
+    # Middleware chain — API stack
+    api-stack:
+      chain:
+        middlewares:
+          - cors
+          - rate-limit-api
+          - secure-headers
+          - compress
+
+# ─── TLS Configuration ──────────────────────────────────────────────────────
+
+tls:
+  options:
+    # Modern — TLS 1.3 only (best security)
+    modern:
+      minVersion: VersionTLS13
+      sniStrict: true
+
+    # Intermediate — TLS 1.2+ (broader compatibility)
+    intermediate:
+      minVersion: VersionTLS12
+      cipherSuites:
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+      curvePreferences:
+        - CurveP521
+        - CurveP384
+      sniStrict: true
+
+    # mTLS — require client certificate
+    mtls:
+      minVersion: VersionTLS12
+      clientAuth:
+        caFiles:
+          - /certs/client-ca.pem
+        clientAuthType: RequireAndVerifyClientCert
+      sniStrict: true
+
+    # Default TLS options (applied when no option specified)
+    default:
+      minVersion: VersionTLS12
+      sniStrict: false
+
+  # Custom certificates (non-ACME)
+  # certificates:
+  #   - certFile: /certs/example.com.crt
+  #     keyFile: /certs/example.com.key
+  #     stores:
+  #       - default
+
+  # Default certificate store
+  # stores:
+  #   default:
+  #     defaultCertificate:
+  #       certFile: /certs/default.crt
+  #       keyFile: /certs/default.key
+
+# ─── TCP Configuration (uncomment if needed) ─────────────────────────────────
+
+# tcp:
+#   routers:
+#     postgres:
+#       rule: "HostSNI(`db.example.com`)"
+#       entryPoints: [postgres]
+#       service: postgres-svc
+#       tls:
+#         passthrough: true
+#   services:
+#     postgres-svc:
+#       loadBalancer:
+#         servers:
+#           - address: "10.0.1.20:5432"
+
+# ─── UDP Configuration (uncomment if needed) ─────────────────────────────────
+
+# udp:
+#   routers:
+#     dns:
+#       entryPoints: [dns]
+#       service: dns-svc
+#   services:
+#     dns-svc:
+#       loadBalancer:
+#         servers:
+#           - address: "10.0.1.30:53"

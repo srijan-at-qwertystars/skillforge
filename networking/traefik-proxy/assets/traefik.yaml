@@ -1,0 +1,196 @@
+# Traefik Static Configuration — Production Template
+#
+# This file configures startup-time settings that require a restart to change.
+# For dynamic config (routers, services, middlewares), see dynamic-config.yaml.
+#
+# Mount this as: -v ./traefik.yaml:/traefik.yaml:ro
+
+# ─── API & Dashboard ─────────────────────────────────────────────────────────
+api:
+  dashboard: true
+  insecure: false            # NEVER true in production — route via secure IngressRoute/labels
+
+# ─── Entrypoints ─────────────────────────────────────────────────────────────
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+    # ProxyProtocol (uncomment if behind AWS NLB / HAProxy with PROXY protocol)
+    # proxyProtocol:
+    #   trustedIPs:
+    #     - "10.0.0.0/8"
+    #     - "172.16.0.0/12"
+    # forwardedHeaders:
+    #   trustedIPs:
+    #     - "10.0.0.0/8"
+    #     - "172.16.0.0/12"
+
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: letsencrypt
+      middlewares:
+        - secure-headers@file    # Apply to all HTTPS routes by default
+    transport:
+      respondingTimeouts:
+        readTimeout: 60s
+        writeTimeout: 60s
+        idleTimeout: 180s
+      lifeCycle:
+        requestAcceptGraceTimeout: 10s
+        graceTimeOut: 30s
+    # forwardedHeaders:
+    #   trustedIPs:
+    #     - "10.0.0.0/8"
+    #     - "172.16.0.0/12"
+    #     - "173.245.48.0/20"    # Cloudflare
+    #     - "103.21.244.0/22"
+    #     - "103.22.200.0/22"
+    #     - "103.31.4.0/22"
+    #     - "141.101.64.0/18"
+    #     - "108.162.192.0/18"
+    #     - "190.93.240.0/20"
+    #     - "188.114.96.0/20"
+    #     - "197.234.240.0/22"
+    #     - "198.41.128.0/17"
+    #     - "162.158.0.0/15"
+    #     - "104.16.0.0/13"
+    #     - "104.24.0.0/14"
+    #     - "172.64.0.0/13"
+    #     - "131.0.72.0/22"
+
+  metrics:
+    address: ":8082"
+
+  # Uncomment for TCP/UDP entrypoints:
+  # postgres:
+  #   address: ":5432"
+  # dns:
+  #   address: ":53/udp"
+
+# ─── Providers ───────────────────────────────────────────────────────────────
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    network: proxy
+    # Use Docker socket proxy:
+    # endpoint: "tcp://docker-proxy:2375"
+    # Watch for container changes
+    watch: true
+
+  file:
+    directory: "/etc/traefik/dynamic"
+    watch: true
+
+  # Kubernetes (uncomment if running in K8s without Helm)
+  # kubernetesCRD:
+  #   allowCrossNamespace: true
+  # kubernetesIngress:
+  #   publishedService:
+  #     enabled: true
+
+# ─── Certificate Resolvers ───────────────────────────────────────────────────
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: admin@example.com
+      storage: /data/acme.json
+      # Use staging for testing (uncomment):
+      # caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"
+      httpChallenge:
+        entryPoint: web
+
+  # DNS challenge for wildcard certs (uncomment and configure):
+  # letsencrypt-dns:
+  #   acme:
+  #     email: admin@example.com
+  #     storage: /data/acme-dns.json
+  #     dnsChallenge:
+  #       provider: cloudflare
+  #       resolvers:
+  #         - "1.1.1.1:53"
+  #         - "8.8.8.8:53"
+  #       delayBeforeCheck: 10s
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+log:
+  level: INFO                # DEBUG, INFO, WARN, ERROR
+  format: json
+  filePath: "/var/log/traefik/traefik.log"
+  # maxSize: 100             # MB, log rotation
+  # maxAge: 7                # days
+  # maxBackups: 5
+
+accessLog:
+  filePath: "/var/log/traefik/access.log"
+  format: json
+  bufferingSize: 100
+  filters:
+    statusCodes:
+      - "400-499"
+      - "500-599"
+    # retryAttempts: true
+    # minDuration: "1s"      # Only log slow requests
+  fields:
+    defaultMode: keep
+    names:
+      ClientUsername: drop
+      StartLocal: drop
+    headers:
+      defaultMode: drop
+      names:
+        User-Agent: keep
+        Authorization: redact
+        X-Forwarded-For: keep
+        Content-Type: keep
+
+# ─── Metrics ─────────────────────────────────────────────────────────────────
+metrics:
+  prometheus:
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+    # Histogram buckets (tune for your latency profile)
+    buckets:
+      - 0.01
+      - 0.05
+      - 0.1
+      - 0.3
+      - 0.6
+      - 1.0
+      - 2.5
+      - 5.0
+      - 10.0
+      - 30.0
+
+# ─── Tracing (OpenTelemetry) ─────────────────────────────────────────────────
+# Uncomment to enable distributed tracing:
+# tracing:
+#   otlp:
+#     grpc:
+#       endpoint: "otel-collector:4317"
+#       insecure: true
+#     # OR HTTP:
+#     # http:
+#     #   endpoint: "http://otel-collector:4318/v1/traces"
+
+# ─── Health Check ────────────────────────────────────────────────────────────
+ping:
+  entryPoint: web
+  terminatingStatusCode: 503
+
+# ─── Server Transport Defaults ───────────────────────────────────────────────
+serversTransport:
+  maxIdleConnsPerHost: 200
+  forwardingTimeouts:
+    dialTimeout: 30s
+    responseHeaderTimeout: 30s
+    idleConnTimeout: 90s

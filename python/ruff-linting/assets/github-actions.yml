@@ -1,0 +1,99 @@
+# =============================================================================
+# GitHub Actions Workflow — Ruff Linting and Formatting
+# =============================================================================
+# Copy this file to .github/workflows/ruff.yml in your repository.
+#
+# Features:
+#   - Runs ruff check (linting) and ruff format --check (formatting)
+#   - Annotates PR diffs with inline violation comments
+#   - Supports manual dispatch for full-repo checks
+#   - Caches ruff for fast subsequent runs
+# =============================================================================
+
+name: Ruff
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - "ruff.toml"
+      - ".ruff.toml"
+  pull_request:
+    paths:
+      - "**.py"
+      - "pyproject.toml"
+      - "ruff.toml"
+      - ".ruff.toml"
+  workflow_dispatch:  # Allow manual triggers
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ruff:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ---- Option A: Use the official Ruff GitHub Action (recommended) ----
+      - name: Ruff lint check
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check --output-format=github"
+
+      - name: Ruff format check
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check"
+
+      # ---- Option B: Install and run manually (for more control) ----
+      # Uncomment below and comment out Option A if you need custom setup
+      #
+      # - name: Install Ruff
+      #   run: pip install ruff
+      #
+      # - name: Ruff lint
+      #   run: ruff check --output-format=github .
+      #
+      # - name: Ruff format
+      #   run: ruff format --check .
+      #
+      # - name: Ruff statistics (informational)
+      #   if: always()
+      #   run: ruff check --statistics . || true
+
+  # ---- Optional: Auto-fix and commit (for trusted branches only) ----
+  # Uncomment this job to auto-fix and push changes on the main branch.
+  # WARNING: This modifies code automatically. Use with caution.
+  #
+  # autofix:
+  #   name: Auto-fix
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Install Ruff
+  #       run: pip install ruff
+  #
+  #     - name: Auto-fix lint issues
+  #       run: ruff check --fix .
+  #
+  #     - name: Auto-format
+  #       run: ruff format .
+  #
+  #     - name: Commit changes
+  #       uses: stefanzweifel/git-auto-commit-action@v5
+  #       with:
+  #         commit_message: "style: auto-fix ruff lint and format"
+  #         branch: ${{ github.ref_name }}

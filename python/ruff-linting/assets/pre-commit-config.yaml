@@ -1,0 +1,78 @@
+# =============================================================================
+# Pre-commit Configuration with Ruff
+# =============================================================================
+# Copy this file to your project root as .pre-commit-config.yaml
+#
+# Setup:
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit run --all-files
+#
+# Ruff replaces: flake8, black, isort, pyupgrade, bandit plugins
+# =============================================================================
+
+repos:
+  # ---- Ruff: Python linter and formatter ----
+  # Must run lint BEFORE format so auto-fixed code gets formatted
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.12   # Update with: pre-commit autoupdate
+    hooks:
+      # Linter: runs ruff check with auto-fix
+      - id: ruff
+        args:
+          - "--fix"                   # Apply safe auto-fixes
+          - "--exit-non-zero-on-fix"  # Fail if fixes were applied (re-stage needed)
+        # Uncomment to also apply unsafe fixes (review carefully):
+        # - "--unsafe-fixes"
+
+      # Formatter: runs ruff format (Black-compatible)
+      - id: ruff-format
+
+  # ---- General file hygiene ----
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: debug-statements        # Catch breakpoint(), pdb
+      - id: check-ast               # Validate Python syntax
+      - id: name-tests-test         # Ensure test files follow test_*.py
+        args: [--pytest-test-first]
+
+  # ---- Optional: Type checking ----
+  # Uncomment if using mypy
+  # - repo: https://github.com/pre-commit/mirrors-mypy
+  #   rev: v1.11.0
+  #   hooks:
+  #     - id: mypy
+  #       additional_dependencies: []  # Add your type stubs here
+  #       args: [--ignore-missing-imports]
+
+  # ---- Optional: Security scanning ----
+  # Uncomment for additional security checks beyond Ruff's S rules
+  # - repo: https://github.com/Yelp/detect-secrets
+  #   rev: v1.5.0
+  #   hooks:
+  #     - id: detect-secrets
+  #       args: [--baseline, .secrets.baseline]
+
+  # ---- Optional: Commit message linting ----
+  # - repo: https://github.com/commitizen-tools/commitizen
+  #   rev: v3.27.0
+  #   hooks:
+  #     - id: commitizen
+
+# =============================================================================
+# CI settings for pre-commit.ci (optional)
+# =============================================================================
+# ci:
+#   autoupdate_schedule: weekly
+#   autofix_prs: true
+#   autofix_commit_msg: "style: auto-fix pre-commit hooks"

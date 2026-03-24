@@ -431,48 +431,7 @@ TCP uses `HostSNI()` for matching; `HostSNI(` `` `*` `` `)` for catch-all withou
 
 ### Input: "Set up Traefik with HTTPS, dashboard, and a web app in Docker Compose"
 
-Output:
-```yaml
-services:
-  traefik:
-    image: traefik:v3.2
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
-      - "--certificatesresolvers.le.acme.email=admin@example.com"
-      - "--certificatesresolvers.le.acme.storage=/data/acme.json"
-      - "--api.dashboard=true"
-    ports: ["80:80", "443:443"]
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - traefik-data:/data
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`traefik.example.com`)"
-      - "traefik.http.routers.dashboard.entrypoints=websecure"
-      - "traefik.http.routers.dashboard.tls.certresolver=le"
-      - "traefik.http.routers.dashboard.service=api@internal"
-      - "traefik.http.routers.dashboard.middlewares=dash-auth"
-      - "traefik.http.middlewares.dash-auth.basicauth.users=admin:$$apr1$$xyz$$hash"
-    networks: [proxy]
-  webapp:
-    image: myapp:latest
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.webapp.rule=Host(`app.example.com`)"
-      - "traefik.http.routers.webapp.entrypoints=websecure"
-      - "traefik.http.routers.webapp.tls.certresolver=le"
-      - "traefik.http.services.webapp.loadbalancer.server.port=3000"
-    networks: [proxy]
-networks:
-  proxy: { external: true }
-volumes:
-  traefik-data:
-```
+Output: Use the template in [`assets/docker-compose.yaml`](assets/docker-compose.yaml) — it includes Traefik with Let's Encrypt, secured dashboard (BasicAuth), HTTP→HTTPS redirect, and example services. Customize domains, email, and dashboard password (generate with `htpasswd -nbB admin password`, double all `$` signs).
 
 ### Input: "Route 90% to v1 and 10% to v2 for canary"
 
@@ -486,3 +445,35 @@ Output: Use weighted service (see Load Balancing section) with `app-v1 weight:90
 - **Middleware ignored**: Verify `@provider` suffix — Docker-defined = `@docker`, file-defined = `@file`.
 - **Dashboard down**: Route to `api@internal` service. Never `api.insecure=true` in production.
 - **TCP conflicts**: One catch-all `HostSNI(*)` per TCP entrypoint. Use TLS + distinct SNI to multiplex.
+
+## Resources
+
+### References
+
+Deep-dive reference documents for complex scenarios:
+
+| Document | Contents |
+|----------|----------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Plugin system, custom middleware, Traefik Hub, canary/weighted deployments, mTLS, Consul/etcd providers, dynamic config reloading, custom error pages, regex path matching, gRPC proxying, ForwardAuth, IP allowlisting |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Diagnosing 404/502/503/504, certificate renewal failures, Docker socket security, provider conflicts, middleware ordering, WebSocket drops, memory optimization, log analysis, debug mode, health checks |
+| [`references/kubernetes-guide.md`](references/kubernetes-guide.md) | CRD installation, IngressRoute/IngressRouteTCP/IngressRouteUDP, Middleware CRD, TLSOption/TLSStore, TraefikService (canary/mirroring), cert-manager integration, Helm chart values, RBAC, HA, monitoring |
+
+### Scripts
+
+Executable helpers — run with `--help` for usage:
+
+| Script | Purpose |
+|--------|---------|
+| [`scripts/setup-traefik.sh`](scripts/setup-traefik.sh) | Deploy Traefik via Docker Compose or Helm. Generates static config, dynamic config, dashboard auth, acme.json. Supports `--staging` for Let's Encrypt testing. |
+| [`scripts/test-config.sh`](scripts/test-config.sh) | Validate traefik.yml syntax, check ACME storage permissions, query API for router/service/middleware health, test TLS certificates, verify HTTP→HTTPS redirects and security headers. |
+| [`scripts/generate-middleware.sh`](scripts/generate-middleware.sh) | Generate middleware configs (auth, rate-limit, headers, CORS, compress, circuit-breaker, redirect, IP allowlist, chain). Output as YAML, Docker labels, or Kubernetes CRDs. |
+
+### Assets
+
+Production-ready templates — copy and customize:
+
+| Template | Description |
+|----------|-------------|
+| [`assets/docker-compose.yaml`](assets/docker-compose.yaml) | Full Docker Compose with Traefik, Let's Encrypt, secured dashboard, Prometheus metrics, Docker socket proxy option, and example services (whoami, webapp, API). |
+| [`assets/traefik.yaml`](assets/traefik.yaml) | Static configuration template with entrypoints (HTTP→HTTPS redirect), Docker + File providers, ACME (HTTP + DNS challenge), structured logging, Prometheus metrics, OpenTelemetry tracing, and connection pool tuning. |
+| [`assets/dynamic-config.yaml`](assets/dynamic-config.yaml) | Dynamic configuration with example routers (app, API, WebSocket, legacy), services (load balancer, canary weighted, mirroring), full middleware set (security headers, rate limiting, CORS, compression, circuit breaker, auth, path manipulation), and TLS options (modern, intermediate, mTLS). |

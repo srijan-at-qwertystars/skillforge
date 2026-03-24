@@ -1,0 +1,150 @@
+# =============================================================================
+# Ruff Configuration Template — Production Web Project
+# =============================================================================
+# Copy this [tool.ruff] section into your project's pyproject.toml.
+# Adjust target-version, known-first-party, and per-file-ignores for your project.
+# =============================================================================
+
+[tool.ruff]
+# Minimum Python version your project supports
+target-version = "py312"
+
+# Match Black's default line length
+line-length = 88
+
+# Source directories for first-party import detection
+src = ["src"]
+
+# Add extra excludes on top of Ruff's defaults (.git, .venv, __pycache__, etc.)
+extend-exclude = [
+    "migrations",
+    "generated",
+    "vendor",
+    "static",
+]
+
+# Uncomment to pin Ruff version for reproducibility
+# required-version = ">=0.11.0"
+
+# --- Linting ---
+[tool.ruff.lint]
+select = [
+    # Core (always enable)
+    "E",       # pycodestyle errors
+    "F",       # Pyflakes
+    "W",       # pycodestyle warnings
+    "I",       # isort — import sorting
+
+    # Modernization
+    "UP",      # pyupgrade — version upgrade suggestions
+
+    # Bug prevention
+    "B",       # flake8-bugbear — likely bugs
+    "N",       # pep8-naming — naming conventions
+    "S",       # flake8-bandit — security checks
+    "A",       # flake8-builtins — builtin shadowing
+
+    # Code quality
+    "C4",      # flake8-comprehensions — simplify collections
+    "SIM",     # flake8-simplify — simplifiable constructs
+    "RET",     # flake8-return — return statement style
+    "ARG",     # flake8-unused-arguments
+    "PTH",     # flake8-use-pathlib — prefer pathlib
+
+    # Performance
+    "PERF",    # Perflint — performance anti-patterns
+
+    # Ruff native
+    "RUF",     # Ruff-specific rules
+
+    # Production code hygiene
+    "T20",     # flake8-print — catch print() statements
+    "DTZ",     # flake8-datetimez — timezone-aware datetimes
+    "ISC",     # implicit-string-concat
+    "PIE",     # flake8-pie — misc. lint
+
+    # Testing (enable when using pytest)
+    "PT",      # flake8-pytest-style
+]
+
+ignore = [
+    # Let the formatter handle line length
+    "E501",
+
+    # Rules that conflict with ruff format
+    "COM812",  # trailing comma
+    "ISC001",  # single-line implicit string concat
+
+    # Overly strict for most projects
+    # "D100",   # missing module docstring
+    # "D104",   # missing package docstring
+    # "ANN101", # missing type annotation for self
+]
+
+# Allow all auto-fixes
+fixable = ["ALL"]
+
+# Don't auto-remove imports (might be re-exports in __init__.py)
+unfixable = ["F401"]
+
+# --- Per-file rule overrides ---
+[tool.ruff.lint.per-file-ignores]
+# Tests: allow assert, unused args, magic values, many params
+"tests/**/*.py" = [
+    "S101",     # assert is fine in tests
+    "ARG001",   # fixtures often appear unused
+    "ARG002",   # unused method arguments in test classes
+    "PLR2004",  # magic value comparisons OK
+    "PLR0913",  # many arguments OK (fixtures)
+    "D",        # no docstrings required
+    "ANN",      # no type annotations required
+]
+
+# __init__.py: allow unused imports (re-exports)
+"__init__.py" = ["F401", "D104"]
+
+# Test configuration
+"conftest.py" = ["ARG001", "ARG002"]
+
+# Scripts: allow print and standalone execution
+"scripts/**/*.py" = ["T20", "INP001"]
+
+# Migrations: skip entirely
+"**/migrations/**/*.py" = ["ALL"]
+
+# --- Import sorting (isort) ---
+[tool.ruff.lint.isort]
+# Replace with your package name(s)
+known-first-party = ["myapp"]
+combine-as-imports = true
+force-sort-within-sections = true
+lines-after-imports = 2
+
+# --- Docstring style ---
+[tool.ruff.lint.pydocstyle]
+convention = "google"   # Options: "google", "numpy", "pep257"
+
+# --- McCabe complexity ---
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+# --- Pylint thresholds ---
+[tool.ruff.lint.pylint]
+max-args = 6
+max-returns = 8
+max-branches = 15
+max-statements = 60
+
+# --- pytest style ---
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+# --- Formatting (Black replacement) ---
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = 72
