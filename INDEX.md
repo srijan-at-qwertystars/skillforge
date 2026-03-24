@@ -206,3 +206,6 @@
 | patterns | clean-architecture | Clean Architecture with dependency rule, layers, CQRS, repository pattern in TypeScript/Python/Go | tested |
 | security | security-headers | HTTP security headers with CSP, HSTS, CORS, cookie security, and implementation patterns | tested |
 | frontend | vue-composition | Vue 3 Composition API with reactivity, composables, Pinia, VueUse, and TypeScript integration | tested |
+| frontend | nuxt-framework | Nuxt 3 full-stack Vue framework — auto-imports, file-based routing, Nitro server, hybrid rendering | created |
+| devops | chaos-engineering | Chaos engineering principles, tools, experiment design, fault injection, GameDay planning | created |
+| python | python-typing | Python type hints — generics, protocols, TypedDict, mypy/pyright, runtime checking, Pydantic | created |
