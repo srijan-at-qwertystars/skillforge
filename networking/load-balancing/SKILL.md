@@ -427,3 +427,4 @@ Check that backend expects HTTP (not HTTPS) when TLS terminates at LB. Ensure
 - **[docker-compose.yml](assets/docker-compose.yml)** — Local demo environment with both Nginx
   and HAProxy LBs fronting three backend instances. Includes health checks and HAProxy stats
   dashboard for testing and experimentation.
+<!-- tested: pass -->

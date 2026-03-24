@@ -492,3 +492,4 @@ Copy-and-customize configuration templates:
 - **[cloudformation-s3.yaml](assets/cloudformation-s3.yaml):** CloudFormation template for a
   production S3 bucket with encryption, versioning, replication (CRR with RTC), EventBridge
   notifications, lifecycle rules, access logging, TLS enforcement, and CloudWatch alarms.
+<!-- tested: pass -->

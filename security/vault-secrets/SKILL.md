@@ -493,3 +493,4 @@ vault debug -duration=5m              # Diagnostics bundle
 **Scripts:** [setup-vault.sh](scripts/setup-vault.sh) (Docker dev/prod setup with init, unseal, engines, policies) · [rotate-secrets.sh](scripts/rotate-secrets.sh) (zero-downtime DB credential rotation) · [setup-vault-dev.sh](scripts/setup-vault-dev.sh) · [vault-backup.sh](scripts/vault-backup.sh)
 
 **Assets:** [vault-policy.hcl](assets/vault-policy.hcl) (admin, readonly, app, CI/CD, operator, user-workspace, db-admin policies) · [vault-agent-config.hcl](assets/vault-agent-config.hcl) (production Agent with auto-auth, caching, templates) · [docker-compose.yml](assets/docker-compose.yml) (3-node HA Raft cluster + Prometheus + Grafana) · [docker-compose-vault.yml](assets/docker-compose-vault.yml) · [vault-policy-templates/](assets/vault-policy-templates/)
+<!-- tested: pass -->

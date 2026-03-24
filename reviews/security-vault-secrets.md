@@ -1,95 +1,123 @@
 # QA Review: vault-secrets
 
-**Skill path:** `security/vault-secrets/SKILL.md`
-**Reviewed:** 2025-07-17
+**Skill path:** `~/skillforge/security/vault-secrets/`
+**Review date:** 2025-07-18
 **Reviewer:** Copilot QA
 
 ---
 
-## A. Structure Check
+## Scores
 
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| YAML frontmatter | ✅ Pass | `name`, `description` with positive AND negative triggers present |
-| Under 500 lines | ✅ Pass | 408 lines |
-| Imperative voice | ✅ Pass | Commands and instructions use imperative form throughout |
-| Examples | ✅ Pass | Every section includes runnable CLI examples with realistic output snippets |
-| References linked | ✅ Pass | 3 reference docs (`advanced-patterns.md`, `troubleshooting.md`, `kubernetes-integration.md`) — all exist |
-| Scripts linked | ✅ Pass | 3 scripts (`setup-vault-dev.sh`, `vault-backup.sh`, `rotate-secrets.sh`) — all exist |
-| Assets linked | ✅ Pass | 5 assets including Helm values, Docker Compose, policy templates, Agent config, GH Actions workflow — all exist |
+| Dimension      | Score | Notes |
+|----------------|-------|-------|
+| Accuracy       | 4/5   | All Vault commands, API paths, and HCL syntax are correct. Deductions: hardcoded install version `1.15.6` is outdated (latest stable is 1.21.x); Docker images reference `1.18.3` which is also behind; `docker-compose-vault.yml` uses Consul storage backend which HashiCorp now considers a legacy path in favor of Raft; `funzip` in the install command is uncommon (most systems have `unzip` but not `funzip`). |
+| Completeness   | 5/5   | Exceptional breadth and depth. SKILL.md covers all major secrets engines (KV v2, PKI, Transit, Database, AWS, SSH), 7 auth methods, policies/ACLs, dynamic secrets, leases, Vault Agent, K8s integration (Injector, CSI, VSO), namespaces, HA/Raft, auto-unseal, monitoring, and audit. References add advanced patterns (secret zero, response wrapping, control groups, Sentinel, replication, batch/service tokens, identity, OIDC provider, Terraform), 10+ troubleshooting scenarios, and deep K8s integration guide with comparison matrix. Scripts are production-ready. Assets include policies, agent config, two docker-compose stacks, GitHub Actions workflow, and Helm values. |
+| Actionability  | 5/5   | Every concept has copy-paste working examples. Scripts have proper argument parsing, error handling, logging, and usage headers. Policy templates are ready to customize. Docker-compose files stand up complete environments (HA Raft + monitoring, Consul + Agent demo). GitHub Actions workflow shows JWT, AppRole, and multi-env patterns. Helm values are production-grade with TLS, auto-unseal, anti-affinity, and service monitors. |
+| Trigger quality| 4/5   | Good positive triggers covering secrets engines, auth methods, Agent, policies, K8s integration. Negative triggers correctly exclude AWS Secrets Manager, password managers, plain K8s Secrets, and general config management. Minor gaps: no mention of HCP Vault (managed offering), OpenBao (Vault fork), or Vault Proxy (newer component replacing Agent's API proxy mode). |
 
-## B. Content Check — Technical Accuracy
+**Overall: 4.5 / 5.0**
 
-**Verified via web search against official HashiCorp documentation:**
+---
 
-| Topic | Accurate? | Notes |
-|-------|-----------|-------|
-| KV v2 CLI commands | ✅ | `vault kv put/get/delete/destroy/metadata put` all correct. Uses legacy path syntax (still valid) rather than newer `-mount=` flag |
-| Transit engine encrypt/decrypt | ✅ | Base64 requirement, `vault:v1:` ciphertext prefix, key rotation — all correct |
-| PKI engine | ✅ | Root CA generation, role creation, cert issuance — correct |
-| Database dynamic creds | ✅ | PostgreSQL plugin name, creation_statements template vars (`{{name}}`, `{{password}}`, `{{expiration}}`), lease output — correct |
-| AWS secrets engine | ✅ | Config/role/creds flow correct |
-| Policy HCL syntax | ✅ | Capabilities list correct (`create`, `read`, `update`, `delete`, `list`, `sudo`, `deny`). `*` as glob (matches all remaining path) and `+` as segment wildcard — both correctly described |
-| Auth methods (AppRole, K8s, OIDC, LDAP) | ✅ | Enable/configure/login flows all accurate |
-| Vault Agent config | ✅ | Auto-auth, sink, cache, template blocks use correct HCL syntax. Consul Template syntax correct |
-| Lease management | ✅ | `vault lease renew/revoke` with `-prefix` — correct |
-| Namespaces (Enterprise) | ✅ | `vault namespace create`, `VAULT_NAMESPACE` env var, `X-Vault-Namespace` header — correct |
-| HA Raft config | ✅ | `storage "raft"` block with `retry_join`, `api_addr`, `cluster_addr` — correct |
-| Audit logging | ✅ | File/syslog/socket types correct. Critical gotcha about audit device blocking correctly noted |
-| VSO CRDs | ✅ | `secrets.hashicorp.com/v1beta1` API version confirmed current. VaultConnection, VaultAuth, VaultStaticSecret, VaultDynamicSecret — all correct |
-| Seal/Unseal | ✅ | Shamir's Secret Sharing, auto-unseal with KMS — correct |
-| Storage backends | ✅ | Raft (recommended), Consul, S3, DynamoDB with correct HA annotations |
+## Structure Check
 
-### Missing Gotchas / Minor Gaps
+- [x] YAML frontmatter has `name` and `description`
+- [x] Positive triggers present (secrets engines, auth methods, Agent, policies, K8s, namespaces)
+- [x] Negative triggers present (env vars, AWS Secrets Manager, 1Password/Bitwarden, plain K8s Secrets)
+- [x] Body under 500 lines (495 lines — just within limit)
+- [x] Imperative voice used throughout
+- [x] Code examples for every major section
+- [x] Resources section links references, scripts, and assets from SKILL.md
 
-1. **Root token security** — No warning to revoke root token after initial setup (security best practice)
-2. **`vault login` command** — Not shown; users need to know how to authenticate the CLI
-3. **KV v2 `-mount=` flag** — Newer recommended syntax not mentioned (legacy path syntax still works)
-4. **KV v2 `patch`/`undelete`/`rollback`** — Useful operations omitted
-5. **Check-And-Set (CAS)** — KV v2 concurrent-write safety mechanism not covered
-6. **Batch vs service tokens** — Performance-critical distinction not discussed
-7. **Secret Zero problem** — AppRole section doesn't mention response-wrapping for initial secret_id delivery
+---
 
-None of these are critical errors — they are completeness gaps in an already comprehensive skill.
+## Content Verification
 
-## C. Trigger Check
+### Claims verified accurate ✅
+- KV v2 `-mount=` flag syntax is correct and modern
+- Transit encrypt requires base64-encoded plaintext — correct
+- Database dynamic credentials output format (username, password, lease_id) — correct
+- PKI intermediate CA signing flow — correct
+- AppRole login flow (role_id + secret_id → token) — correct
+- Raft HA configuration with retry_join — correct
+- Auto-unseal with AWS KMS seal stanza — correct
+- Vault Agent `auto_auth` is NOT deprecated (only Agent's `api_proxy` stanza is deprecated) — skill usage is valid
+- Policy capabilities list (create, read, update, delete, list, sudo, deny) — correct
+- KV v2 policy paths require `secret/data/` and `secret/metadata/` — correctly documented
 
-**Positive triggers** (17 terms): All highly specific to HashiCorp Vault — "HashiCorp Vault", "vault secrets", "vault auth method", "vault policy", "dynamic secrets", "vault agent", "vault transit engine", "PKI secrets engine", "vault unseal", "vault namespace", "vault HA", "vault audit", "VaultStaticSecret", "VaultDynamicSecret", "vault approle", "vault OIDC"
+### Issues found
 
-**Negative triggers** (6 exclusions): AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, SOPS, sealed-secrets, general encryption without Vault
+1. **Outdated install version (minor):** Line 21 hardcodes `vault/1.15.6/vault_1.15.6_linux_amd64.zip`. Current stable is 1.21.x. Consider using a variable or noting users should check latest version.
 
-| False-trigger scenario | Would trigger? | Assessment |
-|------------------------|---------------|------------|
-| "Store secrets in AWS Secrets Manager" | ❌ No | Correctly excluded |
-| "Azure Key Vault rotation policy" | ❌ No | Correctly excluded |
-| "How do I manage secrets in my app?" | ❌ No | No positive trigger matched |
-| "Set up vault transit encryption" | ✅ Yes | Correct — this is HashiCorp Vault |
-| "Kubernetes sealed-secrets with Bitnami" | ❌ No | Correctly excluded |
-| "GCP Secret Manager IAM binding" | ❌ No | Correctly excluded |
-| "dynamic secrets for database access" | ⚠️ Maybe | "dynamic secrets" alone is slightly ambiguous, but in practice nearly always refers to Vault |
+2. **`funzip` dependency (minor):** The install command uses `funzip` which is part of the `unzip` package and not available by default on many systems. Standard approach is `unzip` to a temp directory.
 
-**Verdict:** Triggers are well-crafted with strong specificity and appropriate exclusions.
+3. **Docker image version (minor):** All Docker assets reference `hashicorp/vault:1.18.3`. While functional, users may want the latest. Consider noting version pinning is intentional.
 
-## D. Scores
+4. **Consul backend in docker-compose-vault.yml (minor):** This compose file uses `storage "consul"` which is a legacy path. HashiCorp now recommends Raft integrated storage. The file is still valid as a demo but could mislead users into choosing Consul for new deployments.
 
-| Dimension | Score | Rationale |
-|-----------|-------|-----------|
-| **Accuracy** | 5/5 | All CLI commands, HCL syntax, API paths, CRD manifests, and architectural descriptions verified correct against official docs |
-| **Completeness** | 4/5 | Covers 6 secrets engines, 5 auth methods, policies, Agent, leases, namespaces, HA, audit, VSO, plus extensive references/scripts/assets. Minor gaps: root token warning, CAS, patch/undelete, secret zero |
-| **Actionability** | 5/5 | Every section has copy-pasteable commands with realistic output. Scripts for dev setup, backup, rotation. Helm values, Docker Compose, policy templates ready to use |
-| **Trigger quality** | 5/5 | 17 specific positive triggers, 6 competitor exclusions. No realistic false-trigger scenario for competing products |
-| **Overall** | **4.75/5** | Production-quality skill with minor completeness gaps |
+5. **No mention of Vault Proxy (minor):** Vault Agent's API proxy mode is now deprecated in favor of the standalone Vault Proxy component. The skill covers Agent templating (still valid) but doesn't mention Proxy for API proxying use cases.
 
-## E. Verdict
+6. **No BSL/license mention (informational):** Vault transitioned from MPL to BSL (Business Source License) in 2023. Users evaluating Vault should be aware of licensing implications.
 
-✅ **PASS** — Overall 4.75 ≥ 4.0, no dimension ≤ 2.
+---
 
-No GitHub issues required.
+## Trigger Analysis
 
-## Recommendations for Future Improvement
+### Would correctly trigger for:
+- "Set up Vault KV secrets for my app"
+- "Configure AppRole auth in Vault"
+- "Vault Agent auto-auth Kubernetes"
+- "Transit encryption with Vault"
+- "Rotate database credentials with Vault"
+- "Vault PKI certificate authority"
+- "Vault policy for read-only access"
+- "Deploy Vault HA cluster with Raft"
 
-1. Add a "Security Gotchas" callout box: root token revocation, response-wrapping for secret zero, VAULT_TOKEN env var hygiene
-2. Add `vault kv patch` and `vault kv undelete` to KV v2 section
-3. Mention `-mount=` flag as the modern recommended syntax
-4. Brief note on batch vs service tokens for high-throughput scenarios
-5. Add CAS (Check-And-Set) example for concurrent write safety
+### Would correctly NOT trigger for:
+- "Store API keys in environment variables"
+- "Use AWS Secrets Manager for my Lambda"
+- "Set up 1Password for the team"
+- "Kubernetes Secrets for ConfigMap"
+- "Application configuration with Spring Cloud Config"
+
+### Potential edge cases:
+- "HCP Vault setup" — would trigger (has "Vault") but skill doesn't cover HCP-specific setup
+- "OpenBao secrets management" — would NOT trigger, but content is largely applicable (OpenBao is a Vault fork)
+- "Vault Proxy configuration" — would trigger on "Vault" but Proxy is not covered
+
+---
+
+## Files Reviewed
+
+| File | Lines | Status |
+|------|-------|--------|
+| SKILL.md | 495 | ✅ Well-structured, comprehensive |
+| references/advanced-patterns.md | 1120 | ✅ Deep coverage of enterprise patterns |
+| references/troubleshooting.md | 831 | ✅ Practical diagnostic workflows |
+| references/kubernetes-integration.md | 1187 | ✅ All 4 K8s methods with comparison |
+| scripts/setup-vault.sh | 283 | ✅ Production-quality, dev+prod modes |
+| scripts/rotate-secrets.sh | 216 | ✅ Zero-downtime rotation with verification |
+| scripts/setup-vault-dev.sh | 245 | ✅ Quick dev setup with sample data |
+| scripts/vault-backup.sh | 158 | ✅ Raft snapshots with S3 + rotation |
+| assets/vault-policy.hcl | 309 | ✅ 7 reusable policy templates |
+| assets/vault-agent-config.hcl | 179 | ✅ Production agent with templates |
+| assets/docker-compose.yml | 281 | ✅ 3-node HA + Prometheus + Grafana |
+| assets/docker-compose-vault.yml | 153 | ⚠️ Uses deprecated Consul backend |
+| assets/github-actions-vault.yml | 158 | ✅ JWT + AppRole + multi-env patterns |
+| assets/vault-helm-values.yaml | 258 | ✅ Production Helm with TLS + KMS |
+| assets/vault-policy-templates/*.hcl | 4 files | ✅ Ready-to-use role policies |
+
+---
+
+## Recommendations
+
+1. Update the install command to reference a current version or use a generic approach
+2. Add a brief note about Vault Proxy for API proxy use cases
+3. Consider adding a note that `docker-compose-vault.yml` uses Consul for demo purposes and Raft is preferred for production
+4. Add HCP Vault and Vault Proxy to the description's trigger terms
+
+---
+
+## Verdict
+
+**PASS** — High-quality, comprehensive skill with minor version-pinning issues. No blocking problems. All examples are syntactically correct and follow current Vault best practices.
