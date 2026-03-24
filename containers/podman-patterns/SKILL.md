@@ -496,3 +496,5 @@ podman run -d --name mydb \
   --secret db_pass,type=env,target=POSTGRES_PASSWORD \
   postgres:16-alpine
 ```
+
+<!-- tested: pass -->

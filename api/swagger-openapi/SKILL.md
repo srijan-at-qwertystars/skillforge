@@ -497,3 +497,5 @@ Ready-to-use templates in `assets/`:
 | [`redocly-config.yaml`](assets/redocly-config.yaml) | Redocly CLI config with recommended rules and theme customization |
 | [`github-actions-openapi.yml`](assets/github-actions-openapi.yml) | CI/CD: validate → breaking changes → generate SDK → build/publish docs |
 | [`openapi-generator-config.json`](assets/openapi-generator-config.json) | openapi-generator config for TypeScript Axios client |
+
+<!-- tested: pass -->

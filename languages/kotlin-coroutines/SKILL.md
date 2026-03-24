@@ -483,3 +483,5 @@ Reusable templates and references in `assets/`:
 - **[gradle-coroutines.kts](assets/gradle-coroutines.kts)** — Gradle build config with all coroutine dependencies: core, Android, test, debug, reactive interop (RxJava3, JDK9), Ktor client/server, Room, Retrofit, WorkManager, Turbine, and serialization.
 
 - **[coroutine-cheatsheet.md](assets/coroutine-cheatsheet.md)** — Quick reference card: builders, dispatchers, scopes, Job operations, Flow operators (creation, transformation, filtering, combining, error handling, terminal), StateFlow vs SharedFlow, cancellation, exception handling, testing, Android lifecycle collection, and common anti-patterns.
+
+<!-- tested: pass -->

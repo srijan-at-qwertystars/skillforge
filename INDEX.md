@@ -182,6 +182,6 @@
 | networking | [envoy-proxy](networking/envoy-proxy/) | Envoy proxy configuration — listeners, clusters, xDS, routing, rate limiting, WASM filters, mTLS | tested |
 | frontend | [tauri-desktop](frontend/tauri-desktop/) | Tauri v2 desktop apps — Rust backend, commands/IPC, plugins, window management, security, signing | tested |
 | security | [vault-secrets](security/vault-secrets/) | HashiCorp Vault — secrets engines, auth methods, policies, Vault Agent, dynamic secrets, PKI | tested |
-| languages | [kotlin-coroutines](languages/kotlin-coroutines/) | Kotlin coroutines — suspend functions, Flow, StateFlow, channels, structured concurrency, testing | enriched |
-| api | [swagger-openapi](api/swagger-openapi/) | OpenAPI/Swagger — spec authoring, schemas, code generation, validation, Swagger UI, design-first workflows | enriched |
-| containers | [podman-patterns](containers/podman-patterns/) | Podman daemonless containers — rootless, pods, Quadlet, Buildah, Skopeo, systemd integration | enriched |
+| languages | [kotlin-coroutines](languages/kotlin-coroutines/) | Kotlin coroutines — suspend functions, Flow, StateFlow, channels, structured concurrency, testing | tested |
+| api | [swagger-openapi](api/swagger-openapi/) | OpenAPI/Swagger — spec authoring, schemas, code generation, validation, Swagger UI, design-first workflows | tested |
+| containers | [podman-patterns](containers/podman-patterns/) | Podman daemonless containers — rootless, pods, Quadlet, Buildah, Skopeo, systemd integration | tested |
