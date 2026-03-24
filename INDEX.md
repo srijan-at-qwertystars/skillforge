@@ -284,6 +284,6 @@
 | testing | playwright-testing | End-to-end browser testing with Playwright — setup, locators, fixtures, POM, visual regression, network mocking, CI/CD, debugging | tested |
 | infrastructure | pulumi-iac | Infrastructure as Code with Pulumi using real programming languages — stacks, state, secrets, Automation API, CrossGuard, component resources | tested |
 | monitoring | opentelemetry-patterns | Distributed observability with OpenTelemetry — traces, metrics, logs, Collector pipelines, sampling, context propagation, semantic conventions | tested |
-| testing | vitest-testing | Fast unit testing with Vitest — config, mocking, snapshots, coverage, workspace, browser mode, benchmarking, type testing | enriched |
-| backend | fastify-patterns | High-performance Node.js with Fastify — plugins, schema validation, hooks, decorators, TypeScript type providers, testing | enriched |
-| database | sqlalchemy-patterns | Python ORM with SQLAlchemy 2.0 — declarative mapping, async sessions, relationships, Alembic migrations, query patterns | enriched |
+| testing | vitest-testing | Fast unit testing with Vitest — config, mocking, snapshots, coverage, workspace, browser mode, benchmarking, type testing | tested |
+| backend | fastify-patterns | High-performance Node.js with Fastify — plugins, schema validation, hooks, decorators, TypeScript type providers, testing | tested |
+| database | sqlalchemy-patterns | Python ORM with SQLAlchemy 2.0 — declarative mapping, async sessions, relationships, Alembic migrations, query patterns | tested |

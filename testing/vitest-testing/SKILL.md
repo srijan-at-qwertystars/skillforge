@@ -439,3 +439,4 @@ afterEach(() => cleanup())
 | Type checking | `vitest typecheck` |
 | UI mode | `vitest --ui` |
 | Specific project | `vitest --project=name` |
+<!-- tested: pass -->

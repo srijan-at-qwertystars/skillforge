@@ -489,3 +489,4 @@ Bind `0.0.0.0` (not localhost). Set `trustProxy` behind load balancers. Node.js 
 - **[assets/fastify-app.template.ts](assets/fastify-app.template.ts)** — Production app: factory pattern, graceful shutdown, error handling, health check, autoload, tracing
 - **[assets/plugin.template.ts](assets/plugin.template.ts)** — Plugin: typed options, service class, decorators, hooks, declaration merging
 - **[assets/docker-compose.template.yml](assets/docker-compose.template.yml)** — Fastify + PostgreSQL 16 + Redis 7 dev environment with health checks
+<!-- tested: pass -->

@@ -430,3 +430,4 @@ class Repository(Generic[T]):
 - **Missing `await`**: all async session/engine operations require `await`
 - **Stale connections**: set `pool_pre_ping=True` on long-lived engines
 - **Forgetting `cache_ok`**: custom `TypeDecorator` subclasses must set `cache_ok = True`
+<!-- tested: pass -->
