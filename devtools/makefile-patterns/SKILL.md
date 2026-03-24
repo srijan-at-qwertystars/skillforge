@@ -496,4 +496,5 @@ In-depth guides in `references/`:
 - **`references/troubleshooting.md`** — Common errors (missing separator, no rule to make target, circular dependency), debugging with `--debug=v`, `-n`, `-p`, `$(info)`/`$(warning)`/`$(error)`, recipe execution environment, shell compatibility, tab vs spaces, Windows compatibility. Includes table of contents and decision tree.
 
 ## Scripts
+<!-- tested: pass -->
 

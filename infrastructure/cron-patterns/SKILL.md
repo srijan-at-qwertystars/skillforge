@@ -496,3 +496,5 @@ Copy-paste ready templates in `assets/`:
 | [`cron-expression-cheatsheet.md`](assets/cron-expression-cheatsheet.md) | Visual quick reference: field layout, special characters, predefined schedules, ASCII timeline diagrams, frequency table, platform differences |
 | [`k8s-cronjob.yaml`](assets/k8s-cronjob.yaml) | Production-ready Kubernetes CronJob template with security context, resource limits, history retention, concurrency policy, RBAC scaffolding, and inline decision documentation |
 
+<!-- tested: pass -->
+

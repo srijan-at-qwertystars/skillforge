@@ -481,3 +481,5 @@ jq 'INDEX(.id)' users.json                                              # lookup
 | [assets/one-liners.md](assets/one-liners.md) | 107 jq one-liners by task (access, filter, aggregate, reshape, DevOps) |
 | [assets/jq-cheatsheet.md](assets/jq-cheatsheet.md) | Quick reference: CLI flags, operators, builtins, format strings, control flow |
 | [assets/shell-integration.md](assets/shell-integration.md) | Bash scripts, Makefiles, CI/CD pipelines, shell function library, gotchas |
+
+<!-- tested: pass -->
