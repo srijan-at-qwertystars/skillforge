@@ -215,3 +215,6 @@
 | frontend | solid-js | SolidJS — reactive primitives, control flow, stores, SolidStart, fine-grained reactivity | tested |
 | patterns | api-rate-limiting | API rate limiting — token bucket, sliding window, Redis, middleware, HTTP headers, retry | tested |
 | devops | docker-compose-patterns | Docker Compose V2 — services, healthchecks, profiles, watch mode, production patterns | tested |
+| frontend | pwa-patterns | Progressive Web Apps — service workers, caching strategies, Workbox, push notifications, offline-first | created |
+| testing | jest-testing | Jest testing — mocking, snapshots, async, React testing, coverage, custom matchers | created |
+| cloud | azure-bicep | Azure Bicep IaC — modules, types, loops, deployment scopes, registry, testing | created |
