@@ -482,3 +482,5 @@ Reusable templates in `assets/`:
   logging, request-id), health check, reflection, keepalive, graceful shutdown.
 - **`assets/docker-compose.yml`** — Dev environment: gRPC server, Envoy gRPC-Web
   proxy, grpcui testing UI.
+
+<!-- tested: pass -->

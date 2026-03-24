@@ -496,3 +496,5 @@ config :libcluster, topologies: [
 - **`assets/application-template.ex`** — Application module with supervision tree, runtime config.
 - **`assets/mix-project-template.exs`** — mix.exs with common deps, aliases, releases.
 - **`assets/docker-compose.yml`** — Dev environment: Postgres, test DB, Redis.
+
+<!-- tested: pass -->

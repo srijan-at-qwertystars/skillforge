@@ -497,3 +497,5 @@ Run `npx astro add tailwind`.
 - **`assets/form-components.html`** — Inputs, validation states, input groups, floating labels, select, checkbox/radio/radio cards, textarea, toggle switches, complete form.
 - **`assets/layout-templates.html`** — Holy grail, sidebar+main, dashboard grid, responsive card grid (breakpoint + auto-fit + featured).
 - **`assets/tailwind-cheatsheet.md`** — Quick reference of utilities by category: layout, flexbox, grid, spacing, sizing, typography, colors, borders, shadows, transitions, breakpoints, variants.
+
+<!-- tested: pass -->

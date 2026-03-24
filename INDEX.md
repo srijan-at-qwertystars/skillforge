@@ -146,6 +146,6 @@
 | testing | [playwright-e2e](testing/playwright-e2e/) | Playwright end-to-end testing — locators, actions, assertions, fixtures, POM, API testing, visual comparison, network interception, and CI/CD | tested |
 | databases | [valkey-redis](databases/valkey-redis/) | Valkey/Redis in-memory data store — data structures, streams, Pub/Sub, caching patterns, rate limiting, Lua scripting, cluster mode, and Sentinel | tested |
 | web | [sveltekit-framework](web/sveltekit-framework/) | SvelteKit 2.x with Svelte 5 runes — file-based routing, load functions, form actions, hooks, adapters, env vars, and SSR/SSG/SPA modes | tested |
-| elixir | elixir-otp | Elixir/OTP patterns — GenServer, Supervisor, processes, ETS, distributed Elixir | enriched |
-| networking | grpc-services | gRPC service design — protobuf, streaming, interceptors, Connect protocol, buf CLI | enriched |
-| css | tailwind-css | Tailwind CSS v4 — utility-first styling, @theme, responsive design, dark mode, plugins | enriched |
+| elixir | elixir-otp | Elixir/OTP patterns — GenServer, Supervisor, processes, ETS, distributed Elixir | tested |
+| networking | grpc-services | gRPC service design — protobuf, streaming, interceptors, Connect protocol, buf CLI | tested |
+| css | tailwind-css | Tailwind CSS v4 — utility-first styling, @theme, responsive design, dark mode, plugins | tested |
