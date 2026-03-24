@@ -169,54 +169,36 @@ source "googlecompute" "ubuntu" {
 source "docker" "ubuntu" { image = "ubuntu:22.04"; commit = true }
 ```
 
-#### VMware ISO
+#### VMware ISO / VirtualBox ISO / QEMU
 
 ```hcl
+# VMware ISO
 source "vmware-iso" "ubuntu" {
-  iso_url      = var.iso_url
-  iso_checksum = var.iso_checksum
-  ssh_username = var.ssh_username
-  ssh_password = var.ssh_password
+  iso_url = var.iso_url; iso_checksum = var.iso_checksum
+  ssh_username = var.ssh_username; ssh_password = var.ssh_password
   shutdown_command = "sudo shutdown -P now"
-  guest_os_type = "ubuntu-64"
-  cpus = 2
-  memory = 2048
-  disk_size = 20480
-  headless = true
+  guest_os_type = "ubuntu-64"; cpus = 2; memory = 2048
+  disk_size = 20480; headless = true
   boot_command = ["<esc><wait>", "autoinstall ds=nocloud-net", "<enter>"]
 }
-```
 
-#### VirtualBox ISO
-
-```hcl
+# VirtualBox ISO
 source "virtualbox-iso" "ubuntu" {
-  iso_url      = var.iso_url
-  iso_checksum = var.iso_checksum
+  iso_url = var.iso_url; iso_checksum = var.iso_checksum
   guest_os_type = "Ubuntu_64"
-  ssh_username = var.ssh_username
-  ssh_password = var.ssh_password
+  ssh_username = var.ssh_username; ssh_password = var.ssh_password
   shutdown_command = "sudo shutdown -P now"
-  disk_size  = 20480
-  headless   = true
+  disk_size = 20480; headless = true
   vboxmanage = [["modifyvm", "{{.Name}}", "--memory", "2048"]]
 }
-```
 
-#### QEMU
-
-```hcl
+# QEMU
 source "qemu" "ubuntu" {
-  iso_url      = var.iso_url
-  iso_checksum = var.iso_checksum
-  output_directory = "output-qemu"
-  disk_size    = "20G"
-  format       = "qcow2"
-  accelerator  = "kvm"
-  ssh_username = var.ssh_username
-  ssh_password = var.ssh_password
-  shutdown_command = "sudo shutdown -P now"
-  headless     = true
+  iso_url = var.iso_url; iso_checksum = var.iso_checksum
+  output_directory = "output-qemu"; disk_size = "20G"
+  format = "qcow2"; accelerator = "kvm"
+  ssh_username = var.ssh_username; ssh_password = var.ssh_password
+  shutdown_command = "sudo shutdown -P now"; headless = true
 }
 ```
 
@@ -305,48 +287,15 @@ Follow with a shell provisioner to move files requiring sudo.
 
 ### Post-processors
 
-#### manifest — emit build metadata to JSON
-
 ```hcl
-  post-processor "manifest" {
-    output     = "build-manifest.json"
-    strip_path = true
-  }
-```
-
-#### compress — create tar.gz or zip of output
-
-```hcl
-  post-processor "compress" {
-    output = "output/{{.BuildName}}.tar.gz"
-  }
-```
-
-#### docker-tag + docker-push
-
-```hcl
-  post-processor "docker-tag" {
-    repository = "myregistry.example.com/golden-ubuntu"
-    tags       = ["latest", local.timestamp]
-  }
+  post-processor "manifest" { output = "build-manifest.json"; strip_path = true }
+  post-processor "compress" { output = "output/{{.BuildName}}.tar.gz" }
+  post-processor "docker-tag" { repository = "myregistry.example.com/golden-ubuntu"; tags = ["latest", local.timestamp] }
   post-processor "docker-push" {}
-```
-
-#### vagrant
-
-```hcl
   post-processor "vagrant" { output = "boxes/{{.BuildName}}-{{.Provider}}.box" }
-```
-
-#### shell-local — run local commands after build
-
-```hcl
   post-processor "shell-local" { inline = ["echo 'Artifact: {{.ArtifactId}}'"] }
-```
 
-#### Chained post-processors — sequential pipeline
-
-```hcl
+  # Chained post-processors — sequential pipeline
   post-processors {
     post-processor "docker-tag" { repository = "myregistry.example.com/app"; tags = ["latest"] }
     post-processor "docker-push" {}
@@ -411,17 +360,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 ```
 
-Pipeline stages: init → fmt → validate → build → test → promote.
-
-## Image Testing and Validation
-
-Add smoke tests as the last provisioner; post-build, launch instance and run InSpec/Goss/Serverspec:
-
-```hcl
-  provisioner "shell" {
-    inline = ["set -e", "systemctl is-active --quiet sshd", "test -f /etc/security/limits.conf", "echo 'Smoke tests passed'"]
-  }
-```
+Pipeline stages: init → fmt → validate → build → test → promote. See `assets/github-actions.yml` for a full validate→build→scan→promote workflow with manual dispatch and scheduled builds.
 
 ## Common Patterns
 
@@ -431,6 +370,7 @@ Add smoke tests as the last provisioner; post-build, launch instance and run InS
 4. **Cleanup provisioner**: Remove caches, logs, SSH keys before finalization.
 5. **`sensitive = true`**: Mark secret variables to prevent log leakage.
 6. **HCP Packer Registry**: Push metadata for Terraform consumption and tracking.
+7. **Smoke tests**: Add as last provisioner — `systemctl is-active sshd`, file existence checks.
 
 ## Anti-Patterns — Avoid
 
@@ -441,7 +381,42 @@ Add smoke tests as the last provisioner; post-build, launch instance and run InS
 5. **Single monolithic file**: Split templates into logical files.
 6. **JSON templates**: Migrate to HCL2; JSON lacks expressions and modularity.
 7. **Skipping `packer init`**: Causes missing plugin errors at build time.
-8. **No image tagging**: Always tag and version images for manageability.
+
+## References
+
+Detailed deep-dive guides in `references/`:
+
+| File | Contents |
+|------|----------|
+| `references/advanced-patterns.md` | Multi-stage builds, dynamic blocks, HCP Packer registry, image ancestry tracking, data sources deep dive, custom provisioner scripts, CIS benchmark hardening, immutable infrastructure patterns |
+| `references/troubleshooting.md` | SSH timeout, WinRM failures, AMI copy issues, provisioner errors, debugging (-debug, breakpoints, PACKER_LOG), disk space, authentication problems, slow build optimization |
+| `references/cloud-builders.md` | Amazon EBS (launch configs, EBS optimization, encryption, sharing, spot, SSM), Azure (managed images, shared galleries, auth), GCP (image families, shared VPC, shielded VMs), Docker (commit/export, registries, OCI labels) |
+| `references/security-hardening.md` | CIS benchmarks, OS hardening, SSH hardening, audit configuration, vulnerability scanning, compliance automation |
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/build-image.sh` | Packer build wrapper — init, fmt, validate, build with logging, var-files, parallel control, debug mode, dry-run |
+| `scripts/validate-template.sh` | Validate templates, check plugins, verify cloud credentials, lint config, JSON output mode |
+| `scripts/cleanup-images.sh` | Clean up old images across AWS/Azure/GCP/Docker — keep N newest, dry-run, snapshot cleanup |
+| `scripts/build-ami.sh` | AWS-specific build, validate, cleanup, tag, list, HCP register |
+| `scripts/init-packer-project.sh` | Scaffold a new Packer project with best-practice file structure |
+| `scripts/scan-image.sh` | Launch an instance from an AMI, run Trivy + CIS benchmark scans, generate reports |
+
+## Assets
+
+Production-ready templates in `assets/`:
+
+| File | Contents |
+|------|----------|
+| `assets/aws-base.pkr.hcl` | AWS AMI template — spot pricing, Ansible, encrypted EBS, multi-region copy, Trivy scan, error-cleanup provisioner |
+| `assets/docker-base.pkr.hcl` | Docker image template — multi-stage provisioning, OCI labels, healthcheck, tag+push chain, non-root user |
+| `assets/github-actions.yml` | CI/CD workflow — validate→build→scan→promote pipeline, manual dispatch, scheduled builds, HCP Packer promotion |
+| `assets/variables.pkr.hcl` | Reusable variables file with validation rules and computed locals |
+| `assets/Makefile` | Build automation — init, fmt, validate, build, scan, clean, debug targets |
 
 ## Example: Input → Output
 **User**: "Create a Packer template that builds an Ubuntu 22.04 AMI with nginx"

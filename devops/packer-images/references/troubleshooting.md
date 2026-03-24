@@ -13,6 +13,10 @@
 - [Plugin Version Conflicts](#plugin-version-conflicts)
 - [Rate Limiting from Cloud Providers](#rate-limiting-from-cloud-providers)
 - [Quick Diagnostics Checklist](#quick-diagnostics-checklist)
+- [Debugging Techniques Deep Dive](#debugging-techniques-deep-dive)
+- [Disk Space Issues](#disk-space-issues)
+- [Authentication and Credential Problems](#authentication-and-credential-problems)
+- [Slow Build Optimization](#slow-build-optimization)
 
 ---
 
@@ -950,3 +954,456 @@ packer build -on-error=ask .
 | `AMI name already in use` | Duplicate name | Add `{{timestamp}}` or `force_deregister = true` |
 | `context deadline exceeded` | Build timeout | Increase builder timeout settings |
 | `Cannot connect to Docker daemon` | Docker not running | `sudo systemctl start docker` |
+
+---
+
+## Debugging Techniques Deep Dive
+
+### The -debug flag
+
+The `-debug` flag pauses Packer after each step and prompts to continue. It also disables parallel builds.
+
+```bash
+packer build -debug .
+```
+
+**What -debug does:**
+1. Pauses before connecting to the instance.
+2. Saves the SSH private key to the current directory (for manual SSH).
+3. Pauses after each provisioner.
+4. Pauses before cleanup.
+
+**Use cases:**
+- SSH into the instance manually between steps to inspect state.
+- Check file permissions, installed packages, or service status mid-build.
+- Debug provisioner scripts that fail silently.
+
+```bash
+# During a -debug pause, SSH into the instance:
+ssh -i ec2_amazon-ebs.pem ubuntu@<instance-ip>
+
+# Inspect the instance, then press Enter in the Packer terminal to continue
+```
+
+### PACKER_LOG for verbose output
+
+```bash
+# Enable full debug logging to stdout
+PACKER_LOG=1 packer build .
+
+# Write debug log to file (keeps terminal clean)
+PACKER_LOG=1 PACKER_LOG_PATH=debug.log packer build .
+
+# Then search the log for specific issues
+grep -i "error\|fail\|timeout\|refused" debug.log
+grep "SSH\|communicator" debug.log    # SSH connection issues
+grep "API\|request\|response" debug.log  # Cloud API issues
+```
+
+### -on-error flag options
+
+```bash
+# Pause on error (interactive debugging)
+packer build -on-error=ask .
+# Options when error occurs: [a]bort, [c]lean up, [r]etry
+
+# Always abort on error (for CI — no cleanup, instance stays for debugging)
+packer build -on-error=abort .
+
+# Always clean up on error (default behavior)
+packer build -on-error=cleanup .
+
+# Run only specific provisioner for debugging
+packer build -on-error=ask -only='amazon-ebs.main' .
+```
+
+### Breakpoint provisioner
+
+Insert breakpoints in your build to pause and inspect:
+
+```hcl
+build {
+  sources = ["source.amazon-ebs.main"]
+
+  provisioner "shell" {
+    inline = ["apt-get update && apt-get install -y nginx"]
+  }
+
+  # BREAKPOINT — pauses here for manual inspection
+  provisioner "breakpoint" {
+    disable = var.env == "production"  # Only pause in dev
+    note    = "Inspect nginx installation. SSH in and verify."
+  }
+
+  provisioner "shell" {
+    inline = ["systemctl enable nginx"]
+  }
+}
+```
+
+### Error cleanup provisioner
+
+Run diagnostics when a build fails:
+
+```hcl
+build {
+  sources = ["source.amazon-ebs.main"]
+
+  provisioner "shell" {
+    inline = ["some-command-that-might-fail"]
+  }
+
+  # This ONLY runs if the build fails
+  error-cleanup-provisioner "shell" {
+    inline = [
+      "echo '=== FAILURE DIAGNOSTICS ==='",
+      "echo '--- Last 50 lines of syslog ---'",
+      "sudo tail -50 /var/log/syslog 2>/dev/null || true",
+      "echo '--- systemd failed units ---'",
+      "systemctl --failed 2>/dev/null || true",
+      "echo '--- Disk usage ---'",
+      "df -h",
+      "echo '--- Memory ---'",
+      "free -h",
+      "echo '--- Recent journal entries ---'",
+      "sudo journalctl --no-pager -n 100 2>/dev/null || true",
+    ]
+  }
+}
+```
+
+### Packer console for expression debugging
+
+```bash
+# Open interactive console to test expressions
+packer console .
+
+# Test expressions:
+> formatdate("YYYYMMDD-hhmm", timestamp())
+"20240115-1430"
+
+> upper("hello-world")
+"HELLO-WORLD"
+
+> can(regex("^ami-", "ami-12345"))
+true
+```
+
+---
+
+## Disk Space Issues
+
+### Symptoms
+
+```
+==> amazon-ebs.main: E: You don't have enough free space in /var/cache/apt/archives/
+==> amazon-ebs.main: No space left on device
+==> amazon-ebs.main: write /tmp/script_1234.sh: no space left on device
+```
+
+### Root Causes and Fixes
+
+**1. Root volume too small for build operations**
+
+```hcl
+source "amazon-ebs" "main" {
+  launch_block_device_mappings {
+    device_name           = "/dev/sda1"
+    volume_size           = 30   # Increase from default (8GB is too small)
+    volume_type           = "gp3"
+    delete_on_termination = true
+  }
+}
+```
+
+**2. Package cache filling disk during provisioning**
+
+```bash
+# Clean as you go in provisioner scripts
+apt-get update -y
+apt-get install -y package1 package2
+apt-get clean                        # Remove downloaded .deb files
+rm -rf /var/lib/apt/lists/*          # Remove package lists
+rm -rf /tmp/*                        # Clean temp files
+```
+
+**3. Large files left by build tools**
+
+```bash
+# Common disk hogs to clean before finalizing
+rm -rf /usr/share/doc/*
+rm -rf /usr/share/man/*
+rm -rf /var/cache/*
+rm -rf /var/log/*.gz /var/log/*.1    # Old rotated logs
+journalctl --vacuum-size=10M         # Trim journal
+docker system prune -af 2>/dev/null  # If Docker was installed
+pip cache purge 2>/dev/null          # Python cache
+npm cache clean --force 2>/dev/null  # Node cache
+```
+
+**4. /tmp filling up during provisioning**
+
+```hcl
+# Packer uploads scripts to /tmp by default
+# If /tmp is a small tmpfs, use a different directory
+provisioner "shell" {
+  remote_folder = "/var/tmp"  # Use /var/tmp instead of /tmp
+  scripts       = ["scripts/big-install.sh"]
+}
+```
+
+**5. Monitor disk during build (add this as first provisioner for debugging)**
+
+```hcl
+provisioner "shell" {
+  inline = [
+    "echo '=== Disk usage at build start ==='",
+    "df -h",
+    "echo '=== Largest directories ==='",
+    "du -sh /* 2>/dev/null | sort -rh | head -10"
+  ]
+}
+```
+
+---
+
+## Authentication and Credential Problems
+
+### AWS authentication failures
+
+```
+==> amazon-ebs.main: Error querying AMI: AuthFailure: AWS was not able to validate the provided access credentials
+```
+
+**Fix: Verify credentials are valid and have required permissions**
+
+```bash
+# Test AWS credentials
+aws sts get-caller-identity
+
+# Required IAM permissions for Packer AMI builds:
+# ec2:AttachVolume, ec2:AuthorizeSecurityGroupIngress, ec2:CopyImage,
+# ec2:CreateImage, ec2:CreateKeypair, ec2:CreateSecurityGroup,
+# ec2:CreateSnapshot, ec2:CreateTags, ec2:CreateVolume,
+# ec2:DeleteKeypair, ec2:DeleteSecurityGroup, ec2:DeleteSnapshot,
+# ec2:DeleteVolume, ec2:DeregisterImage, ec2:DescribeImageAttribute,
+# ec2:DescribeImages, ec2:DescribeInstances, ec2:DescribeInstanceStatus,
+# ec2:DescribeRegions, ec2:DescribeSecurityGroups, ec2:DescribeSnapshots,
+# ec2:DescribeSubnets, ec2:DescribeTags, ec2:DescribeVolumes,
+# ec2:DetachVolume, ec2:GetPasswordData, ec2:ModifyImageAttribute,
+# ec2:ModifyInstanceAttribute, ec2:ModifySnapshotAttribute,
+# ec2:RegisterImage, ec2:RunInstances, ec2:StopInstances,
+# ec2:TerminateInstances
+```
+
+**Minimal IAM policy for Packer:**
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AttachVolume", "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:CopyImage", "ec2:CreateImage", "ec2:CreateKeypair",
+        "ec2:CreateSecurityGroup", "ec2:CreateSnapshot", "ec2:CreateTags",
+        "ec2:CreateVolume", "ec2:DeleteKeypair", "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSnapshot", "ec2:DeleteVolume", "ec2:DeregisterImage",
+        "ec2:Describe*", "ec2:DetachVolume", "ec2:GetPasswordData",
+        "ec2:ModifyImageAttribute", "ec2:ModifyInstanceAttribute",
+        "ec2:ModifySnapshotAttribute", "ec2:RegisterImage",
+        "ec2:RunInstances", "ec2:StopInstances", "ec2:TerminateInstances"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### Azure authentication issues
+
+```
+==> azure-arm.main: Error getting token: AADSTS7000215: Invalid client secret provided
+```
+
+**Fixes:**
+
+```bash
+# Verify Azure CLI auth
+az account show
+
+# Check service principal credentials
+az ad sp show --id $ARM_CLIENT_ID
+
+# For managed identity, ensure the VM has the identity assigned
+# For OIDC (GitHub Actions), verify the federated credential config
+
+# Common env vars for Azure:
+export ARM_CLIENT_ID="..."
+export ARM_CLIENT_SECRET="..."
+export ARM_SUBSCRIPTION_ID="..."
+export ARM_TENANT_ID="..."
+```
+
+### GCP authentication issues
+
+```
+==> googlecompute.main: Error getting credentials: google: could not find default credentials
+```
+
+**Fixes:**
+
+```bash
+# Option 1: Service account key file
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/key.json"
+
+# Option 2: Application default credentials
+gcloud auth application-default login
+
+# Option 3: In the Packer template
+source "googlecompute" "main" {
+  account_file = "/path/to/key.json"
+  # or
+  # credentials_json = var.gcp_credentials  # JSON string
+}
+
+# Verify auth
+gcloud auth list
+gcloud projects list
+```
+
+### Token expiration during long builds
+
+```
+==> amazon-ebs.main: Error creating AMI: RequestExpired: Request has expired
+```
+
+**Fix: Use IAM roles instead of access keys for long builds**
+
+```hcl
+# If building on an EC2 instance, use instance profile (no expiring tokens)
+source "amazon-ebs" "main" {
+  # Don't set access_key/secret_key — Packer uses instance profile automatically
+}
+
+# If using assume_role, increase session duration
+source "amazon-ebs" "main" {
+  assume_role {
+    role_arn        = "arn:aws:iam::123456789012:role/PackerRole"
+    session_name    = "packer"
+    duration_seconds = 7200  # 2 hours (default is 1 hour)
+  }
+}
+```
+
+---
+
+## Slow Build Optimization
+
+### Diagnosis: Where is time spent?
+
+```bash
+# Enable timestamps to see duration of each step
+packer build -timestamp-ui .
+
+# Full timing breakdown
+PACKER_LOG=1 packer build . 2>&1 | grep -E "^\d{4}" | head -50
+```
+
+### Optimization techniques
+
+**1. Use spot instances (60-90% cheaper, often faster to launch)**
+
+```hcl
+source "amazon-ebs" "fast" {
+  spot_price          = "auto"
+  spot_instance_types = ["t3.medium", "t3a.medium", "m5.large"]
+}
+```
+
+**2. Use a larger instance type for faster provisioning**
+
+```hcl
+source "amazon-ebs" "fast" {
+  instance_type = "c5.xlarge"  # More CPU = faster compiles, installs
+  ebs_optimized = true
+
+  launch_block_device_mappings {
+    volume_type = "gp3"
+    iops        = 6000      # More IOPS = faster disk I/O
+    throughput  = 400       # More throughput
+  }
+}
+```
+
+**3. Optimize package installation**
+
+```bash
+# BAD — installs one at a time (slow)
+apt-get install -y package1
+apt-get install -y package2
+apt-get install -y package3
+
+# GOOD — install all at once
+apt-get install -y package1 package2 package3
+
+# BETTER — use local mirror or cache
+apt-get install -y --no-install-recommends package1 package2 package3
+
+# Use apt proxy/cache for repeated builds
+# In provisioner: export http_proxy=http://apt-cache:3142
+```
+
+**4. Use layered images to avoid rebuilding everything**
+
+```
+Base image (monthly): 20 min build — OS patches, base packages
+Platform image (weekly): 5 min build — monitoring, runtime
+App image (per deploy): 2 min build — just copy binary
+```
+
+**5. Parallel builds with -parallel-builds**
+
+```bash
+# Build all targets in parallel (default)
+packer build .
+
+# Limit to 2 parallel builds (if hitting API limits)
+packer build -parallel-builds=2 .
+```
+
+**6. Reduce AMI copy time**
+
+```hcl
+# Only copy to regions you actually need
+ami_regions = ["us-west-2"]  # Don't copy to 10 regions if you only use 2
+
+# Encrypted copies are slower — only encrypt in production
+encrypt_boot = var.env == "production"
+```
+
+**7. Skip unnecessary steps in dev builds**
+
+```hcl
+provisioner "shell" {
+  # Skip security scan in dev
+  inline = var.env == "production" ? [
+    "curl -sfL https://... | sudo sh",
+    "sudo trivy rootfs --severity CRITICAL --exit-code 1 /"
+  ] : ["echo 'Skipping security scan in dev'"]
+}
+```
+
+**8. Build time comparison checklist**
+
+| Optimization | Typical Savings |
+|-------------|----------------|
+| Spot instances | 60-90% cost reduction |
+| c5.xlarge vs t3.micro | 3-5x faster provisioning |
+| gp3 with 6000 IOPS | 2x faster disk operations |
+| Layered images | 80% less rebuild time |
+| `--no-install-recommends` | 30-50% faster apt installs |
+| Regional mirror for packages | 2-5x faster downloads |
+| Skip security scan in dev | 2-5 min saved per build |
+| Fewer AMI region copies | 5-15 min saved per region |

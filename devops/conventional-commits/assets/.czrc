@@ -1,0 +1,25 @@
+{
+  "path": "cz-conventional-changelog",
+  "disableScopeLowerCase": false,
+  "disableSubjectLowerCase": false,
+  "maxHeaderWidth": 100,
+  "maxLineWidth": 200,
+  "defaultType": "feat",
+  "defaultScope": "",
+  "defaultSubject": "",
+  "defaultBody": "",
+  "defaultIssues": "",
+  "types": {
+    "feat":     { "description": "A new feature",                  "title": "Features",      "emoji": "✨" },
+    "fix":      { "description": "A bug fix",                      "title": "Bug Fixes",     "emoji": "🐛" },
+    "docs":     { "description": "Documentation only changes",     "title": "Documentation", "emoji": "📚" },
+    "style":    { "description": "Formatting, whitespace, etc.",   "title": "Styles",        "emoji": "💎" },
+    "refactor": { "description": "Code restructuring (no fix/feat)", "title": "Refactoring", "emoji": "📦" },
+    "perf":     { "description": "A performance improvement",      "title": "Performance",   "emoji": "🚀" },
+    "test":     { "description": "Adding or correcting tests",     "title": "Tests",         "emoji": "🚨" },
+    "build":    { "description": "Build system or dependencies",   "title": "Build",         "emoji": "🛠" },
+    "ci":       { "description": "CI/CD configuration changes",    "title": "CI",            "emoji": "⚙️" },
+    "chore":    { "description": "Other maintenance tasks",        "title": "Chores",        "emoji": "♻️" },
+    "revert":   { "description": "Reverts a previous commit",      "title": "Reverts",       "emoji": "🗑" }
+  }
+}

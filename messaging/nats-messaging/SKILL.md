@@ -450,43 +450,51 @@ await nc.drain()  # Always drain on shutdown
 ## nats CLI Quick Reference
 
 ```bash
-# Server
-nats-server -js -sd /data/jetstream -p 4222 -m 8222
-
-# Context (save connection profiles)
+nats-server -js -sd /data/jetstream -p 4222 -m 8222     # Start server
 nats context save prod --server nats://prod:4222 --creds /etc/nats/user.creds
-nats context select prod
-
-# Pub/Sub
-nats pub orders.created '{"id":"o1"}'
-nats sub "orders.>"
-
-# Request/Reply
-nats reply svc.echo --command="echo {{.Body}}"
-nats request svc.echo "hello"           # Output: hello
-
-# Streams
-nats stream ls
-nats stream info ORDERS
-nats stream purge ORDERS --force
-nats stream rm ORDERS --force
-
-# Consumers
-nats consumer ls ORDERS
-nats consumer next ORDERS myprocessor --count=5
-
-# Key-Value
-nats kv add CONFIG --replicas=3
-nats kv put CONFIG app.version "2.1.0"
-nats kv get CONFIG app.version           # Output: 2.1.0
-nats kv watch CONFIG
-
-# Object Store
-nats object add BLOBS --replicas=3
-nats object put BLOBS ./file.tar.gz
-nats object get BLOBS file.tar.gz
-nats object ls BLOBS
-
-# Benchmarking
-nats bench test.subject --pub 5 --sub 5 --msgs 1000000 --size 128
+nats pub orders.created '{"id":"o1"}'                     # Publish
+nats sub "orders.>"                                       # Subscribe
+nats request svc.echo "hello"                             # Request/Reply
+nats stream ls                                            # List streams
+nats stream info ORDERS                                   # Stream details
+nats stream purge ORDERS --force                          # Purge stream
+nats consumer ls ORDERS                                   # List consumers
+nats consumer next ORDERS myprocessor --count=5           # Pull messages
+nats kv add CONFIG --replicas=3                           # Create KV bucket
+nats kv put CONFIG app.version "2.1.0"                    # Set key
+nats kv get CONFIG app.version                            # Get key
+nats object add BLOBS --replicas=3                        # Create object store
+nats object put BLOBS ./file.tar.gz                       # Upload object
+nats bench test.subject --pub 5 --sub 5 --msgs 1000000   # Benchmark
 ```
+
+## Additional Resources
+
+### Reference Documents
+
+| Document | Contents |
+|----------|----------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Mirrors/sources, de-duplication, flow control, Service API, micro framework, subject transforms, import/export, WebSocket, MQTT bridge, request/reply at scale, header routing, exactly-once, DLQ |
+| [troubleshooting.md](references/troubleshooting.md) | Slow consumers, message loss, storage issues, split-brain, auth failures, draining, memory pressure, consumer stall, stream repair, Prometheus monitoring |
+| [operations-guide.md](references/operations-guide.md) | Cluster sizing, TLS, OCSP, nsc account management, resolver config, backup/restore, rolling upgrades, resource limits, logging, Grafana dashboards, DR |
+| [security-guide.md](references/security-guide.md) | Authentication methods, authorization, TLS, account isolation |
+| [jetstream-patterns.md](references/jetstream-patterns.md) | JetStream usage patterns and examples |
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| [setup-cluster.sh](scripts/setup-cluster.sh) | Deploy NATS cluster (Docker or bare-metal) with JetStream. `--nodes 3\|5`, `--docker\|--bare-metal`, `--clean` |
+| [health-check.sh](scripts/health-check.sh) | Check health: connections, JetStream, cluster, slow consumers. `--server URL`, `--json` |
+| [stream-manager.sh](scripts/stream-manager.sh) | Manage streams/consumers: create, update, purge, backup/restore. `<command> [options]` |
+| [benchmark-nats.sh](scripts/benchmark-nats.sh) | NATS throughput and latency benchmarks |
+
+### Assets
+
+| File | Description |
+|------|-------------|
+| [nats-server.conf](assets/nats-server.conf) | Production config: JetStream, clustering, TLS, NKey auth, gateways, leaf nodes, WebSocket, MQTT |
+| [docker-compose.yaml](assets/docker-compose.yaml) | 3-node cluster with JetStream, Prometheus exporter, nats-box |
+| [kubernetes-helm-values.yaml](assets/kubernetes-helm-values.yaml) | Helm values: JetStream, clustering, TLS, monitoring, PDB, topology spread |
+| [go-client-example.go](assets/go-client-example.go) | Go client example |
+| [python-client-example.py](assets/python-client-example.py) | Python client example |

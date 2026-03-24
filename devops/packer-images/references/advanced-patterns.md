@@ -11,6 +11,12 @@
 - [Windows Image Building with WinRM](#windows-image-building-with-winrm)
 - [Ansible Provisioner Patterns](#ansible-provisioner-patterns)
 - [Parallel Multi-Region Builds](#parallel-multi-region-builds)
+- [Dynamic Blocks and Expressions](#dynamic-blocks-and-expressions)
+- [Image Ancestry Tracking](#image-ancestry-tracking)
+- [Data Sources Deep Dive](#data-sources-deep-dive)
+- [Custom Provisioner Scripts](#custom-provisioner-scripts)
+- [CIS Benchmark Hardening in Packer](#cis-benchmark-hardening-in-packer)
+- [Immutable Infrastructure Patterns](#immutable-infrastructure-patterns)
 
 ---
 
@@ -984,3 +990,647 @@ source "amazon-ebs" "app" {
   # ...
 }
 ```
+
+---
+
+## Dynamic Blocks and Expressions
+
+### Dynamic blocks for repeated nested structures
+
+Use `dynamic` blocks to generate repeated nested blocks from variables or locals. This eliminates copy-paste for multi-region, multi-volume, or multi-tag configurations.
+
+```hcl
+variable "additional_volumes" {
+  type = list(object({
+    device_name = string
+    volume_size = number
+    volume_type = string
+    encrypted   = bool
+  }))
+  default = [
+    { device_name = "/dev/sdf", volume_size = 50,  volume_type = "gp3", encrypted = true },
+    { device_name = "/dev/sdg", volume_size = 100, volume_type = "gp3", encrypted = true },
+  ]
+}
+
+source "amazon-ebs" "multi_volume" {
+  ami_name      = "app-${local.timestamp}"
+  instance_type = "t3.large"
+  region        = var.aws_region
+  ssh_username  = "ubuntu"
+  source_ami    = data.amazon-ami.ubuntu.id
+
+  # Root volume
+  launch_block_device_mappings {
+    device_name           = "/dev/sda1"
+    volume_size           = 20
+    volume_type           = "gp3"
+    delete_on_termination = true
+    encrypted             = true
+  }
+
+  # Dynamic additional volumes from variable
+  dynamic "launch_block_device_mappings" {
+    for_each = var.additional_volumes
+    content {
+      device_name           = launch_block_device_mappings.value.device_name
+      volume_size           = launch_block_device_mappings.value.volume_size
+      volume_type           = launch_block_device_mappings.value.volume_type
+      encrypted             = launch_block_device_mappings.value.encrypted
+      delete_on_termination = true
+    }
+  }
+}
+```
+
+### Conditional expressions in source blocks
+
+```hcl
+locals {
+  # Conditional AMI encryption based on environment
+  encrypt = var.env == "production" ? true : false
+
+  # Conditional instance type — larger for prod
+  build_instance = var.env == "production" ? "c5.xlarge" : "t3.micro"
+
+  # Merge tags conditionally
+  tags = merge(
+    var.base_tags,
+    var.env == "production" ? { Compliance = "SOC2", Backup = "daily" } : {},
+  )
+}
+```
+
+### for_each with locals for multi-source generation
+
+```hcl
+variable "regions" {
+  type    = list(string)
+  default = ["us-east-1", "us-west-2", "eu-west-1"]
+}
+
+# Generate one source block per region
+locals {
+  region_configs = { for r in var.regions : r => {
+    instance_type = r == "us-east-1" ? "t3.medium" : "t3.small"
+    ami_name      = "golden-${r}-${local.timestamp}"
+  }}
+}
+
+# Note: Packer HCL2 doesn't support for_each on source blocks directly.
+# Use separate source blocks or a single source with ami_regions for multi-region.
+# for_each works on provisioner "shell" blocks with dynamic content:
+
+build {
+  sources = ["source.amazon-ebs.main"]
+
+  dynamic "provisioner" {
+    # Dynamic provisioners are NOT supported in Packer — use override blocks instead.
+    # This is a known HCL2 limitation. Use shell scripts with arguments for dynamic behavior.
+    labels   = ["shell"]
+    for_each = [] # Placeholder — see override pattern below
+    content {
+      inline = ["echo ${provisioner.value}"]
+    }
+  }
+}
+```
+
+### Template expressions and functions
+
+```hcl
+locals {
+  # String interpolation with conditionals
+  ami_suffix = var.env == "production" ? "prod" : var.env
+
+  # formatdate for consistent naming
+  date_stamp = formatdate("YYYY-MM-DD", timestamp())
+  time_stamp = formatdate("hhmm", timestamp())
+
+  # Regex replace for sanitizing names
+  safe_name = replace(var.app_name, "/[^a-zA-Z0-9-]/", "-")
+
+  # Lookup map values with defaults
+  instance_map = {
+    small  = "t3.micro"
+    medium = "t3.medium"
+    large  = "c5.xlarge"
+  }
+  instance_type = lookup(local.instance_map, var.size, "t3.medium")
+
+  # Coalesce — first non-empty value
+  region = coalesce(var.override_region, var.default_region, "us-east-1")
+
+  # Flatten nested lists
+  all_tags = flatten([var.base_tags, var.extra_tags])
+
+  # JSON encode for passing structured data to provisioners
+  config_json = jsonencode({
+    env    = var.env
+    region = var.aws_region
+    app    = var.app_name
+  })
+}
+```
+
+---
+
+## Image Ancestry Tracking
+
+Track the full lineage of images from base OS through application layers.
+
+### Tagging ancestry metadata
+
+```hcl
+locals {
+  # Include parent image info in every build
+  ancestry_tags = {
+    ParentAMI     = data.amazon-ami.base.id
+    ParentName    = data.amazon-ami.base.name
+    BaseOS        = "ubuntu-22.04"
+    ImageLayer    = var.image_layer   # "base", "platform", "application"
+    ImageFamily   = var.image_family  # "golden-ubuntu"
+    BuildPipeline = var.pipeline_name
+    BuildNumber   = var.build_number
+    GitRepo       = var.git_repo
+    GitSHA        = var.git_sha
+    GitBranch     = var.git_branch
+  }
+}
+
+source "amazon-ebs" "app" {
+  tags = merge(local.common_tags, local.ancestry_tags)
+  # ...
+}
+```
+
+### HCP Packer for centralized ancestry
+
+```hcl
+packer {
+  required_plugins {
+    amazon = { version = ">= 1.3.0", source = "github.com/hashicorp/amazon" }
+  }
+}
+
+# HCP Packer stores ancestry automatically when you use data sources
+# that reference HCP Packer channels:
+
+data "hcp-packer-version" "base" {
+  bucket_name  = "ubuntu-base"
+  channel_name = "production"
+}
+
+data "hcp-packer-artifact" "base" {
+  bucket_name         = "ubuntu-base"
+  version_fingerprint = data.hcp-packer-version.base.fingerprint
+  platform            = "aws"
+  region              = var.aws_region
+}
+
+source "amazon-ebs" "app" {
+  source_ami = data.hcp-packer-artifact.base.external_identifier
+  # HCP Packer automatically records that this image was built FROM
+  # the ubuntu-base:production channel, creating a dependency graph.
+}
+```
+
+### Manifest-based ancestry chain
+
+```hcl
+# Save build metadata including parent info
+post-processor "manifest" {
+  output     = "manifests/manifest.json"
+  strip_path = true
+  custom_data = {
+    parent_ami     = data.amazon-ami.base.id
+    parent_name    = data.amazon-ami.base.name
+    image_layer    = "application"
+    image_family   = "myapp"
+    build_date     = timestamp()
+    git_sha        = var.git_sha
+    packer_version = packer.version
+  }
+}
+```
+
+**Query ancestry** with the manifest chain:
+
+```bash
+# Find what base image was used for a specific AMI
+aws ec2 describe-images --image-ids ami-xyz --query 'Images[0].Tags[?Key==`ParentAMI`].Value' --output text
+# → ami-abc (the parent)
+
+# Build a full ancestry chain
+current="ami-xyz"
+while [ -n "$current" ] && [ "$current" != "None" ]; do
+  echo "$current"
+  current=$(aws ec2 describe-images --image-ids "$current" \
+    --query 'Images[0].Tags[?Key==`ParentAMI`].Value' --output text 2>/dev/null)
+done
+```
+
+---
+
+## Data Sources Deep Dive
+
+### amazon-ami — dynamic AMI lookup
+
+```hcl
+# Look up latest Ubuntu with specific kernel version
+data "amazon-ami" "ubuntu_hwe" {
+  filters = {
+    name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
+    root-device-type    = "ebs"
+    virtualization-type = "hvm"
+    architecture        = "x86_64"
+    state               = "available"
+  }
+  most_recent = true
+  owners      = ["099720109477"]
+  region      = var.aws_region
+}
+
+# Look up YOUR OWN base image (layered builds)
+data "amazon-ami" "my_base" {
+  filters = {
+    name = "base-ubuntu-production-*"
+    "tag:ImageLayer" = "base"
+    "tag:Environment" = "production"
+  }
+  most_recent = true
+  owners      = ["self"]
+  region      = var.aws_region
+}
+```
+
+### HCP Packer data sources
+
+```hcl
+# Get the latest version from a channel
+data "hcp-packer-version" "base" {
+  bucket_name  = "ubuntu-base"
+  channel_name = "production"
+}
+
+# Get the artifact (AMI ID) for a specific region
+data "hcp-packer-artifact" "base_east" {
+  bucket_name         = "ubuntu-base"
+  version_fingerprint = data.hcp-packer-version.base.fingerprint
+  platform            = "aws"
+  region              = "us-east-1"
+}
+
+data "hcp-packer-artifact" "base_west" {
+  bucket_name         = "ubuntu-base"
+  version_fingerprint = data.hcp-packer-version.base.fingerprint
+  platform            = "aws"
+  region              = "us-west-2"
+}
+
+# Use in source blocks
+source "amazon-ebs" "app_east" {
+  region     = "us-east-1"
+  source_ami = data.hcp-packer-artifact.base_east.external_identifier
+}
+```
+
+### amazon-secretsmanager — fetch secrets during build
+
+```hcl
+data "amazon-secretsmanager" "db_password" {
+  name = "production/db/password"
+  key  = "password"
+}
+
+build {
+  sources = ["source.amazon-ebs.app"]
+
+  provisioner "shell" {
+    environment_vars = [
+      "DB_PASSWORD=${data.amazon-secretsmanager.db_password.value}"
+    ]
+    inline = ["echo 'Configuring database connection...'"]
+  }
+}
+```
+
+### amazon-parameterstore — fetch SSM parameters
+
+```hcl
+data "amazon-parameterstore" "vpc_id" {
+  name   = "/infrastructure/vpc/id"
+  region = var.aws_region
+}
+
+source "amazon-ebs" "in_vpc" {
+  vpc_id = data.amazon-parameterstore.vpc_id.value
+  # ...
+}
+```
+
+---
+
+## Custom Provisioner Scripts
+
+### Script organization pattern
+
+```
+packer/
+├── scripts/
+│   ├── 00-wait-cloud-init.sh    # Phase 0: Wait for cloud-init
+│   ├── 01-base-packages.sh      # Phase 1: Install base packages
+│   ├── 02-security-hardening.sh # Phase 2: Harden the OS
+│   ├── 03-monitoring.sh         # Phase 3: Install monitoring
+│   ├── 04-app-specific.sh       # Phase 4: App-specific setup
+│   ├── 99-cleanup.sh            # Phase 99: Final cleanup
+│   └── lib/
+│       └── common.sh            # Shared functions
+```
+
+### Idempotent provisioner scripts
+
+```bash
+#!/usr/bin/env bash
+# scripts/02-security-hardening.sh — Idempotent OS hardening
+set -euo pipefail
+
+# Source shared library
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh" 2>/dev/null || true
+
+log_step() { echo "==> $*"; }
+
+# Disable root login (idempotent)
+log_step "Disabling root SSH login"
+if grep -q "^PermitRootLogin" /etc/ssh/sshd_config; then
+  sed -i 's/^PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+else
+  echo "PermitRootLogin no" >> /etc/ssh/sshd_config
+fi
+
+# Configure sysctl (idempotent via file)
+log_step "Applying sysctl hardening"
+cat > /etc/sysctl.d/99-hardening.conf << 'EOF'
+net.ipv4.ip_forward = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.tcp_syncookies = 1
+kernel.randomize_va_space = 2
+fs.suid_dumpable = 0
+EOF
+sysctl --system >/dev/null 2>&1
+
+log_step "Security hardening complete"
+```
+
+### Using scripts with the build block
+
+```hcl
+build {
+  sources = ["source.amazon-ebs.main"]
+
+  # Upload scripts directory
+  provisioner "file" {
+    source      = "scripts/"
+    destination = "/tmp/packer-scripts/"
+  }
+
+  # Execute scripts in order
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E bash '{{ .Path }}'"
+    scripts = [
+      "scripts/00-wait-cloud-init.sh",
+      "scripts/01-base-packages.sh",
+      "scripts/02-security-hardening.sh",
+      "scripts/03-monitoring.sh",
+      "scripts/04-app-specific.sh",
+    ]
+    environment_vars = [
+      "DEBIAN_FRONTEND=noninteractive",
+      "APP_ENV=${var.env}",
+    ]
+  }
+
+  # Cleanup MUST be last
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E bash '{{ .Path }}'"
+    scripts = ["scripts/99-cleanup.sh"]
+  }
+}
+```
+
+---
+
+## CIS Benchmark Hardening in Packer
+
+### Automated CIS Level 1 hardening provisioner
+
+```hcl
+build {
+  sources = ["source.amazon-ebs.hardened"]
+
+  # OS hardening via Ansible (recommended for CIS compliance)
+  provisioner "ansible" {
+    playbook_file = "ansible/cis-hardening.yml"
+    extra_arguments = [
+      "--extra-vars", "cis_level=1",
+      "--extra-vars", "env=${var.env}",
+    ]
+    user = var.ssh_username
+    ansible_env_vars = ["ANSIBLE_HOST_KEY_CHECKING=False"]
+  }
+
+  # Or inline shell for teams without Ansible
+  provisioner "shell" {
+    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E bash '{{ .Path }}'"
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
+    inline = [
+      "echo '==> CIS Level 1 Hardening'",
+
+      "# 1.1 — Disable unused filesystems",
+      "for fs in cramfs freevxfs jffs2 hfs hfsplus squashfs udf; do",
+      "  echo \"install $fs /bin/true\" > /etc/modprobe.d/$fs.conf",
+      "done",
+
+      "# 1.5 — Restrict core dumps",
+      "echo '* hard core 0' >> /etc/security/limits.conf",
+      "echo 'fs.suid_dumpable = 0' >> /etc/sysctl.d/99-cis.conf",
+
+      "# 3.x — Network hardening",
+      "cat > /etc/sysctl.d/99-cis-network.conf << 'EOF'",
+      "net.ipv4.ip_forward = 0",
+      "net.ipv4.conf.all.send_redirects = 0",
+      "net.ipv4.conf.default.send_redirects = 0",
+      "net.ipv4.conf.all.accept_source_route = 0",
+      "net.ipv4.conf.all.accept_redirects = 0",
+      "net.ipv4.conf.default.accept_redirects = 0",
+      "net.ipv4.conf.all.log_martians = 1",
+      "net.ipv4.conf.all.rp_filter = 1",
+      "net.ipv4.tcp_syncookies = 1",
+      "net.ipv6.conf.all.accept_redirects = 0",
+      "net.ipv6.conf.all.accept_ra = 0",
+      "EOF",
+      "sysctl --system > /dev/null 2>&1",
+
+      "# 4.x — Auditing",
+      "apt-get install -y auditd audispd-plugins",
+      "systemctl enable auditd",
+
+      "# 5.x — SSH hardening",
+      "sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config",
+      "sed -i 's/^#\\?MaxAuthTries.*/MaxAuthTries 4/' /etc/ssh/sshd_config",
+      "sed -i 's/^#\\?PermitEmptyPasswords.*/PermitEmptyPasswords no/' /etc/ssh/sshd_config",
+      "sed -i 's/^#\\?X11Forwarding.*/X11Forwarding no/' /etc/ssh/sshd_config",
+      "sed -i 's/^#\\?ClientAliveInterval.*/ClientAliveInterval 300/' /etc/ssh/sshd_config",
+      "sed -i 's/^#\\?ClientAliveCountMax.*/ClientAliveCountMax 3/' /etc/ssh/sshd_config",
+      "sed -i 's/^#\\?LoginGraceTime.*/LoginGraceTime 60/' /etc/ssh/sshd_config",
+
+      "# 6.x — File permissions",
+      "chmod 644 /etc/passwd",
+      "chmod 640 /etc/shadow",
+      "chmod 644 /etc/group",
+      "chmod 640 /etc/gshadow",
+
+      "echo '==> CIS hardening complete'"
+    ]
+  }
+
+  # Verify compliance with CIS checks
+  provisioner "shell" {
+    inline = [
+      "echo '==> Verifying CIS compliance'",
+      "FAIL=0",
+      "sysctl net.ipv4.ip_forward | grep -q '= 0' || { echo 'FAIL: ip_forward'; FAIL=1; }",
+      "sshd -T 2>/dev/null | grep -qi 'permitrootlogin no' || { echo 'FAIL: PermitRootLogin'; FAIL=1; }",
+      "sysctl kernel.randomize_va_space | grep -q '= 2' || { echo 'FAIL: ASLR'; FAIL=1; }",
+      "[ $FAIL -eq 0 ] && echo 'CIS verification PASSED' || { echo 'CIS verification FAILED'; exit 1; }",
+    ]
+  }
+}
+```
+
+---
+
+## Immutable Infrastructure Patterns
+
+### The golden image pipeline
+
+```
+┌─────────────┐     ┌──────────────┐     ┌──────────────┐
+│  Base OS     │────▶│  Platform    │────▶│  Application │
+│  (monthly)   │     │  (weekly)    │     │  (per-deploy)│
+└─────────────┘     └──────────────┘     └──────────────┘
+  Ubuntu 24.04        + monitoring         + app binary
+  + security          + logging            + app config
+  + patching          + runtime            + healthcheck
+```
+
+### Implementing layers with data source chains
+
+```hcl
+# Layer 1: base.pkr.hcl — run monthly via cron
+data "amazon-ami" "upstream_ubuntu" {
+  filters = { name = "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*" }
+  most_recent = true
+  owners      = ["099720109477"]
+  region      = var.aws_region
+}
+
+source "amazon-ebs" "base" {
+  source_ami = data.amazon-ami.upstream_ubuntu.id
+  ami_name   = "base-ubuntu-${local.timestamp}"
+  tags = merge(local.common_tags, { ImageLayer = "base" })
+}
+
+# Layer 2: platform.pkr.hcl — run weekly
+data "amazon-ami" "our_base" {
+  filters = { "tag:ImageLayer" = "base", name = "base-ubuntu-*" }
+  most_recent = true
+  owners      = ["self"]
+  region      = var.aws_region
+}
+
+source "amazon-ebs" "platform" {
+  source_ami = data.amazon-ami.our_base.id
+  ami_name   = "platform-${local.timestamp}"
+  tags = merge(local.common_tags, {
+    ImageLayer = "platform"
+    ParentAMI  = data.amazon-ami.our_base.id
+  })
+}
+
+# Layer 3: app.pkr.hcl — run per deploy
+data "amazon-ami" "our_platform" {
+  filters = { "tag:ImageLayer" = "platform", name = "platform-*" }
+  most_recent = true
+  owners      = ["self"]
+  region      = var.aws_region
+}
+
+source "amazon-ebs" "app" {
+  source_ami = data.amazon-ami.our_platform.id
+  ami_name   = "app-${var.app_name}-${var.version}-${local.timestamp}"
+  tags = merge(local.common_tags, {
+    ImageLayer  = "application"
+    AppVersion  = var.version
+    ParentAMI   = data.amazon-ami.our_platform.id
+  })
+}
+```
+
+### Blue-green deployments with image promotion
+
+```
+                    ┌──────────┐
+    Build ────────▶ │   dev    │ ← auto-promote on build
+                    └────┬─────┘
+                         │ manual gate / tests pass
+                    ┌────▼─────┐
+                    │ staging  │ ← promote after integration tests
+                    └────┬─────┘
+                         │ approval + compliance scan
+                    ┌────▼─────┐
+                    │production│ ← promote after approval
+                    └──────────┘
+```
+
+In HCP Packer this is managed via channels:
+
+```bash
+# After build succeeds, promote through channels
+hcp packer channels set-version --bucket-name myapp --channel dev --version $FINGERPRINT
+# After staging tests pass:
+hcp packer channels set-version --bucket-name myapp --channel staging --version $FINGERPRINT
+# After approval:
+hcp packer channels set-version --bucket-name myapp --channel production --version $FINGERPRINT
+```
+
+In Terraform, consume the channel:
+
+```hcl
+# Terraform reads from the production channel
+data "hcp_packer_artifact" "app" {
+  bucket_name  = "myapp"
+  channel_name = "production"
+  platform     = "aws"
+  region       = var.aws_region
+}
+
+resource "aws_instance" "app" {
+  ami           = data.hcp_packer_artifact.app.external_identifier
+  instance_type = "t3.medium"
+}
+```
+
+### Anti-patterns to avoid in immutable infrastructure
+
+1. **SSH into production instances to patch** — Rebuild the image and redeploy instead.
+2. **Configuration drift** — All configuration baked into the image or injected via user-data at boot.
+3. **Mutable state on the root volume** — Use separate EBS volumes or external storage (S3, EFS) for data.
+4. **Skipping image testing** — Always run smoke tests as the final provisioner and integration tests post-build.
+5. **No rollback plan** — Keep previous image versions; deploy by switching the AMI ID.
+6. **Snowflake images** — Every image should be reproducible from source code + Packer template.

@@ -1,0 +1,189 @@
+# NATS 3-Node Cluster with JetStream — Docker Compose
+#
+# Usage:
+#   docker compose up -d                    Start cluster
+#   docker compose down -v                  Tear down with volumes
+#   docker compose logs -f nats-1           Follow logs for node 1
+#   docker compose ps                       Check container status
+#
+# Port mapping:
+#   Node    Client   Monitor   Cluster
+#   nats-1  4222     8222      6222
+#   nats-2  4223     8223      6223
+#   nats-3  4224     8224      6224
+#
+# Connect:  nats://localhost:4222
+# Monitor:  http://localhost:8222/healthz
+# All nodes: nats://localhost:4222,nats://localhost:4223,nats://localhost:4224
+
+version: "3.9"
+
+x-nats-common: &nats-common
+  image: nats:2-alpine
+  restart: unless-stopped
+  networks:
+    - nats-cluster
+  deploy:
+    resources:
+      limits:
+        memory: 1G
+        cpus: "2.0"
+      reservations:
+        memory: 256M
+        cpus: "0.5"
+
+services:
+  # ── Node 1 (seed) ──────────────────────────────────────────────────────────
+  nats-1:
+    <<: *nats-common
+    container_name: nats-1
+    hostname: nats-1
+    command: >
+      -n nats-1
+      -p 4222
+      -m 8222
+      --cluster_name nats-cluster
+      --cluster nats://0.0.0.0:6222
+      --routes nats-route://nats-1:6222,nats-route://nats-2:6222,nats-route://nats-3:6222
+      --js
+      --sd /data
+      --store_dir /data/jetstream
+      --max_payload 8MB
+    ports:
+      - "4222:4222"    # client
+      - "8222:8222"    # monitoring
+      - "6222:6222"    # cluster routing
+    volumes:
+      - nats-1-data:/data
+      # Mount custom config (optional — override command-line flags):
+      # - ./nats-server.conf:/etc/nats/nats-server.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  # ── Node 2 ─────────────────────────────────────────────────────────────────
+  nats-2:
+    <<: *nats-common
+    container_name: nats-2
+    hostname: nats-2
+    command: >
+      -n nats-2
+      -p 4222
+      -m 8222
+      --cluster_name nats-cluster
+      --cluster nats://0.0.0.0:6222
+      --routes nats-route://nats-1:6222,nats-route://nats-2:6222,nats-route://nats-3:6222
+      --js
+      --sd /data
+      --store_dir /data/jetstream
+      --max_payload 8MB
+    ports:
+      - "4223:4222"
+      - "8223:8222"
+      - "6223:6222"
+    volumes:
+      - nats-2-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      nats-1:
+        condition: service_started
+
+  # ── Node 3 ─────────────────────────────────────────────────────────────────
+  nats-3:
+    <<: *nats-common
+    container_name: nats-3
+    hostname: nats-3
+    command: >
+      -n nats-3
+      -p 4222
+      -m 8222
+      --cluster_name nats-cluster
+      --cluster nats://0.0.0.0:6222
+      --routes nats-route://nats-1:6222,nats-route://nats-2:6222,nats-route://nats-3:6222
+      --js
+      --sd /data
+      --store_dir /data/jetstream
+      --max_payload 8MB
+    ports:
+      - "4224:4222"
+      - "8224:8222"
+      - "6224:6222"
+    volumes:
+      - nats-3-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    depends_on:
+      nats-1:
+        condition: service_started
+
+  # ── NATS Exporter (optional — Prometheus metrics) ──────────────────────────
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:latest
+    container_name: nats-exporter
+    restart: unless-stopped
+    command:
+      - -varz
+      - -connz
+      - -routez
+      - -jsz
+      - -port=7777
+      - http://nats-1:8222
+      - http://nats-2:8222
+      - http://nats-3:8222
+    ports:
+      - "7777:7777"
+    networks:
+      - nats-cluster
+    depends_on:
+      nats-1:
+        condition: service_healthy
+      nats-2:
+        condition: service_healthy
+      nats-3:
+        condition: service_healthy
+    profiles:
+      - monitoring    # Only starts with: docker compose --profile monitoring up
+
+  # ── NATS Box (optional — CLI tools for debugging) ──────────────────────────
+  nats-box:
+    image: natsio/nats-box:latest
+    container_name: nats-box
+    hostname: nats-box
+    networks:
+      - nats-cluster
+    environment:
+      - NATS_URL=nats://nats-1:4222
+    stdin_open: true
+    tty: true
+    depends_on:
+      nats-1:
+        condition: service_healthy
+    profiles:
+      - tools         # Only starts with: docker compose --profile tools up
+
+volumes:
+  nats-1-data:
+    driver: local
+  nats-2-data:
+    driver: local
+  nats-3-data:
+    driver: local
+
+networks:
+  nats-cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -1,0 +1,109 @@
+#!/bin/sh
+#
+# commit-msg — Git hook for validating commit messages with commitlint
+#
+# Installation:
+#   cp commit-msg-hook .git/hooks/commit-msg
+#   chmod +x .git/hooks/commit-msg
+#
+# Or with Husky (preferred):
+#   echo 'npx --no -- commitlint --edit "$1"' > .husky/commit-msg
+#
+# This hook:
+#   1. Validates the commit message against commitlint rules
+#   2. Provides helpful error messages on failure
+#   3. Skips validation when SKIP_COMMITLINT=1 or in CI environments
+#   4. Skips merge commits and fixup/squash commits automatically
+
+# --- Skip conditions ---
+# Skip in CI
+if [ -n "$CI" ] || [ -n "$CONTINUOUS_INTEGRATION" ]; then
+  exit 0
+fi
+
+# Skip if explicitly disabled
+if [ "$SKIP_COMMITLINT" = "1" ] || [ "$HUSKY" = "0" ]; then
+  exit 0
+fi
+
+COMMIT_MSG_FILE="$1"
+
+if [ -z "$COMMIT_MSG_FILE" ]; then
+  echo "Error: commit-msg hook requires a commit message file argument" >&2
+  exit 1
+fi
+
+# Read the commit message (strip comments)
+COMMIT_MSG=$(sed '/^#/d' "$COMMIT_MSG_FILE")
+
+# Skip empty messages (git will abort anyway)
+if [ -z "$COMMIT_MSG" ]; then
+  exit 0
+fi
+
+# Skip merge commits
+FIRST_LINE=$(echo "$COMMIT_MSG" | head -1)
+case "$FIRST_LINE" in
+  Merge\ branch*|Merge\ pull\ request*|Merge\ remote*)
+    exit 0
+    ;;
+esac
+
+# Skip fixup and squash commits (these will be auto-squashed)
+case "$FIRST_LINE" in
+  fixup!*|squash!*|amend!*)
+    exit 0
+    ;;
+esac
+
+# --- Validate with commitlint ---
+# Try npx first, fall back to direct path
+if command -v npx >/dev/null 2>&1; then
+  npx --no -- commitlint --edit "$COMMIT_MSG_FILE"
+  EXIT_CODE=$?
+elif [ -x "./node_modules/.bin/commitlint" ]; then
+  ./node_modules/.bin/commitlint --edit "$COMMIT_MSG_FILE"
+  EXIT_CODE=$?
+else
+  # Fallback: basic regex validation if commitlint is not installed
+  echo "Warning: commitlint not found. Performing basic validation..." >&2
+
+  # Basic conventional commit pattern
+  PATTERN='^(revert: )?(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._-]+\))?(!)?: .{1,}'
+
+  if ! echo "$FIRST_LINE" | grep -qE "$PATTERN"; then
+    echo "" >&2
+    echo "❌ Invalid commit message format!" >&2
+    echo "" >&2
+    echo "  Expected: <type>(<scope>): <description>" >&2
+    echo "" >&2
+    echo "  Types: feat fix docs style refactor perf test build ci chore revert" >&2
+    echo "  Scope: optional, lowercase (e.g., auth, api, ui)" >&2
+    echo "" >&2
+    echo "  Examples:" >&2
+    echo "    feat(auth): add OAuth2 login" >&2
+    echo "    fix: resolve null pointer in parser" >&2
+    echo "    docs: update API reference" >&2
+    echo "" >&2
+    echo "  Your message:" >&2
+    echo "    $FIRST_LINE" >&2
+    echo "" >&2
+    echo "  To skip: SKIP_COMMITLINT=1 git commit ..." >&2
+    echo "" >&2
+    exit 1
+  fi
+
+  # Check header length
+  HEADER_LEN=$(echo -n "$FIRST_LINE" | wc -c)
+  if [ "$HEADER_LEN" -gt 100 ]; then
+    echo "" >&2
+    echo "⚠️  Commit header is $HEADER_LEN chars (max 100)" >&2
+    echo "  $FIRST_LINE" >&2
+    echo "" >&2
+    exit 1
+  fi
+
+  EXIT_CODE=0
+fi
+
+exit $EXIT_CODE

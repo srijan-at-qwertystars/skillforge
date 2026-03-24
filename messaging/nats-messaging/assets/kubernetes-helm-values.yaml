@@ -1,0 +1,305 @@
+# NATS Kubernetes Helm Values — Production Configuration
+#
+# Chart: nats/nats (https://github.com/nats-io/k8s/tree/main/helm/charts/nats)
+#
+# Install:
+#   helm repo add nats https://nats-io.github.io/k8s/helm/charts/
+#   helm repo update
+#   helm install nats nats/nats -f kubernetes-helm-values.yaml -n nats --create-namespace
+#
+# Upgrade:
+#   helm upgrade nats nats/nats -f kubernetes-helm-values.yaml -n nats
+#
+# Verify:
+#   kubectl -n nats get pods
+#   kubectl -n nats exec -it nats-0 -- nats server info
+
+# ─── Global ─────────────────────────────────────────────────────────────────
+fullnameOverride: "nats"
+namespaceOverride: "nats"
+
+# ─── NATS Container Configuration ───────────────────────────────────────────
+nats:
+  image:
+    repository: nats
+    tag: "2-alpine"              # Pin to specific version in production
+    pullPolicy: IfNotPresent
+
+  # Replicas (must be odd for JetStream HA: 3 or 5)
+  replicas: 3
+
+  # Client port
+  client:
+    port: 4222
+
+  # Resources
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "512Mi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
+
+  # Logging
+  logging:
+    debug: false
+    trace: false
+    logtime: true
+
+  # Lame duck graceful shutdown
+  terminationGracePeriodSeconds: 60
+
+  # Server config overrides (merged into nats.conf)
+  config:
+    max_payload: "8MB"
+    max_connections: 65536
+    ping_interval: 20
+    ping_max: 3
+    write_deadline: "10s"
+    lame_duck_duration: "30s"
+    lame_duck_grace_period: "10s"
+
+# ─── JetStream ──────────────────────────────────────────────────────────────
+jetstream:
+  enabled: true
+
+  memStorage:
+    enabled: true
+    size: "2Gi"
+
+  fileStorage:
+    enabled: true
+    size: "50Gi"
+    storageClassName: "fast-ssd"    # CHANGEME — use SSD-backed StorageClass
+    accessModes:
+      - ReadWriteOnce
+
+  # Domain isolation (for multi-cluster / leaf node setups)
+  # domain: "production"
+
+# ─── Clustering ─────────────────────────────────────────────────────────────
+cluster:
+  enabled: true
+  name: "nats-prod-cluster"
+  replicas: 3                      # Match nats.replicas
+
+  # Cluster route port
+  port: 6222
+
+  # Route TLS (recommended for production)
+  # tls:
+  #   enabled: true
+  #   secretName: nats-cluster-tls
+  #   ca: "ca.crt"
+  #   cert: "tls.crt"
+  #   key: "tls.key"
+  #   verify: true
+
+# ─── TLS — Client Connections ───────────────────────────────────────────────
+# Create the secret first:
+#   kubectl -n nats create secret tls nats-client-tls \
+#     --cert=server-cert.pem --key=server-key.pem
+#   kubectl -n nats create secret generic nats-ca --from-file=ca.crt=ca-cert.pem
+
+tls:
+  enabled: false                   # CHANGEME — set true for production
+  # secretName: nats-client-tls
+  # ca: "ca.crt"
+  # cert: "tls.crt"
+  # key: "tls.key"
+  # verify: true                   # Mutual TLS
+  # min_version: "1.2"
+
+# ─── Authentication ─────────────────────────────────────────────────────────
+auth:
+  enabled: false                   # CHANGEME — enable for production
+
+  # Option 1: Token
+  # token: "your-secret-token"
+
+  # Option 2: NKey users
+  # nkeys:
+  #   users:
+  #     - nkey: "UAAA..."
+  #       permissions:
+  #         publish: [">"]
+  #         subscribe: [">"]
+
+  # Option 3: JWT/Account resolver (recommended for production)
+  # resolver:
+  #   type: full
+  #   dir: "/data/jwt"
+  #   allowDelete: false
+  #   interval: "2m"
+  #   limit: 1000
+
+  # System account (required for monitoring)
+  # systemAccount: "ABCD..."
+
+# ─── Monitoring ─────────────────────────────────────────────────────────────
+monitor:
+  enabled: true
+  port: 8222
+
+  # ServiceMonitor for Prometheus Operator
+  serviceMonitor:
+    enabled: false                 # Set true if using Prometheus Operator
+    # namespace: monitoring
+    # labels:
+    #   release: prometheus
+    # interval: 15s
+    # scrapeTimeout: 10s
+
+# ─── Leaf Nodes ──────────────────────────────────────────────────────────────
+leafnodes:
+  enabled: false
+  port: 7422
+
+  # remotes:
+  #   - url: "nats-leaf://hub.example.com:7422"
+  #     credentials:
+  #       secret:
+  #         name: nats-leaf-creds
+  #         key: leaf.creds
+
+  # TLS for leaf node connections
+  # tls:
+  #   enabled: true
+  #   secretName: nats-leafnode-tls
+
+# ─── Gateway (Super-Cluster) ────────────────────────────────────────────────
+gateway:
+  enabled: false
+  name: ""                         # CHANGEME — e.g., "dc-east"
+  port: 7222
+
+  # gateways:
+  #   - name: "dc-west"
+  #     url: "nats://dc-west-nats.example.com:7222"
+  #   - name: "dc-eu"
+  #     url: "nats://dc-eu-nats.example.com:7222"
+
+  # tls:
+  #   enabled: true
+  #   secretName: nats-gateway-tls
+
+# ─── WebSocket ──────────────────────────────────────────────────────────────
+websocket:
+  enabled: false
+  port: 9222
+
+  # tls:
+  #   enabled: true
+  #   secretName: nats-ws-tls
+
+  # ingress:
+  #   enabled: true
+  #   className: nginx
+  #   hosts:
+  #     - host: nats-ws.example.com
+  #       paths:
+  #         - path: /
+  #           pathType: Prefix
+  #   tls:
+  #     - secretName: nats-ws-ingress-tls
+  #       hosts:
+  #         - nats-ws.example.com
+
+# ─── MQTT ────────────────────────────────────────────────────────────────────
+mqtt:
+  enabled: false
+  port: 1883
+  # ack_wait: "30s"
+  # max_ack_pending: 100
+
+# ─── Pod Configuration ──────────────────────────────────────────────────────
+podTemplate:
+  # Anti-affinity: spread pods across nodes
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: nats
+
+  # Tolerate dedicated NATS nodes (optional)
+  # tolerations:
+  #   - key: "dedicated"
+  #     operator: "Equal"
+  #     value: "nats"
+  #     effect: "NoSchedule"
+
+  # Node selector (optional)
+  # nodeSelector:
+  #   node-type: nats
+
+  # Pod annotations
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8222"
+    prometheus.io/path: "/varz"
+
+# ─── Service ────────────────────────────────────────────────────────────────
+service:
+  # ClusterIP for internal access (default)
+  type: ClusterIP
+
+  # Use LoadBalancer for external access
+  # type: LoadBalancer
+  # annotations:
+  #   service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  #   service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+
+  # Additional ports to expose
+  ports:
+    client:
+      enabled: true
+      port: 4222
+    monitor:
+      enabled: true
+      port: 8222
+    cluster:
+      enabled: true
+      port: 6222
+
+# ─── PodDisruptionBudget ────────────────────────────────────────────────────
+podDisruptionBudget:
+  enabled: true
+  # Allow at most 1 pod unavailable (maintains quorum for 3-node cluster)
+  maxUnavailable: 1
+
+# ─── NATS Box (debugging sidecar) ───────────────────────────────────────────
+natsBox:
+  enabled: true
+  image:
+    repository: natsio/nats-box
+    tag: "latest"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "64Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+
+# ─── Prometheus Exporter (sidecar) ──────────────────────────────────────────
+exporter:
+  enabled: true
+  image:
+    repository: natsio/prometheus-nats-exporter
+    tag: "latest"
+  port: 7777
+  args:
+    - -varz
+    - -connz
+    - -routez
+    - -jsz
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "32Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"

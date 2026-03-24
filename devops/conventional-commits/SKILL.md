@@ -420,6 +420,31 @@ npx multi-semantic-release
 
 Each package gets independent versioning based on commits scoped to that package.
 
+## Skill Resources
+
+### References (Deep Dives)
+
+| File | Contents |
+|------|----------|
+| `references/advanced-patterns.md` | Custom types beyond standard 11, multi-line bodies/footers, co-authored-by trailers, ticket/issue linking (Jira, Linear, Azure DevOps), squash merge conventions, revert format, monorepo scope strategies (4 approaches), automating changelogs (conventional-changelog, git-cliff, release-please, pure git), commit message templates, deprecation workflow, security commit conventions |
+| `references/tooling-guide.md` | commitlint (full rule reference, custom parsers, plugins, shareable configs, CI integration), Husky v9 (install, all hook types, CI skip, troubleshooting), Commitizen (adapters, cz-customizable, prompt customization), lint-staged (advanced patterns, monorepo configs), standard-version vs semantic-release vs release-please comparison, git-cliff (config, Tera templates, CI) |
+
+### Scripts (Executable Helpers)
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/setup-commitlint.sh` | Full project setup: commitlint + Husky + lint-staged + commitizen | `./scripts/setup-commitlint.sh --scopes "api,auth,ui"` |
+| `scripts/validate-history.sh` | Audit git history for conventional commit compliance | `./scripts/validate-history.sh --from v1.0.0 --json` |
+| `scripts/generate-changelog.sh` | Generate CHANGELOG.md from conventional commits | `./scripts/generate-changelog.sh --unreleased --output CHANGELOG.md` |
+
+### Assets (Copy-Paste Templates)
+
+| Asset | Description |
+|-------|-------------|
+| `assets/commitlint.config.js` | Production commitlint config with custom plugin rules (imperative mood check, vague subject detection), monorepo-aware dynamic scope extraction, prompt config for @commitlint/cz-commitlint |
+| `assets/.czrc` | Commitizen config for cz-conventional-changelog with all 11 standard types, emoji mappings, and header/line width limits |
+| `assets/commit-msg-hook` | Git commit-msg hook: commitlint integration, auto-skip for CI/merge/fixup, fallback regex |
+
 ## Quick Reference — Generating Commit Messages
 
 When asked to write a commit message:
@@ -472,5 +497,3 @@ npm pkg set scripts.commit="cz"
 
 # 7. Test
 echo "feat: initial setup" | npx commitlint
-echo "bad" | npx commitlint  # should fail
-```
