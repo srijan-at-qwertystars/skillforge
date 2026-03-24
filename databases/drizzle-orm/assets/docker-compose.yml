@@ -1,0 +1,57 @@
+# docker-compose.yml — Local PostgreSQL + pgAdmin for Drizzle development
+#
+# Usage:
+#   docker compose up -d        # Start services
+#   docker compose down          # Stop services
+#   docker compose down -v       # Stop and remove volumes (resets data)
+#
+# Connection string for Drizzle:
+#   DATABASE_URL=postgresql://drizzle:drizzle@localhost:5432/drizzle_dev
+#
+# pgAdmin:
+#   http://localhost:5050
+#   Email: admin@local.dev / Password: admin
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: drizzle-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: drizzle
+      POSTGRES_PASSWORD: drizzle
+      POSTGRES_DB: drizzle_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: init scripts run on first start
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U drizzle -d drizzle_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: drizzle-pgadmin
+    restart: unless-stopped
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local

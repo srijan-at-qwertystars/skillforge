@@ -375,10 +375,12 @@ type NewUser = InferInsertModel<typeof users>;
 
 ## Framework Integration
 
-### Next.js (App Router)
+> **See [references/framework-integration.md](references/framework-integration.md)** for complete patterns for Next.js (Server Components, Server Actions, Edge), Remix, SvelteKit, Hono, tRPC, and all database providers.
+
+### Next.js (App Router) — Singleton Pattern
 
 ```typescript
-// src/db/index.ts — singleton pattern for dev hot reload
+// src/db/index.ts — prevent connection leaks during HMR
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema';
@@ -386,49 +388,24 @@ import * as schema from './schema';
 const globalForDb = globalThis as unknown as { db: ReturnType<typeof drizzle> };
 export const db = globalForDb.db ?? drizzle(postgres(process.env.DATABASE_URL!), { schema });
 if (process.env.NODE_ENV !== 'production') globalForDb.db = db;
-
-// app/users/page.tsx — Server Component
-import { db } from '@/db';
-import { users } from '@/db/schema';
-export default async function UsersPage() {
-  const allUsers = await db.select().from(users);
-  return <ul>{allUsers.map(u => <li key={u.id}>{u.name}</li>)}</ul>;
-}
 ```
 
-### Hono / Cloudflare Workers
+### Edge Runtime
 
-```typescript
-import { drizzle } from 'drizzle-orm/d1';
-import { Hono } from 'hono';
-
-const app = new Hono<{ Bindings: { DB: D1Database } }>();
-app.get('/users', async (c) => {
-  const db = drizzle(c.env.DB);
-  const result = await db.select().from(users);
-  return c.json(result);
-});
-```
-
-### Neon Serverless
+For edge routes, use HTTP-based drivers (no TCP on edge):
 
 ```typescript
 import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
+export const runtime = 'edge';
 const db = drizzle(neon(process.env.DATABASE_URL!));
 ```
 
-## Connection Pooling
+### Connection Pooling
 
-- **Traditional server**: Use `pg.Pool` or `postgres()` with connection limits.
-- **Serverless/Edge**: Use HTTP-based drivers (Neon HTTP, PlanetScale, Vercel Postgres). Instantiate per-request.
-- **Lambda**: Use poolers like PgBouncer or Neon pooled strings. Set `max` low (1-5).
-
-```typescript
-import { Pool } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-const db = drizzle(new Pool({ connectionString: process.env.DATABASE_URL, max: 3 }));
-```
+- **Traditional server**: `postgres()` or `pg.Pool` with `max` limit.
+- **Serverless/Edge**: Use HTTP drivers (Neon HTTP, PlanetScale, Vercel Postgres). Instantiate per-request.
+- **Lambda**: Use poolers (PgBouncer, Neon pooled strings). Set `max: 1-5`.
 
 ## Performance Patterns
 
@@ -471,20 +448,6 @@ Wrap each test in a rolled-back transaction for isolation, or truncate tables be
 
 Use a real database per test suite via Testcontainers. Apply migrations with `push` or `migrate`.
 
-## Drizzle vs Alternatives
-
-| Aspect | Drizzle | Prisma | Kysely | TypeORM |
-|--------|---------|--------|--------|---------|
-| Schema | TypeScript code | `.prisma` DSL | Manual types | Class decorators |
-| Bundle | <8KB, zero deps | ~2MB + Rust engine | ~50KB | ~500KB |
-| Query style | SQL-like TS | Abstracted client | SQL-like TS | QueryBuilder/ActiveRecord |
-| Serverless | Native, no cold start | Cold start penalty | Good | Poor |
-| Migrations | drizzle-kit (TS→SQL) | prisma migrate | External tools | Built-in (buggy) |
-| Type safety | Inferred from schema | Generated client | Inferred | Decorators (weak) |
-| Relations | Explicit declaration | Schema-defined | Manual joins | Decorators |
-
-Choose Drizzle when: you want SQL control with type safety, minimal bundle, serverless-first, no codegen step. Choose Prisma when: you want maximum DX abstraction and don't mind the engine. Choose Kysely when: you want a pure query builder without ORM features.
-
 ## Common Pitfalls
 
 1. **Missing `{ schema }` in `drizzle()` call**: Relational queries (`db.query.*`) silently fail or error. Always pass schema.
@@ -497,3 +460,22 @@ Choose Drizzle when: you want SQL control with type safety, minimal bundle, serv
 8. **Pool exhaustion in serverless**: Set low `max` connection limits. Use HTTP drivers or poolers for serverless.
 9. **`.returning()` on MySQL**: MySQL does not support `RETURNING`. Use `insertId` from the result instead.
 10. **Circular imports in schema files**: Split large schemas into multiple files but ensure no circular dependencies between table definitions.
+
+## References
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Dynamic query building, conditional WHERE, raw SQL, custom types, JSON/array columns, generated columns, views, subqueries, CTEs, window functions, full-text search, PostGIS, multi-schema support
+- **[Troubleshooting](references/troubleshooting.md)** — Type inference fixes, migration conflicts, push vs migrate, pool exhaustion, prepared statements, column type mismatches, N+1, circular references, introspect issues, ESM/CJS
+- **[Framework Integration](references/framework-integration.md)** — Next.js App Router (Server Components, Server Actions, Edge), Remix, SvelteKit, Hono, tRPC, Neon, Turso, PlanetScale, Supabase, Vercel Postgres, D1
+
+## Scripts
+
+- **[setup-drizzle.sh](scripts/setup-drizzle.sh)** — Initialize Drizzle in an existing project (detects package manager, installs deps, creates config and schema)
+- **[generate-schema.sh](scripts/generate-schema.sh)** — Introspect an existing database and generate Drizzle schema files
+- **[seed-database.ts](scripts/seed-database.ts)** — TypeScript seed script template with Drizzle and @faker-js/faker
+
+## Assets
+
+- **[drizzle.config.ts](assets/drizzle.config.ts)** — Complete config template with all options annotated
+- **[schema-template.ts](assets/schema-template.ts)** — Schema file with users, posts, tags, comments, many-to-many, self-referencing, soft-delete
+- **[db-client.ts](assets/db-client.ts)** — Database client setup for 11 driver variants (postgres-js, pg, Neon, Vercel, PlanetScale, mysql2, better-sqlite3, Turso, D1, Bun)
+- **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose for local Postgres 16 + pgAdmin

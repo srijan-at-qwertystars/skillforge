@@ -1,0 +1,39 @@
+.{
+    // ── Project Metadata ──
+    .name = .myproject,
+    .version = "0.1.0",
+    .fingerprint = 0xDEADBEEF12345678,
+    .minimum_zig_version = "0.14.0",
+
+    // ── Dependencies ──
+    // Add with: zig fetch --save git+https://github.com/author/lib#tag
+    // Or:       zig fetch --save https://github.com/author/lib/archive/refs/tags/v1.0.tar.gz
+    .dependencies = .{
+        // Example: HTTP client library
+        // .zap = .{
+        //     .url = "https://github.com/zigzap/zap/archive/refs/tags/v0.2.0.tar.gz",
+        //     .hash = "1220aabbccdd...",
+        // },
+
+        // Example: Git dependency
+        // .mach = .{
+        //     .url = "git+https://github.com/hexops/mach#main",
+        //     .hash = "1220aabbccdd...",
+        // },
+
+        // Example: Local path dependency (for development)
+        // .mylib = .{
+        //     .path = "../mylib",
+        // },
+    },
+
+    // ── Exported Paths ──
+    // Files/dirs included when this package is consumed as a dependency
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "README.md",
+    },
+}

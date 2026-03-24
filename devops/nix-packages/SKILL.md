@@ -446,41 +446,42 @@ checks.${system} = {
 
 ## Common Pitfalls and Solutions
 
-**Impure Builds**: Build depends on system state (`/usr/lib`, env vars, network). Fix: use `fetchurl`/`fetchFromGitHub` for sources. Set `__noChroot = true;` only as last resort.
-
-**Unfree Packages**:
-```nix
-pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
-# Per-package: nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "vscode" ];
-# Ad-hoc: NIXPKGS_ALLOW_UNFREE=1 nix build --impure
-```
-
 **Hash Mismatches**: Set hash to `lib.fakeHash` or `""`, build, copy correct hash from error. Use SRI format: `hash = "sha256-AAAA...";`.
 
-**IFD (Import From Derivation)**: Avoid `import (pkgs.runCommand ...)` in evaluation — causes slow eval and breaks `nix flake check`. Pre-generate Nix files instead.
+**Impure Builds**: Build depends on system state. Fix: use fetchers for sources. `__noChroot = true;` only as last resort.
 
-**Flake Follows**: Multiple nixpkgs versions in closure. Fix: `inputs.nixpkgs.follows = "nixpkgs";` on transitive inputs.
+**Unfree Packages**: `config.allowUnfree = true;` or `NIXPKGS_ALLOW_UNFREE=1 nix build --impure`.
 
-**PATH Pollution**: System tools leak into build. Fix: use `nativeBuildInputs` instead of relying on PATH.
+**Flake Follows**: `inputs.dep.inputs.nixpkgs.follows = "nixpkgs";` to avoid duplicate nixpkgs.
+
+**IFD**: Avoid `import (pkgs.runCommand ...)` — breaks `nix flake check`. Pre-generate Nix files.
+
+See `references/troubleshooting.md` for comprehensive solutions including store corruption, macOS/WSL issues, and error message decoder.
 
 ## Quick Reference
 
 ```bash
-# Package management
-nix profile install nixpkgs#hello      # Install package
-nix profile remove hello               # Remove package
-nix profile upgrade '.*'               # Upgrade all
-nix store gc                           # Garbage collect
-nix store optimise                     # Deduplicate store
-
-# Debugging
-nix repl                               # Interactive REPL
-nix eval .#packages.x86_64-linux.default.version   # Evaluate expression
-nix derivation show .#default          # Show derivation details
-nix why-depends .#a .#b               # Dependency chain
-nix path-info -rSh .#default           # Closure size
-
-# Development
-nix fmt                                # Format nix files (if formatter defined)
-nix flake check                        # Run all checks
+nix profile install nixpkgs#hello      # Install       | nix repl             # REPL
+nix profile remove hello               # Remove        | nix eval .#pkg.version  # Eval
+nix store gc                           # Garbage collect| nix why-depends .#a .#b # Deps
+nix store optimise                     # Deduplicate   | nix path-info -rSh .#p  # Size
+nix fmt                                # Format        | nix flake check         # Checks
 ```
+
+## Additional Resources
+
+### References (`references/`)
+- **`advanced-patterns.md`** — Functors, fixed-points, overlay composition, overrideAttrs patterns, flake-parts, flake-utils, custom derivations, IFD, recursive Nix, module system deep dive with option types, and useful `lib` functions.
+- **`troubleshooting.md`** — Hash mismatches, impure builds, unfree/broken packages, store corruption & recovery, garbage collection, flake lock conflicts, channel-to-flake migration, macOS and WSL issues, common error messages decoded, diagnostic commands.
+- **`nix-for-devshells.md`** — Language-specific devShells (Node.js, Python, Rust, Go, Java, C/C++), direnv + nix-direnv integration, `.envrc` patterns, team onboarding workflows, version pinning, monorepo patterns, composable shell fragments.
+
+### Scripts (`scripts/`)
+- **`init-flake.sh`** — Interactive flake project initializer. Creates `flake.nix` with language-specific devShell (node/python/rust/go), `.envrc`, and `.gitignore`. Usage: `./scripts/init-flake.sh [language]`
+- **`gc-optimize.sh`** — Store management helper: size reporting, garbage collection, generation cleanup, deduplication. Usage: `./scripts/gc-optimize.sh [status|gc|gc-old|optimize|full|roots|big]`
+- **`search-packages.sh`** — Search nixpkgs with version info and descriptions, table or JSON output. Usage: `./scripts/search-packages.sh <query> [--json] [--limit N]`
+
+### Assets (`assets/`)
+- **`flake-template.nix`** — Complete flake.nix with devShell, package, overlay, NixOS module, checks, and formatter outputs. Copy and replace `TODO` markers.
+- **`shell-template.nix`** — Configurable mkShell template with toggles for Node.js, Python, Rust, Go, C++. Import from your flake.
+- **`github-actions-nix.yml`** — GitHub Actions CI workflow with Nix + Cachix for flake check, build, and formatting.
+- **`.envrc`** — Annotated direnv config for automatic `nix develop` activation with caching notes.

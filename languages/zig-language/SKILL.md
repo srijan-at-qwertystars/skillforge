@@ -428,3 +428,28 @@ const result = sw: switch (state) {
 7. **Missing `.{}` in print.** `std.debug.print("hi\n", .{});` — tuple arg always required.
 8. **`==` on slices.** Compares pointers. Use `std.mem.eql(u8, a, b)` for content.
 9. **Comptime vs runtime.** Cannot pass runtime values to `comptime` parameters.
+
+## References
+
+Deep-dive guides in `references/`:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Comptime metaprogramming (`@typeInfo`, `@Type`, type functions), generic data structures, custom allocator implementation, SIMD with `@Vector`, inline assembly, packed structs, sentinel-terminated types, error traces, and safety checks.
+- **[Troubleshooting](references/troubleshooting.md)** — Common compiler errors decoded, undefined behavior in release modes, C interop failures, build system errors, dependency management issues, memory leak detection with GPA, OOM debugging, GDB/LLDB/Valgrind integration.
+- **[C Interop Guide](references/c-interop-guide.md)** — Comprehensive C interop: `@cImport`, `translate-c`, calling C from Zig, calling Zig from C, linking system libraries, pkg-config, wrapping C APIs idiomatically, C strings, void pointers, function pointers, variadic functions, type mappings.
+
+## Scripts
+
+Helper scripts in `scripts/` (run with `bash` or `./`):
+
+- **[init-project.sh](scripts/init-project.sh)** — Initialize a new Zig project with `build.zig`, source structure, tests, and `.gitignore`. Supports `--exe` (default) and `--lib` modes.
+- **[cross-compile.sh](scripts/cross-compile.sh)** — Cross-compile for multiple targets (Linux x86_64/aarch64, macOS, Windows). Configurable optimization and output directory.
+- **[benchmark.sh](scripts/benchmark.sh)** — Run Zig benchmarks with `std.time`, reporting min/mean/max. Supports text/CSV/JSON output and comparison against previous runs.
+
+## Assets
+
+Templates and configs in `assets/`:
+
+- **[build.zig](assets/build.zig)** — Complete build template with executable, static/shared library, tests, benchmarks, cross-compilation, C interop, and documentation steps.
+- **[build.zig.zon](assets/build.zig.zon)** — Package manifest template with dependency examples (URL, git, local path).
+- **[main.zig](assets/main.zig)** — Starter main with arg parsing, file I/O, directory listing, logging, allocator setup with leak detection.
+- **[Dockerfile](assets/Dockerfile)** — Multi-stage Dockerfile for Zig development and CI (Alpine-based, multi-arch).
