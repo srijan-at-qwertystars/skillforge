@@ -497,3 +497,5 @@ CMD ["bun", "run", "src/index.ts"]
 
 - **[assets/bunfig.toml](assets/bunfig.toml)** — Production-ready Bun configuration template.
 - **[assets/server.ts](assets/server.ts)** — Bun.serve template with WebSocket, static files, CORS, graceful shutdown.
+
+<!-- tested: pass -->

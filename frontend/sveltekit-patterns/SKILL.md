@@ -497,3 +497,4 @@ SvelteKit forms work without JavaScript. `use:enhance` upgrades them to SPA-styl
 - **`svelte.config.js`** — Production config with aliases, CSP, prerender, adapter examples
 - **`hooks.server.ts`** — Auth, CSP/security headers, request logging, error handling via `sequence()`
 - **`+layout.server.ts`** — Root layout with user session pattern, protected route example
+<!-- tested: pass -->

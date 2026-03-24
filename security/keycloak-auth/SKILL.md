@@ -497,3 +497,5 @@ Set `KC_PROXY_HEADERS=xforwarded` on Keycloak when behind a reverse proxy.
 
 - **`assets/docker-compose.yml`** — Production stack: health checks, resource limits, JVM tuning, optimized PostgreSQL.
 - **`assets/realm-export.json`** — Starter realm: SPA/API/confidential/mobile clients, roles, groups, scopes, security policies.
+
+<!-- tested: pass -->
