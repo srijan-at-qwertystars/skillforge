@@ -428,3 +428,5 @@ Ready-to-customize config files:
 - **[assets/docker-compose.template.yml](assets/docker-compose.template.yml)** — Full observability stack: OTel Collector + Jaeger (traces UI) + Prometheus (metrics, exemplar-enabled) + Grafana (dashboards) + optional Loki (logs). Includes provisioning config snippets for Grafana datasources.
 
 - **[assets/tracing-setup.template.ts](assets/tracing-setup.template.ts)** — TypeScript OTel SDK initialization boilerplate with custom span processor (sensitive data redaction), metric views (histogram buckets, cardinality control), auto-instrumentation config (health check filtering), graceful shutdown handling.
+
+<!-- tested: pass -->

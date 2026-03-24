@@ -490,3 +490,5 @@ Helper scripts for common workflows:
 - **`scripts/setup-playwright-ci.sh`** — CI-focused setup: installs browsers, generates GitHub Actions workflow with sharding.
 - **`scripts/run-visual-regression.sh`** — Visual regression runner with Docker support and diff reporting.
 - **`scripts/generate-page-object.sh`** — Scaffold a Page Object class and companion test from a URL.
+
+<!-- tested: pass -->

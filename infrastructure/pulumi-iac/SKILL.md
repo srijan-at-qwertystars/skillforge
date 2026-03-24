@@ -497,3 +497,4 @@ pulumi.runtime.registerResourceTransform(args => {
 | `github-actions.template.yml` | CI/CD: PR preview, deploy on merge, drift detection, multi-stack matrix |
 | `index.ts` | VPC + ECS Fargate starter template |
 | `Pulumi.dev.yaml` | Stack config example with secrets and structured values |
+<!-- tested: pass -->
