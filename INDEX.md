@@ -155,3 +155,6 @@
 | databases | elasticsearch-patterns | Elasticsearch 8.x — Query DSL, mappings, analyzers, aggregations, vector search, ELK stack | tested |
 | deployment | fly-io-deploy | Fly.io deployment — Machines, flyctl, multi-region, volumes, databases, autoscaling | tested |
 | systems | wasm-components | WebAssembly — WASI, Component Model, WIT, Rust/Go/C++ toolchains, server-side runtimes | tested |
+| python | sqlalchemy-patterns | SQLAlchemy 2.0 — ORM, Core, async, Alembic migrations, relationships, performance | created |
+| observability | grafana-dashboards | Grafana dashboards — panels, PromQL, alerting, provisioning, LGTM stack, variables | created |
+| rust | rust-async | Rust async patterns — tokio, futures, channels, axum, graceful shutdown, tracing | created |
