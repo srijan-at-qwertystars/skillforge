@@ -478,3 +478,5 @@ Ready-to-use Bicep templates, modules, and configuration files.
 | [assets/modules/networking.bicep](assets/modules/networking.bicep) | VNet + dynamic subnets + per-subnet NSGs with configurable security rules, service endpoints, and subnet delegations |
 | [assets/bicepconfig.json](assets/bicepconfig.json) | Complete Bicep linter configuration with all 35 built-in rules configured, formatting options, module aliases, and experimental feature flags |
 | [assets/pipeline.yml](assets/pipeline.yml) | Dual CI/CD pipeline (GitHub Actions + Azure DevOps) with lint → validate → what-if → deploy stages, OIDC auth, environment gates, and deployment outputs |
+
+<!-- tested: pass -->

@@ -491,3 +491,5 @@ Templates and configs in `assets/`:
 - **[test-utils.tsx](assets/test-utils.tsx)** — Custom render with providers (QueryClient, Router, Theme), userEvent setup, async helpers, debug utilities
 - **[mock-factory.ts](assets/mock-factory.ts)** — Generic `createFactory<T>()` for entities, mock service/class creators, localStorage/router/event mocks
 - **[msw-handlers.ts](assets/msw-handlers.ts)** — MSW server setup with CRUD handler factory, auth handlers, error/network/slow response helpers
+
+<!-- tested: pass -->

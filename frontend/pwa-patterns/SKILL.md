@@ -259,7 +259,7 @@ npx web-push generate-vapid-keys
 async function subscribeToPush() {
   const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.subscribe({
-    userVisuallyIndicatesPermission: true,
+    userVisibleOnly: true,
     applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
   });
   await fetch('/api/push/subscribe', {
@@ -487,3 +487,5 @@ Run Lighthouse: `npx lighthouse https://example.com --only-categories=pwa --outp
 ### Example 3: Add push notifications to Next.js PWA
 **Input:** "Set up web push notifications for my Next.js app"
 **Output:** Generate VAPID keys in `.env`, API routes `POST /api/push/subscribe` and `/api/push/send` using `web-push`, client hook `usePushSubscription` for permission + subscription, SW `push` and `notificationclick` handlers. Permission request triggered by user action, never on page load.
+
+<!-- tested: pass -->
