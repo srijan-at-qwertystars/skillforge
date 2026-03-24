@@ -415,3 +415,5 @@ Templates and utilities in `assets/`:
 |-------|-------------|
 | [`assets/docker-compose.yaml`](assets/docker-compose.yaml) | Docker Compose for a 3-node MongoDB 7 replica set with keyfile auth, health checks, and named volumes. |
 | [`assets/mongosh-snippets.js`](assets/mongosh-snippets.js) | Collection of mongosh helper functions: `serverOverview()`, `indexUsage()`, `quickExplain()`, `slowQueries()`, `replStatus()`, `cacheStatus()`, `schemaShape()`, and more. Load with `load('mongosh-snippets.js')`. |
+
+<!-- tested: pass -->

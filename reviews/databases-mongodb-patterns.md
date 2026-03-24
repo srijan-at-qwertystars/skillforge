@@ -1,113 +1,95 @@
-# QA Review: databases/mongodb-patterns
+# Review: mongodb-patterns
 
-**Reviewer:** Copilot CLI (automated)
+**Reviewed:** SKILL.md + 4 references, 5 scripts, 6 assets
 **Date:** 2025-07-17
-**Skill path:** `~/skillforge/databases/mongodb-patterns/`
 
----
+## Scores
 
-## a. Structure Check
+Accuracy: 4/5
+Completeness: 5/5
+Actionability: 5/5
+Trigger quality: 5/5
+Overall: 4.8/5
 
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| YAML frontmatter | ✅ Pass | `name`, `description` with TRIGGERS/NOT-for present |
-| Line count | ✅ Pass | 499 lines (limit: 500) |
-| Imperative voice | ✅ Pass | Direct commands and patterns throughout |
-| Code examples | ✅ Pass | Every section has runnable code blocks |
-| References linked | ✅ Pass | 3 reference guides (advanced-patterns, troubleshooting, mongoose-guide) — all exist with substantive content (973–1,246 lines each) |
-| Scripts linked | ✅ Pass | 3 scripts (health-check, index-analyzer, backup-restore) — all exist (288–355 lines) |
-| Assets linked | ✅ Pass | 5 assets (aggregation-templates, mongoose-model, docker-compose, mongosh-snippets, atlas-terraform) — all exist (171–421 lines) |
-| Total supporting files | — | 11 files, 5,902 lines of supplementary content |
+## Structure Check
 
----
+- [x] **YAML frontmatter:** Has `name` and `description` fields — both present and well-formed.
+- [x] **Positive triggers:** 17 positive trigger phrases covering schema design, aggregation, indexing, replica sets, sharding, change streams, transactions, mongoose, performance tuning, connection pooling, bucket/outlier patterns, anti-patterns, TTL index, compound index.
+- [x] **Negative triggers:** 11 negative trigger phrases — SQL, PostgreSQL, MySQL, DynamoDB, Redis, Elasticsearch, Neo4j, Cassandra, CockroachDB, SQLite, relational normalization.
+- [x] **Under 500 lines:** SKILL.md is 417 lines. ✓
+- [x] **Imperative voice:** Uses imperative throughout ("Embed when", "Follow the filter → project → transform order", "Place first for index use", "Order fields: Equality → Sort → Range"). ✓
+- [x] **Examples:** Rich code examples in every section — embedding vs referencing, polymorphic, bucket, outlier, aggregation pipeline, indexing (7 types), replica sets, sharding (4 strategies), change streams, transactions, explain plans, profiler, connection pooling, write concern, mongoose. ✓
+- [x] **Links to references/scripts:** Tables at bottom link to 3 references, 3 scripts, and 2 assets with descriptions. ✓
 
-## b. Content Check
+### Minor structural notes
+- `references/mongoose-guide.md` exists on disk but is **not listed** in the SKILL.md references table. This is unreferenced content that won't be discovered by consumers.
+- Duplicate assets: `docker-compose.yaml` and `docker-compose-mongo.yml` serve overlapping purposes (3-node replica set). The second adds Mongo Express UI and auto-init, which is better for dev — but having two unlabeled may confuse users.
+- Duplicate scripts: `health-check.sh` and `mongo-health-check.sh` do the same job with slightly different approaches. `index-analyzer.sh` and `index-analyzer.js` overlap (bash+mongosh vs Node.js). SKILL.md only references one of each pair, but the extras sit in the directory.
 
-### Verified Claims (web-search confirmed)
+## Content Check
 
-| Claim in SKILL.md | Verified? | Source |
-|--------------------|-----------|--------|
-| MongoDB 8.0: 56% faster bulk writes | ✅ Accurate | MongoDB 8.0 release notes, SD Times, I-Programmer |
-| Resharding up to 50x faster | ✅ Accurate | Percona, InfoQ, BytePlus docs |
-| `workingMillis` profiler metric (8.0) | ✅ Accurate | MongoDB 8.0 release notes |
-| Quantized vectors in 8.0 | ✅ Accurate | MongoDB 8.0 release notes |
-| 200% faster time-series aggregations (8.0) | ✅ Accurate | Multiple sources |
-| Queryable Encryption range queries (8.0) | ✅ Accurate | MongoDB 8.0 release notes |
-| Oplog optimization for transactions (8.0) | ✅ Accurate | Alibaba Cloud, BytePlus docs |
+### Verified correct ✓
+- **16MB BSON document limit** — confirmed current in MongoDB 7. ✓
+- **100MB aggregation RAM default** — confirmed; `allowDiskUse: true` bypasses it. ✓ (Note: MongoDB 6+ added `allowDiskUseByDefault` server param — not mentioned but acceptable omission.)
+- **60-second default transaction timeout** — confirmed. ✓
+- **ESR rule (Equality → Sort → Range)** — correctly stated and demonstrated. ✓
+- **Multikey index limit** (max one array field per compound index) — correct. ✓
+- **One text index per collection** — correct. ✓
+- **Change streams require replica set** — correct. ✓
+- **Read preferences table** — all 5 modes accurately described. ✓
+- **`$indexStats`** for auditing unused indexes — correct. ✓
+- **`$group` blocking stage** with 100MB RAM limit — correct. ✓
 
-### Issues Found
+### Issues found
 
-| Severity | Location | Issue |
-|----------|----------|-------|
-| Minor | Line 241 | `sh.enableSharding("ecommerce")` is deprecated since MongoDB 6.0 and is a no-op in 7.x/8.x. Modern code should use `sh.shardCollection()` directly. The skill should note this deprecation or remove the call. |
-| Nitpick | Line 252 | "Avoid `_id` (ObjectId) as sole ranged shard key" — correct advice but could link to MongoDB docs for the `_id` limitation rationale. |
+1. **Shard key "immutable" claim is outdated (Medium):**
+   SKILL.md line 236 says: *"Shard key is immutable after creation. Choose carefully."*
+   Since MongoDB 5.0, `reshardCollection` allows completely changing a shard key. Since 4.4, `refineCollectionShardKey` allows adding suffix fields. The statement was true pre-5.0 but is misleading for MongoDB 7 users. Should say: *"Shard key is difficult to change after creation — MongoDB 5.0+ supports `reshardCollection` but it's heavyweight. Choose carefully."*
 
-### Missing Content (minor gaps, not blocking)
+2. **Transaction 1000-doc limit presented as hard rule (Low):**
+   SKILL.md line 304 says: *"Limit to 1000 docs modified."*
+   This is a **best practice recommendation**, not a hard technical limit. MongoDB has no hard-coded 1000-doc cap. The phrasing should clarify: *"Best practice: limit to ~1000 docs modified per transaction."*
 
-- No mention of MongoDB 8.0's `bulkWrite` command (new server-side command for multi-collection bulk ops, distinct from `db.collection.bulkWrite()`)
-- No coverage of `$queryStats` aggregation stage (mentioned in description but absent from body)
-- Connection string URI format (SRV vs standard) not covered in main file (may be in references)
+### Missing gotchas (minor, non-blocking)
+- No mention of `allowDiskUseByDefault` server parameter (MongoDB 6+).
+- Sharding section doesn't mention `reshardCollection` or `refineCollectionShardKey`.
+- No mention of the 16MB oplog entry size limit for single transactions.
 
----
+### Examples correctness
+- All JavaScript/mongosh code examples are syntactically correct. ✓
+- Aggregation pipeline example follows stated ordering rules. ✓
+- Docker Compose files are valid YAML with correct mongo:7 images. ✓
+- Terraform config uses correct `mongodbatlas` provider resources. ✓
+- Mongoose TypeScript template compiles conceptually (proper generic signatures, discriminators, virtuals, middleware). ✓
+- Shell scripts use `set -euo pipefail`, proper option parsing, and safe credential masking. ✓
 
-## c. Trigger Check
+## Trigger Check
 
-### Positive Triggers Analysis
+### Would it trigger correctly?
+- "How do I design a MongoDB schema?" → **Yes** (matches "MongoDB schema design")
+- "Optimize my MongoDB aggregation pipeline" → **Yes** (matches "MongoDB aggregation")
+- "MongoDB compound index ordering" → **Yes** (matches "compound index", "MongoDB indexing")
+- "Mongoose discriminator pattern" → **Yes** (matches "mongoose schema")
+- "MongoDB bucket pattern for time series" → **Yes** (matches "bucket pattern")
+- "MongoDB connection pool settings" → **Yes** (matches "MongoDB connection pooling")
+- "Change streams resume token" → **Yes** (matches "change streams")
 
-| Trigger | MongoDB-specific? | Risk of false positive |
-|---------|-------------------|----------------------|
-| MongoDB, mongosh, mongod | ✅ Unique | None |
-| aggregation pipeline | ⚠️ Moderate | Could match Elasticsearch or general data pipeline discussions |
-| MongoDB Atlas | ✅ Unique | None |
-| mongoose, BSON, ObjectId | ✅ Unique | None |
-| $lookup, GridFS | ✅ Unique | None |
-| sharding key | ⚠️ Low | Could match general sharding, but combined with other triggers minimizes risk |
-| change streams | ⚠️ Low | Term exists in other event-streaming contexts |
-| MongoDB Compass, MongoDB indexes | ✅ Unique | None |
-| replica set | ⚠️ Low | Generic term, but in MongoDB context is well-understood |
+### False trigger check
+- "Optimize my PostgreSQL query" → **No** (excluded by "PostgreSQL queries")
+- "DynamoDB single-table design" → **No** (excluded by "DynamoDB patterns")
+- "SQL JOIN optimization" → **No** (excluded by "SQL database design")
+- "Redis cache invalidation" → **No** (excluded by "Redis caching")
+- "Elasticsearch full-text search" → **No** (excluded by "Elasticsearch queries")
 
-### Negative Triggers
+Trigger quality is excellent — comprehensive positive keywords with explicit negative exclusions for all major competing databases.
 
-Explicit exclusions: PostgreSQL, MySQL, Redis, DynamoDB, CouchDB, general NoSQL — **well-defined boundary**.
+## Summary
 
-### Cross-trigger Test
+Issues: 2
 
-- **PostgreSQL query** → Would NOT trigger (excluded explicitly) ✅
-- **Redis caching pattern** → Would NOT trigger (excluded explicitly) ✅
-- **"NoSQL schema design"** (no MongoDB context) → Would NOT trigger (excluded) ✅
-- **"aggregation pipeline for data ETL"** → Could false-trigger ⚠️ but low risk given other trigger words needed in practice
+1. Shard key immutability claim is outdated for MongoDB 5.0+ (line 236) — should mention `reshardCollection`.
+2. Transaction 1000-doc limit stated as hard rule instead of best practice (line 304).
 
-**Verdict:** Triggers are well-scoped with minimal false-positive risk.
+Both issues are minor accuracy nuances — the core advice ("choose carefully", "keep transactions short") remains sound. No dimension scores ≤ 2, overall is 4.8 — no GitHub issue filing required.
 
----
-
-## d. Scoring
-
-| Dimension | Score | Rationale |
-|-----------|-------|-----------|
-| **Accuracy** | 4 | All MongoDB 8.0 claims verified. Minor issue: `sh.enableSharding()` deprecated since 6.0 but shown without deprecation note. |
-| **Completeness** | 5 | Comprehensive: CRUD, aggregation, 6 index types, 5 schema patterns, replica sets, sharding, transactions, change streams, Atlas Search/Vector, Mongoose, performance tuning, security, mongosh reference. 11 supporting files (5,902 lines). |
-| **Actionability** | 5 | Every section has copy-paste-ready code. Includes decision matrix for embedding vs referencing, ESR indexing rule, explain plan interpretation, 3 operational scripts, 5 asset templates. |
-| **Trigger quality** | 4 | Strong positive triggers (13 MongoDB-specific terms). Clear negative boundary (6 excluded technologies). Minor ambiguity with "aggregation pipeline" and "replica set" in isolation. |
-
-**Overall: 4.5 / 5.0** ✅
-
----
-
-## e. Action Items
-
-1. **[Minor]** Add deprecation note to `sh.enableSharding()` on line 241 or replace with a comment explaining it's no longer required in 7.x+
-2. **[Minor]** Add `$queryStats` example (mentioned in description but missing from body)
-3. **[Nitpick]** Consider adding MongoDB 8.0 `bulkWrite` server command coverage in advanced-patterns.md
-
----
-
-## f. GitHub Issues
-
-**Not required.** Overall score (4.5) ≥ 4.0 and no dimension ≤ 2.
-
----
-
-## g. SKILL.md Tag
-
-`<!-- tested: pass -->` appended to SKILL.md.
+## Verdict: **PASS**

@@ -494,3 +494,5 @@ docker compose up -d
 cp assets/redis-cluster.conf /etc/redis/redis-7000.conf
 # Edit: port, cluster-announce-ip, requirepass, maxmemory
 ```
+
+<!-- tested: pass -->
