@@ -1,0 +1,159 @@
+# KubeRay RayCluster manifest with autoscaling
+# Apply: kubectl apply -f ray-cluster.yaml -n ray-workloads
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: production-cluster
+  labels:
+    app: ray
+    environment: production
+spec:
+  rayVersion: "2.9.0"
+  enableInTreeAutoscaling: true
+
+  autoscalerOptions:
+    upscalingMode: Default
+    idleTimeoutSeconds: 60
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "250m"
+        memory: "256Mi"
+
+  headGroupSpec:
+    rayStartParams:
+      dashboard-host: "0.0.0.0"
+      num-cpus: "0"  # Don't schedule compute on head node
+      object-store-memory: "1000000000"  # 1 GB
+    template:
+      metadata:
+        labels:
+          ray.io/node-type: head
+        annotations:
+          prometheus.io/scrape: "true"
+          prometheus.io/port: "8080"
+      spec:
+        containers:
+        - name: ray-head
+          image: rayproject/ray:2.9.0-py310
+          ports:
+          - containerPort: 6379
+            name: gcs
+            protocol: TCP
+          - containerPort: 8265
+            name: dashboard
+            protocol: TCP
+          - containerPort: 10001
+            name: client
+            protocol: TCP
+          - containerPort: 8080
+            name: metrics
+            protocol: TCP
+          env:
+          - name: RAY_DEDUP_LOGS
+            value: "1"
+          resources:
+            requests:
+              cpu: "2"
+              memory: "8Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
+          volumeMounts:
+          - name: ray-logs
+            mountPath: /tmp/ray
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8265
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8265
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 10
+        volumes:
+        - name: ray-logs
+          emptyDir:
+            sizeLimit: 10Gi
+
+  workerGroupSpecs:
+  # CPU workers for general compute
+  - groupName: cpu-workers
+    replicas: 3
+    minReplicas: 1
+    maxReplicas: 20
+    rayStartParams:
+      object-store-memory: "2000000000"  # 2 GB
+    template:
+      metadata:
+        labels:
+          ray.io/node-type: worker
+          worker-type: cpu
+      spec:
+        containers:
+        - name: ray-worker
+          image: rayproject/ray:2.9.0-py310
+          resources:
+            requests:
+              cpu: "4"
+              memory: "16Gi"
+            limits:
+              cpu: "4"
+              memory: "16Gi"
+          volumeMounts:
+          - name: ray-logs
+            mountPath: /tmp/ray
+        volumes:
+        - name: ray-logs
+          emptyDir:
+            sizeLimit: 5Gi
+
+  # GPU workers for ML workloads
+  - groupName: gpu-workers
+    replicas: 1
+    minReplicas: 0
+    maxReplicas: 8
+    rayStartParams:
+      object-store-memory: "4000000000"  # 4 GB
+    template:
+      metadata:
+        labels:
+          ray.io/node-type: worker
+          worker-type: gpu
+      spec:
+        tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        containers:
+        - name: ray-worker
+          image: rayproject/ray:2.9.0-py310-gpu
+          resources:
+            requests:
+              cpu: "8"
+              memory: "32Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: "32Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+          - name: ray-logs
+            mountPath: /tmp/ray
+          - name: shm
+            mountPath: /dev/shm
+        volumes:
+        - name: ray-logs
+          emptyDir:
+            sizeLimit: 5Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi

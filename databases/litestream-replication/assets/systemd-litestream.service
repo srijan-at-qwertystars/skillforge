@@ -1,0 +1,46 @@
+[Unit]
+Description=Litestream SQLite Replication
+Documentation=https://litestream.io
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=litestream
+Group=litestream
+
+ExecStart=/usr/local/bin/litestream replicate -config /etc/litestream.yml
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+# Environment file for S3 credentials
+EnvironmentFile=-/etc/default/litestream
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=litestream
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# Allow read/write to the database directory
+ReadWritePaths=/data
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

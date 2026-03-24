@@ -443,3 +443,35 @@ Lower `sync-interval` = lower RPO (recovery point objective) but more API calls.
 | Full RDBMS replication | PostgreSQL, MySQL with native replication |
 
 Litestream is ideal for: single-server apps, edge deployments, solo/small-team projects, MVP/startup backends, and any SQLite workload needing disaster recovery without architectural complexity.
+
+## References
+
+In-depth guides for specific topics:
+
+| Document | Path | Topics |
+|---|---|---|
+| Deployment Patterns | `references/deployment-patterns.md` | Docker sidecar, Kubernetes init+sidecar, systemd integration, Fly.io, multi-replica destinations, cross-region replication, framework integration (Go, Rails, Django, Node.js, Phoenix) |
+| Troubleshooting | `references/troubleshooting.md` | WAL mode issues, database locked errors, restore failures, S3/IAM permissions, slow snapshots, retention cleanup, silent crashes, monitoring gaps, checkpoint conflicts, diagnostic commands |
+| Disaster Recovery | `references/disaster-recovery.md` | Point-in-time recovery, automated restore testing, backup verification, multi-region failover/failback, RPO/RTO calculations, layered backup strategies, cross-environment restores |
+
+## Scripts
+
+Operational scripts in `scripts/`:
+
+| Script | Purpose | Usage |
+|---|---|---|
+| `setup-litestream.sh` | Install Litestream, configure S3 replication, start and verify | `S3_BUCKET=my-bucket ./scripts/setup-litestream.sh` |
+| `restore-database.sh` | Stop app → restore (latest or point-in-time) → verify → restart | `REPLICA_URL=s3://bucket/app ./scripts/restore-database.sh` |
+| `verify-backup.sh` | Restore to temp dir, integrity check, generation analysis, optional live comparison | `REPLICA_URL=s3://bucket/app ./scripts/verify-backup.sh` |
+
+## Assets
+
+Ready-to-use configuration files in `assets/`:
+
+| File | Description |
+|---|---|
+| `litestream.yml` | Production config: S3 replica, 1s sync, 1h snapshots, 7d retention, validation |
+| `Dockerfile` | Multi-stage image with Litestream sidecar — restore on boot, `-exec` for signal forwarding |
+| `docker-compose.yml` | Full dev stack: app + Litestream + MinIO (local S3), init restore container |
+| `systemd-litestream.service` | systemd unit with security hardening, journal logging, auto-restart |
+| `k8s-sidecar.yaml` | Complete K8s manifests: StatefulSet, ConfigMap, Secret, Service, PDB, probes |

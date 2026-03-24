@@ -1,0 +1,31 @@
+# Litestream Production Configuration
+# Docs: https://litestream.io/reference/config/
+#
+# Environment variables required:
+#   LITESTREAM_ACCESS_KEY_ID     — S3 access key
+#   LITESTREAM_SECRET_ACCESS_KEY — S3 secret key
+
+# Prometheus metrics endpoint
+addr: ":9090"
+
+logging:
+  level: info
+  type: text
+
+dbs:
+  - path: /data/app.db
+    replicas:
+      - name: primary
+        type: s3
+        bucket: myapp-backups
+        path: production
+        region: us-east-1
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+
+        # Replication tuning
+        sync-interval: 1s             # WAL sync frequency (RPO ≈ 1s)
+        snapshot-interval: 1h          # Full snapshot every hour (faster restores)
+        retention: 168h                # Keep 7 days of history
+        retention-check-interval: 1h   # Cleanup check frequency
+        validation-interval: 12h       # Periodic restore validation

@@ -370,3 +370,37 @@ Test Ray code with `ray.init(num_cpus=2)` in fixtures. Use `ray.shutdown()` in t
 - [ ] Use `RAY_DEDUP_LOGS=0` during debugging only
 - [ ] Test with `ray.init(local_mode=True)` for debugging serialization issues
 - [ ] Profile with `ray timeline` before optimizing
+
+## References
+
+Detailed deep-dive guides in `references/`:
+
+- **[ray-serve-guide.md](references/ray-serve-guide.md)** — Ray Serve deep dive: deployment graphs, model composition, dynamic batching, streaming responses, FastAPI integration, autoscaling config, multi-model serving, A/B testing, canary deployments, gRPC support, production deployment patterns, monitoring, performance tuning.
+
+- **[troubleshooting.md](references/troubleshooting.md)** — Common Ray issues and fixes: OOM (object store and worker heap), task/actor failures, serialization errors, slow task submission, GCS failures, head node bottleneck, dashboard not loading, KubeRay pod CrashLoops, resource deadlocks, placement group issues, networking, performance degradation. Includes debugging tools reference.
+
+- **[kuberay-guide.md](references/kuberay-guide.md)** — KubeRay deep dive: RayCluster/RayJob/RayService CRDs, autoscaling (3-tier), node groups, GPU scheduling, persistent storage, Prometheus/Grafana monitoring, production cluster sizing, multi-tenancy, security (RBAC, TLS), networking, upgrades and maintenance.
+
+## Scripts
+
+Operational scripts in `scripts/`:
+
+- **[setup-ray-cluster.sh](scripts/setup-ray-cluster.sh)** — Set up a local Ray cluster: install Ray, start head node, add configurable workers, verify cluster health. Supports `--workers`, `--head-cpus`, `--worker-cpus`, `--object-store-memory`.
+
+- **[deploy-ray-serve.sh](scripts/deploy-ray-serve.sh)** — Deploy a Ray Serve application from a config YAML: validate config, deploy, wait for health, optional health checks. Supports `--address`, `--health-check`, `--wait`.
+
+- **[ray-benchmark.sh](scripts/ray-benchmark.sh)** — Benchmark Ray tasks, actors, and object store: submission throughput, round-trip latency (p50/p95/p99), actor creation/method call rates, object put/get transfer rates. Supports `--tasks`, `--actors`, `--object-size-mb`, `--all`.
+
+## Assets
+
+Reusable configuration and example code in `assets/`:
+
+- **[ray-cluster.yaml](assets/ray-cluster.yaml)** — Production KubeRay RayCluster manifest with autoscaling, CPU + GPU worker groups, health probes, shared memory volumes, and Prometheus annotations.
+
+- **[ray-serve-config.yaml](assets/ray-serve-config.yaml)** — Ray Serve deployment config with preprocessor → model → postprocessor pipeline, autoscaling, resource limits, and health checks.
+
+- **[serve-example.py](assets/serve-example.py)** — Complete Ray Serve ML model serving example: FastAPI integration, Pydantic validation, dynamic batching, model composition pipeline, health endpoints, batch prediction endpoint.
+
+- **[data-pipeline.py](assets/data-pipeline.py)** — Ray Data preprocessing pipeline: multi-format reading (Parquet/CSV/JSON), streaming transforms, feature engineering, GPU-accelerated preprocessing with ActorPoolStrategy, sample data generation.
+
+- **[docker-compose.yml](assets/docker-compose.yml)** — Local Ray cluster with Docker Compose: head + 2 workers (scalable), shared storage, health checks, dashboard at localhost:8265.

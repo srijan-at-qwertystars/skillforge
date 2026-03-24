@@ -1,0 +1,104 @@
+# Docker Compose: App + Litestream + MinIO (local S3) for development
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f
+#
+# MinIO Console: http://localhost:9001 (minioadmin / minioadmin)
+# Application:   http://localhost:8080
+# Litestream metrics: http://localhost:9090/metrics
+
+services:
+  # --- MinIO: Local S3-compatible storage ---
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- Create the Litestream bucket in MinIO ---
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb local/litestream --ignore-existing;
+      exit 0;
+      "
+
+  # --- Restore: one-shot init container ---
+  litestream-restore:
+    image: litestream/litestream:latest
+    command: restore -if-db-not-exists -if-replica-exists /data/app.db
+    volumes:
+      - app-data:/data
+      - ./litestream-dev.yml:/etc/litestream.yml:ro
+    environment:
+      LITESTREAM_ACCESS_KEY_ID: minioadmin
+      LITESTREAM_SECRET_ACCESS_KEY: minioadmin
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+
+  # --- Application ---
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_PATH: /data/app.db
+    volumes:
+      - app-data:/data
+    depends_on:
+      litestream-restore:
+        condition: service_completed_successfully
+
+  # --- Litestream: continuous replication sidecar ---
+  litestream:
+    image: litestream/litestream:latest
+    command: replicate
+    volumes:
+      - app-data:/data
+      - ./litestream-dev.yml:/etc/litestream.yml:ro
+    ports:
+      - "9090:9090"   # Prometheus metrics
+    environment:
+      LITESTREAM_ACCESS_KEY_ID: minioadmin
+      LITESTREAM_SECRET_ACCESS_KEY: minioadmin
+    restart: unless-stopped
+    depends_on:
+      litestream-restore:
+        condition: service_completed_successfully
+
+volumes:
+  app-data:
+  minio-data:
+
+# Development litestream config is expected at ./litestream-dev.yml:
+#
+#   addr: ":9090"
+#   dbs:
+#     - path: /data/app.db
+#       replicas:
+#         - type: s3
+#           bucket: litestream
+#           path: dev
+#           endpoint: http://minio:9000
+#           force-path-style: true
+#           sync-interval: 1s
+#           snapshot-interval: 5m
+#           retention: 24h

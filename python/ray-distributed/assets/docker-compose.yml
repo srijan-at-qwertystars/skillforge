@@ -1,0 +1,94 @@
+# Local Ray cluster with head node + 2 workers
+#
+# Usage:
+#   docker compose up -d              # Start the cluster
+#   docker compose up -d --scale worker=4  # Start with 4 workers
+#   docker compose logs -f head       # Follow head node logs
+#   docker compose exec head ray status  # Check cluster status
+#   docker compose down               # Tear down
+#
+# Connect from host:
+#   pip install ray
+#   python -c "import ray; ray.init('ray://localhost:10001'); print(ray.cluster_resources())"
+#
+# Dashboard: http://localhost:8265
+
+services:
+  head:
+    image: rayproject/ray:2.9.0-py310
+    container_name: ray-head
+    hostname: ray-head
+    ports:
+      - "8265:8265"   # Dashboard
+      - "10001:10001" # Client API
+      - "6379:6379"   # GCS
+      - "8000:8000"   # Ray Serve
+    environment:
+      - RAY_DEDUP_LOGS=1
+    command: >
+      ray start --head
+      --port=6379
+      --dashboard-host=0.0.0.0
+      --dashboard-port=8265
+      --num-cpus=2
+      --object-store-memory=500000000
+      --block
+    shm_size: "2g"
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+        reservations:
+          cpus: "1"
+          memory: 2G
+    volumes:
+      - ray-head-logs:/tmp/ray
+      - shared-storage:/mnt/shared
+    networks:
+      - ray-network
+    healthcheck:
+      test: ["CMD", "ray", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: rayproject/ray:2.9.0-py310
+    depends_on:
+      head:
+        condition: service_healthy
+    environment:
+      - RAY_DEDUP_LOGS=1
+    command: >
+      ray start
+      --address=ray-head:6379
+      --num-cpus=4
+      --object-store-memory=1000000000
+      --block
+    shm_size: "2g"
+    deploy:
+      mode: replicated
+      replicas: 2
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+        reservations:
+          cpus: "2"
+          memory: 4G
+    volumes:
+      - shared-storage:/mnt/shared
+    networks:
+      - ray-network
+
+volumes:
+  ray-head-logs:
+    driver: local
+  shared-storage:
+    driver: local
+
+networks:
+  ray-network:
+    driver: bridge

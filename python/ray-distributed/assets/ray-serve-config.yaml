@@ -1,0 +1,67 @@
+# Ray Serve deployment configuration
+# Deploy: serve deploy ray-serve-config.yaml
+# Status: serve status
+
+proxy_location: EveryNode
+http_options:
+  host: 0.0.0.0
+  port: 8000
+  request_timeout_s: 120
+  keep_alive_timeout_s: 5
+
+logging_config:
+  encoding: TEXT
+  log_level: INFO
+
+applications:
+  - name: ml_prediction
+    route_prefix: /
+    import_path: serve_app:app
+
+    runtime_env:
+      pip:
+        - torch>=2.1.0
+        - numpy>=1.24.0
+      env_vars:
+        MODEL_DIR: /mnt/models
+        LOG_LEVEL: INFO
+
+    deployments:
+      - name: Preprocessor
+        num_replicas: 2
+        max_ongoing_requests: 50
+        ray_actor_options:
+          num_cpus: 1
+          memory: 2147483648  # 2 GB
+        health_check_period_s: 10
+        health_check_timeout_s: 30
+        graceful_shutdown_timeout_s: 20
+        graceful_shutdown_wait_loop_s: 2
+
+      - name: ModelServer
+        num_replicas: auto
+        max_ongoing_requests: 100
+        autoscaling_config:
+          min_replicas: 1
+          max_replicas: 10
+          initial_replicas: 2
+          target_num_ongoing_requests_per_replica: 5
+          upscale_delay_s: 15
+          downscale_delay_s: 300
+          smoothing_factor: 1.0
+          metrics_interval_s: 10
+          look_back_period_s: 30
+        ray_actor_options:
+          num_cpus: 2
+          num_gpus: 1
+          memory: 8589934592  # 8 GB
+        health_check_period_s: 10
+        health_check_timeout_s: 30
+        graceful_shutdown_timeout_s: 30
+
+      - name: Postprocessor
+        num_replicas: 2
+        max_ongoing_requests: 100
+        ray_actor_options:
+          num_cpus: 1
+          memory: 1073741824  # 1 GB

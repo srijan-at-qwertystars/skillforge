@@ -1,0 +1,174 @@
+# ══════════════════════════════════════════════════════
+# GitHub Actions CI for Vapor 4.x
+# ══════════════════════════════════════════════════════
+name: Vapor CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SWIFT_VERSION: "5.9"
+
+jobs:
+  # ── Lint & Format Check ──
+  lint:
+    name: Swift Format Check
+    runs-on: ubuntu-latest
+    container: swift:5.9-jammy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Swift format
+        run: |
+          # Install swift-format if not present
+          if ! command -v swift-format &> /dev/null; then
+            apt-get update && apt-get install -y swift-format 2>/dev/null || true
+          fi
+          # Check formatting (non-blocking — remove '|| true' to enforce)
+          swift-format lint --recursive Sources/ Tests/ || true
+
+  # ── Build & Test on Linux ──
+  test-linux:
+    name: Test (Linux)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vapor_test
+          POSTGRES_PASSWORD: vapor_test
+          POSTGRES_DB: vapor_test_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vapor_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+
+    container:
+      image: swift:5.9-jammy
+
+    env:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: vapor_test
+      DB_PASS: vapor_test
+      DB_NAME: vapor_test_db
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ci-test-secret
+      LOG_LEVEL: warning
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-swift-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swift-
+
+      - name: Resolve dependencies
+        run: swift package resolve
+
+      - name: Build
+        run: swift build --build-tests -j 2
+
+      - name: Run tests
+        run: swift test --parallel
+
+  # ── Build & Test on macOS ──
+  test-macos:
+    name: Test (macOS)
+    runs-on: macos-14
+    if: github.event_name == 'pull_request'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vapor_test
+          POSTGRES_PASSWORD: vapor_test
+          POSTGRES_DB: vapor_test_db
+        ports:
+          - 5432:5432
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: vapor_test
+      DB_PASS: vapor_test
+      DB_NAME: vapor_test_db
+      JWT_SECRET: ci-test-secret
+      LOG_LEVEL: warning
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Swift version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-swift-${{ hashFiles('Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-swift-
+
+      - name: Build & Test
+        run: swift test --parallel
+
+  # ── Docker Build ──
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: test-linux
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: vapor-app:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test Docker image
+        run: |
+          docker build -t vapor-app:test .
+          docker run --rm -d --name vapor-test -p 8080:8080 \
+            -e DB_HOST=host.docker.internal \
+            -e DB_PORT=5432 \
+            -e DB_USER=vapor_test \
+            -e DB_PASS=vapor_test \
+            -e DB_NAME=vapor_test_db \
+            vapor-app:test || true
+          sleep 5
+          curl -f http://localhost:8080/health || echo "Health check skipped (no DB)"
+          docker stop vapor-test 2>/dev/null || true

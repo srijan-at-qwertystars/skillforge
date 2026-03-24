@@ -1,0 +1,215 @@
+# Kubernetes deployment with Litestream init container + sidecar
+# Includes: StatefulSet, ConfigMap, Secret, Service, PodDisruptionBudget
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litestream-config
+  labels:
+    app: myapp
+    component: litestream
+data:
+  litestream.yml: |
+    addr: ":9090"
+
+    logging:
+      level: info
+      type: text
+
+    dbs:
+      - path: /data/app.db
+        replicas:
+          - type: s3
+            bucket: myapp-backups
+            path: production
+            region: us-east-1
+            sync-interval: 1s
+            snapshot-interval: 1h
+            retention: 168h
+            retention-check-interval: 1h
+            validation-interval: 12h
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: litestream-credentials
+  labels:
+    app: myapp
+    component: litestream
+type: Opaque
+stringData:
+  LITESTREAM_ACCESS_KEY_ID: "REPLACE_WITH_ACCESS_KEY"
+  LITESTREAM_SECRET_ACCESS_KEY: "REPLACE_WITH_SECRET_KEY"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+  selector:
+    app: myapp
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: myapp-pdb
+  labels:
+    app: myapp
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: myapp
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: myapp
+  labels:
+    app: myapp
+spec:
+  serviceName: myapp
+  replicas: 1  # MUST be 1 — SQLite is single-writer
+  selector:
+    matchLabels:
+      app: myapp
+  template:
+    metadata:
+      labels:
+        app: myapp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+
+      volumes:
+        - name: litestream-config
+          configMap:
+            name: litestream-config
+
+      # --- Init Container: Restore database from replica on first boot ---
+      initContainers:
+        - name: litestream-restore
+          image: litestream/litestream:0.3.13
+          args:
+            - restore
+            - -if-db-not-exists
+            - -if-replica-exists
+            - /data/app.db
+          envFrom:
+            - secretRef:
+                name: litestream-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: litestream-config
+              mountPath: /etc/litestream.yml
+              subPath: litestream.yml
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+
+      containers:
+        # --- Application container ---
+        - name: app
+          image: myapp:latest
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: DATABASE_PATH
+              value: /data/app.db
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 12
+
+        # --- Litestream sidecar: continuous replication ---
+        - name: litestream
+          image: litestream/litestream:0.3.13
+          args: ["replicate"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+          envFrom:
+            - secretRef:
+                name: litestream-credentials
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: litestream-config
+              mountPath: /etc/litestream.yml
+              subPath: litestream.yml
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+  # --- Persistent Volume for SQLite database ---
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app: myapp
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 10Gi

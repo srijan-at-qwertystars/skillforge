@@ -449,20 +449,6 @@ Use `.testing` environment with a separate test database. `app.test()` supports 
 
 ## Deployment
 
-### Docker
-```dockerfile
-FROM swift:5.9-jammy AS build
-WORKDIR /app
-COPY . .
-RUN swift build -c release --static-swift-stdlib
-FROM ubuntu:jammy
-COPY --from=build /app/.build/release/App /app
-COPY --from=build /app/Public /Public
-COPY --from=build /app/Resources /Resources
-EXPOSE 8080
-ENTRYPOINT ["/app", "serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
-```
-
 ### Production Checklist
 - Set `--env production` for release logging/config.
 - Use environment variables for all secrets and connection strings.
@@ -482,3 +468,31 @@ ENTRYPOINT ["/app", "serve", "--env", "production", "--hostname", "0.0.0.0", "--
 - Register migrations in dependency order. Eager-load with `.with()` to avoid N+1 queries.
 - Use `.paginate(for: req)` for lists. Return HTTP status codes via `Abort`.
 - Keep `configure.swift` thin. Use environment-based configuration for all targets.
+
+## Additional Resources
+
+### Reference Guides (`references/`)
+
+| Guide | Topics |
+|-------|--------|
+| [fluent-orm-guide.md](references/fluent-orm-guide.md) | Model lifecycle hooks, soft deletes, timestamps, enums, JSON columns, composite unique constraints, eager loading (with vs join), sibling relations & pivots, raw SQL, migrations best practices, seeding, database transactions, advanced query patterns |
+| [authentication-guide.md](references/authentication-guide.md) | Bcrypt password hashing, token-based auth, JWT with custom claims & refresh tokens, OAuth2 integration (GitHub example), session-based auth, middleware chaining, role-based access control, API key auth, two-factor authentication (TOTP + backup codes) |
+| [troubleshooting.md](references/troubleshooting.md) | Swift concurrency Sendable warnings, Fluent migration errors, connection pool exhaustion, memory leaks with EventLoop, Docker build failures, Linux vs macOS differences, Leaf template rendering errors, WebSocket disconnections, JWT verification failures, debugging techniques |
+
+### Scripts (`scripts/`)
+
+| Script | Purpose |
+|--------|---------|
+| [setup-vapor-project.sh](scripts/setup-vapor-project.sh) | Scaffold a Vapor project: install toolbox, create project, add Fluent/JWT/Redis, generate Docker dev environment |
+| [vapor-docker-build.sh](scripts/vapor-docker-build.sh) | Multi-stage Docker build: compile on swift image, copy to slim ubuntu runtime, optional registry push |
+| [run-tests.sh](scripts/run-tests.sh) | Spin up Docker PostgreSQL, run migrations, execute `swift test`, cleanup — all in one command |
+
+### Template Assets (`assets/`)
+
+| Asset | Description |
+|-------|-------------|
+| [Package.swift](assets/Package.swift) | Template with Vapor, Fluent, JWT, Redis, Queues dependencies |
+| [Dockerfile](assets/Dockerfile) | Production multi-stage build with health check and non-root user |
+| [docker-compose.yml](assets/docker-compose.yml) | Full dev stack: Vapor + PostgreSQL + Redis + optional admin UIs |
+| [configure.swift](assets/configure.swift) | Template with CORS, database, JWT, Redis, queues, logging setup |
+| [github-actions-vapor.yml](assets/github-actions-vapor.yml) | CI workflow: lint, test on Linux & macOS with PostgreSQL + Redis services, Docker build |
