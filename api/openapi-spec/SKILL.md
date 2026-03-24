@@ -497,3 +497,5 @@ Reusable templates and schemas in `assets/`:
 
 - **`openapi-template.yaml`** — Complete OpenAPI 3.1 starter template with health check, CRUD endpoints, cursor pagination, RFC 7807 errors, rate limiting headers, and security schemes pre-configured
 - **`error-response.yaml`** — Reusable RFC 7807 error components for 400, 401, 403, 404, 409, 422, 500
+
+<!-- tested: pass -->

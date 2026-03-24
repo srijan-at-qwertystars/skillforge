@@ -481,3 +481,4 @@ Ready-to-use project templates in `assets/`:
   - `deno.json` — Config with Preact JSX, tasks
   - `routes/index.tsx` — Server-rendered home page
   - `islands/Counter.tsx` — Interactive island component
+<!-- tested: pass -->

@@ -497,3 +497,4 @@ Copy-paste templates and starter files:
 |-------|-------------|
 | [`assets/base-template.html`](assets/base-template.html) | HTML5 base template with htmx, hyperscript, idiomorph CDN links, loading indicators CSS, toast notifications, global error handling |
 | [`assets/component-library.html`](assets/component-library.html) | Ready-to-use htmx components: active search, infinite scroll, click-to-edit, modal dialog, toast notifications, tabs, accordion, sortable table, bulk operations, inline validation |
+<!-- tested: pass -->
