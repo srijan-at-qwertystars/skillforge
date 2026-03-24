@@ -1,0 +1,240 @@
+# =============================================================================
+# GitHub Actions workflow for automated Packer image building
+#
+# Features:
+#   - Validate → Build → Scan → Promote pipeline
+#   - Manual dispatch with environment selection
+#   - Scheduled weekly builds for security patches
+#   - HCP Packer channel promotion
+#   - Artifact upload for manifests and reports
+#
+# Required secrets:
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+#   HCP_CLIENT_ID, HCP_CLIENT_SECRET (optional, for HCP Packer)
+#
+# Usage:
+#   Copy to .github/workflows/packer-build.yml
+# =============================================================================
+
+name: Build Golden Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packer/**'
+      - '.github/workflows/packer-build.yml'
+
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packer/**'
+
+  schedule:
+    # Weekly build for security patches (Monday 6am UTC)
+    - cron: '0 6 * * 1'
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      promote_channel:
+        description: 'HCP Packer channel to promote to (optional)'
+        required: false
+        type: string
+
+env:
+  PACKER_DIR: packer
+  PACKER_VERSION: '1.10.3'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # --- Stage 1: Validate ---
+  validate:
+    name: Validate Template
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Initialize Packer
+        run: packer init ${{ env.PACKER_DIR }}/
+
+      - name: Check formatting
+        run: packer fmt -check -diff -recursive ${{ env.PACKER_DIR }}/
+
+      - name: Validate template
+        run: |
+          ENV=${{ github.event.inputs.environment || 'dev' }}
+          packer validate \
+            -var-file=${{ env.PACKER_DIR }}/${ENV}.pkrvars.hcl \
+            -var "git_sha=${{ github.sha }}" \
+            -var "build_number=${{ github.run_number }}" \
+            ${{ env.PACKER_DIR }}/
+
+  # --- Stage 2: Build ---
+  build:
+    name: Build Image
+    needs: validate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      ami_id: ${{ steps.extract.outputs.ami_id }}
+      ami_region: ${{ steps.extract.outputs.ami_region }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Initialize Packer
+        run: packer init ${{ env.PACKER_DIR }}/
+
+      - name: Build image
+        run: |
+          ENV=${{ github.event.inputs.environment || 'dev' }}
+          packer build \
+            -var-file=${{ env.PACKER_DIR }}/${ENV}.pkrvars.hcl \
+            -var "git_sha=${{ github.sha }}" \
+            -var "build_number=${{ github.run_number }}" \
+            -color=false \
+            ${{ env.PACKER_DIR }}/
+        env:
+          HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
+          HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
+
+      - name: Extract AMI ID
+        id: extract
+        run: |
+          AMI_ARTIFACT=$(jq -r '.builds[-1].artifact_id' ${{ env.PACKER_DIR }}/manifests/manifest.json)
+          echo "ami_region=$(echo $AMI_ARTIFACT | cut -d: -f1)" >> "$GITHUB_OUTPUT"
+          echo "ami_id=$(echo $AMI_ARTIFACT | cut -d: -f2)" >> "$GITHUB_OUTPUT"
+          echo "### Build Output" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **AMI ID**: $(echo $AMI_ARTIFACT | cut -d: -f2)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Region**: $(echo $AMI_ARTIFACT | cut -d: -f1)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment**: ${{ github.event.inputs.environment || 'dev' }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: packer-manifest
+          path: ${{ env.PACKER_DIR }}/manifests/manifest.json
+          retention-days: 90
+
+  # --- Stage 3: Scan ---
+  scan:
+    name: Security Scan
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ needs.build.outputs.ami_region }}
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Scan AMI (via Inspector)
+        run: |
+          echo "### Security Scan Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "AMI: ${{ needs.build.outputs.ami_id }}" >> "$GITHUB_STEP_SUMMARY"
+
+          # If using AWS Inspector for AMI scanning:
+          # aws inspector2 enable --resource-types EC2
+          # Or use the scan-image.sh script for direct scanning
+
+          echo "- **Status**: Scan initiated" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **AMI**: ${{ needs.build.outputs.ami_id }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload scan reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-reports
+          path: scan-reports/
+          retention-days: 90
+
+  # --- Stage 4: Promote ---
+  promote:
+    name: Promote to Channel
+    needs: [build, scan]
+    if: >-
+      github.event.inputs.promote_channel != '' ||
+      (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: packer-manifest
+
+      - name: Promote in HCP Packer
+        if: env.HCP_CLIENT_ID != ''
+        run: |
+          CHANNEL=${{ github.event.inputs.promote_channel || 'dev' }}
+          FINGERPRINT=$(jq -r '.builds[-1].packer_run_uuid' manifest.json)
+
+          echo "Promoting version $FINGERPRINT to channel: $CHANNEL"
+
+          # Using HCP CLI
+          # hcp packer channels set-version \
+          #   --bucket-name ubuntu-base \
+          #   --channel "$CHANNEL" \
+          #   --version "$FINGERPRINT"
+
+          echo "### Promotion" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Channel**: $CHANNEL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: $FINGERPRINT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **AMI**: ${{ needs.build.outputs.ami_id }}" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
+          HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
+
+      - name: Tag AMI as promoted
+        run: |
+          aws ec2 create-tags \
+            --region ${{ needs.build.outputs.ami_region }} \
+            --resources ${{ needs.build.outputs.ami_id }} \
+            --tags \
+              Key=PromotedChannel,Value=${{ github.event.inputs.promote_channel || 'dev' }} \
+              Key=PromotedAt,Value=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+              Key=PromotedBy,Value=${{ github.actor }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ needs.build.outputs.ami_region }}

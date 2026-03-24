@@ -339,6 +339,8 @@ Containers: `trivy image myapp:latest --exit-code 1`. Alternative: `grype dir:/ 
 - Set filesystem permissions (tmp noexec, var nosuid); enable auditd
 - Remove unnecessary packages/services; harden sysctl (ip_forward=0)
 
+**Deep dive**: see `references/security-hardening.md` for CIS benchmark implementation (Ubuntu/Amazon Linux/Windows), STIG compliance, automated scanning with Trivy/Grype/Anchore, SSH hardening, audit logging, image signing with cosign/notation, SBOM generation, and supply chain security.
+
 ## CI/CD Integration
 
 ### GitHub Actions:
@@ -363,19 +365,6 @@ jobs:
           HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
       - uses: actions/upload-artifact@v4
         with: { name: manifest, path: packer-manifest.json }
-```
-
-### GitLab CI:
-```yaml
-build-image:
-  image: hashicorp/packer:latest
-  stage: build
-  script:
-    - packer init .
-    - packer validate -var-file=prod.pkrvars.hcl .
-    - packer build -var-file=prod.pkrvars.hcl -color=false .
-  artifacts: { paths: [packer-manifest.json] }
-  rules: [{ changes: ['packer/**'] }]
 ```
 
 ## Optimization
@@ -414,6 +403,38 @@ source "amazon-ebs" "app" {
 - **Azure**: always run waagent deprovision as last step or image fails to boot
 - **Cloud-init**: add `cloud-init status --wait` as first provisioner to avoid race conditions
 - **v1.11+ plugins**: SHA256SUM files required — run `packer plugins install` to regenerate
+
+**Deep dive**: see `references/troubleshooting.md` for detailed debugging steps, SSH/WinRM fixes, AMI copy issues, HCL2 migration guide, and plugin conflict resolution.
+
+## References
+
+| Document | Description |
+|----------|-------------|
+| `references/advanced-patterns.md` | Multi-stage builds, data sources, HCP Packer channels, custom plugins, Terraform integration, builder optimizations, Windows/WinRM, Ansible patterns, multi-region |
+| `references/troubleshooting.md` | SSH/WinRM timeouts, AMI copy hangs, Docker issues, provisioner debugging, cleanup, HCL2 migration, variable errors, plugin conflicts, rate limiting |
+| `references/security-hardening.md` | CIS benchmarks (Ubuntu/AL2023/Windows), Trivy/Grype/Anchore scanning, STIG compliance, SSH hardening, firewalls, audit logging, credential cleanup, image signing, SBOM |
+
+## Scripts
+
+Executable helper scripts in `scripts/`:
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/init-packer-project.sh` | Initialize a new Packer project with directory structure, starter templates, Makefile, and plugin install |
+| `scripts/build-ami.sh` | Build, validate, tag, list, and cleanup AMIs with retention policies |
+| `scripts/scan-image.sh` | Launch instance from AMI, run CIS benchmarks and Trivy scans, generate reports |
+
+## Assets (Copy-Paste Templates)
+
+Production-ready templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| `assets/aws-base.pkr.hcl` | AWS AMI template with spot pricing, shell + Ansible provisioners, manifest post-processor |
+| `assets/docker-base.pkr.hcl` | Docker image template with multi-stage provisioners, tag + push post-processors |
+| `assets/variables.pkr.hcl` | Variables file with validation rules, descriptions, defaults for AWS region/instance/VPC |
+| `assets/github-actions.yml` | GitHub Actions workflow: validate → build → scan → promote pipeline |
+| `assets/Makefile` | Project Makefile with init, validate, build, fmt, scan, clean, debug targets |
 
 ## Example: Multi-Cloud Golden Image
 

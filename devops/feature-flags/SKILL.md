@@ -287,32 +287,18 @@ assert client.get_boolean_value("new-checkout", False) is True
 
 ## Architecture
 
-### Flag Evaluation Service
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│ Flag Mgmt   │────▶│ Flag Store   │────▶│ Evaluation SDKs │
-│ Dashboard   │     │ (Rules DB)   │     │ (in-process)    │
-└─────────────┘     └──────────────┘     └─────────────────┘
-                           │                      │
-                    ┌──────┴──────┐         ┌─────┴─────┐
-                    │ SSE/Webhook │         │ App Logic  │
-                    │ Push Updates│         │ if flag... │
-                    └─────────────┘         └───────────┘
-```
+### Flag Evaluation Flow
+`Dashboard → Flag Store (Rules DB) → Evaluation SDKs (in-process) → App Logic`. Updates pushed via SSE/Webhooks.
 
 ### Edge Evaluation
-- Deploy flag rulesets to CDN edge nodes (CloudFront, Cloudflare Workers).
-- Evaluate at edge for sub-millisecond latency. No round-trip to origin.
-- Use relay proxies (LaunchDarkly Relay, Unleash Edge) for self-hosted edge.
+- Deploy rulesets to CDN edge (CloudFront, Cloudflare Workers) for sub-ms latency.
+- Relay proxies (LaunchDarkly Relay, Unleash Edge) for self-hosted edge.
 - Trade-off: eventual consistency (seconds) vs strong consistency.
 
-### Caching Strategies
-- **In-memory SDK cache**: SDKs keep ruleset in memory, updated via streaming. Default for server-side.
-- **Background polling**: Fallback if streaming disconnects. Poll interval: 30s–60s typical.
-- **Stale-while-revalidate**: Return cached value immediately, refresh in background.
-- **Cache invalidation**: Push-based (SSE/webhook) preferred over TTL-based polling.
-- **Never cache on shared CDN by user**: Flag values are per-user; use `Vary` headers or evaluate server-side.
+### Caching
+- **In-memory SDK cache**: Rulesets in memory, updated via streaming. Default for server-side.
+- **Background polling**: Fallback if streaming disconnects. 30s–60s typical.
+- **Push-based invalidation**: SSE/webhook preferred over TTL polling.
 
 ## Trunk-Based Development with Flags
 
@@ -329,15 +315,7 @@ assert client.get_boolean_value("new-checkout", False) is True
 5. Remove flag + old code path within 30 days of 100% rollout.
 
 ### CI Enforcement
-```yaml
-# .github/workflows/flag-hygiene.yml
-- name: Check stale flags
-  run: |
-    # Find flags older than 14 days at 100%
-    node scripts/check-stale-flags.js --max-age=14d --status=fully-rolled-out
-    # Find flag references in code with no matching platform flag
-    node scripts/find-orphaned-flags.js --source=src/ --provider=launchdarkly
-```
+Use `scripts/flag-cleanup.sh` or `assets/github-actions.yml` for CI enforcement. See [advanced-patterns.md](references/advanced-patterns.md) for governance details.
 
 ## A/B Testing Integration
 
@@ -441,48 +419,63 @@ return old_db.query(sql)
 
 ### Stale Flag Detection
 
-```typescript
-import { glob } from 'glob';
-import { readFileSync } from 'fs';
+Use `scripts/flag-cleanup.sh` or inline:
 
+```typescript
 const FLAG_RE = /client\.(getBooleanValue|getStringValue)\(['"]([^'"]+)['"]/g;
 const codeFlags = new Set<string>();
-for (const file of glob.sync('src/**/*.{ts,tsx,js,jsx}')) {
+for (const file of glob.sync('src/**/*.{ts,tsx,js,jsx}'))
   for (const m of readFileSync(file, 'utf-8').matchAll(FLAG_RE)) codeFlags.add(m[2]);
-}
 const platformFlags = await fetchPlatformFlags();
 const orphaned = [...codeFlags].filter(f => !platformFlags.has(f));
 const unused = [...platformFlags].filter(f => !codeFlags.has(f));
-if (orphaned.length) console.error('Flags in code but not platform:', orphaned);
-if (unused.length) console.warn('Flags in platform but not code:', unused);
-process.exit(orphaned.length > 0 ? 1 : 0);
 ```
 
 ## Common Gotchas
 
-### Flag Debt
-- Every flag is tech debt from birth. Create removal ticket at flag creation time.
-- Symptoms: unknown flag owners, flags nobody dares remove, nested flag conditionals.
-- Fix: enforce TTLs, automate cleanup alerts, make flag removal part of "done" definition.
+- **Flag debt**: Every flag is tech debt from birth. Create removal ticket at creation. Enforce TTLs.
+- **Combinatorial explosion**: 10 flags = 1024 states. Use pairwise testing (~20 combos). See [testing-strategies.md](references/testing-strategies.md).
 
-### Testing Combinatorial Explosion
-- 10 boolean flags = 1024 possible states. Do NOT test all combinations.
-- Use pairwise testing (covers all 2-way interactions with ~20 test cases).
-- Identify flag dependencies explicitly. Most flags are independent — test them independently.
-- Critical combinations only: flags that interact (same code path, shared state).
-
-### Cache Invalidation
-- Stale flags cause inconsistent behavior across instances during rollout changes.
-- Use streaming (SSE) over polling. Polling intervals >60s are too slow for kill switches.
-- Client-side: stale-while-revalidate pattern. Server-side: in-memory cache with streaming updates.
-- Never cache evaluated flag results in HTTP response caches (CDN) — values are per-user.
-
-### Other Pitfalls
-- **Flag conditionals in hot paths**: Evaluate once per request, store result. Do not call SDK in loops.
+- **Cache invalidation**: Use streaming (SSE) over polling. Never cache flag results in CDN — values are per-user.
+- **Hot-path evaluation**: Evaluate once per request, store result. Don't call SDK in loops.
 - **Default value mismatch**: SDK default must match "safe" behavior. Kill switches default to enabled.
-- **Missing context**: Forgetting `targetingKey` causes all users to get the same variant.
-- **Nested flags**: `if (flagA && flagB)` creates implicit dependency. Document or refactor.
-- **Client-side exposure**: Multivariate flag names visible in client bundles leak experiment info.
+- **Missing context**: Forgetting `targetingKey` causes all users to get same variant.
+- **Nested flags**: `if (flagA && flagB)` creates implicit dependency. See [advanced-patterns.md](references/advanced-patterns.md).
+- **Client-side exposure**: Flag names visible in client bundles leak experiment info.
+
+---
+
+## Reference Docs
+
+Deep-dive references in `references/`:
+
+| Document | Contents |
+|----------|----------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Multi-armed bandit allocation, flag dependencies & prerequisites, mutual exclusion groups, scheduled rollouts, flag-driven DB migrations, governance, canary releases with flags, dynamic config vs flags, server-side vs client-side evaluation trade-offs, flag archival & cleanup automation |
+| [platform-comparison.md](references/platform-comparison.md) | LaunchDarkly vs Unleash vs Flagsmith vs PostHog vs Flipt vs CloudBees vs Split — pricing, SDKs, targeting, RBAC, edge evaluation, OpenFeature compatibility, compliance (SOC2/HIPAA), decision guide by org type |
+| [testing-strategies.md](references/testing-strategies.md) | Unit testing with mock providers, combinatorial/pairwise strategies, integration testing with flag states, evaluation logic testing, contract testing, load testing with flag changes, rollback scenario testing, flag-aware test fixtures |
+
+## Scripts
+
+Executable scripts in `scripts/` (bash, `chmod +x`):
+
+| Script | Purpose | Key Flags |
+|--------|---------|-----------|
+| [init-openfeature.sh](scripts/init-openfeature.sh) | Set up OpenFeature in a project — detects language (Node/Python/Go/Java), installs SDK + provider, creates config file, generates usage example | `--lang`, `--provider`, `--dir`, `--dry-run` |
+| [flag-cleanup.sh](scripts/flag-cleanup.sh) | Find stale flags — scans codebase for flag references, compares against platform API, reports orphaned/unused/fully-rolled-out flags | `--src`, `--provider`, `--api-url`, `--output [text\|json]` |
+| [flag-audit.sh](scripts/flag-audit.sh) | Audit all flags — lists states, targeting rules, age, owner; flags beyond age threshold; governance checks | `--provider`, `--max-age`, `--output [text\|json\|csv\|markdown]` |
+
+## Assets / Templates
+
+Copy-paste-ready templates in `assets/`:
+
+| Template | Language | What It Provides |
+|----------|----------|------------------|
+| [openfeature-provider.ts](assets/openfeature-provider.ts) | TypeScript | Custom OpenFeature provider with in-memory flag store, targeting rules engine (attribute matching, percentage rollout), event emission (READY, CHANGED, ERROR, STALE) |
+| [react-feature-flag.tsx](assets/react-feature-flag.tsx) | React/TSX | `FeatureFlagProvider`, `useFeatureFlag` hook, `FeatureGate` component, typed convenience hooks, `withFeatureFlag` HOC, debug panel, error boundary |
+| [flag-middleware.ts](assets/flag-middleware.ts) | TypeScript | Express middleware + Fastify plugin for flag evaluation with request context extraction, LRU caching, Prometheus metrics, JWT-based context builder |
+| [flag-config.yaml](assets/flag-config.yaml) | YAML | Flag configuration template for Unleash/Flipt — strategies, variants, segments, metadata, scheduling; annotated with platform compatibility notes |
+| [github-actions.yml](assets/github-actions.yml) | GitHub Actions | Flag lifecycle workflow — stale flag detection (weekly), PR checks for new flags, cleanup reminders (daily), monthly audit report |
 
 ---
 
@@ -497,3 +490,10 @@ process.exit(orphaned.length > 0 ? 1 : 0);
 | Infra migration | Ops flag, percentage rollout, shadow-read comparison |
 | Vendor-neutral SDK | OpenFeature + provider for your platform |
 | Avoid flag debt | TTL at creation, CI lint, weekly review, removal ticket |
+| Set up OpenFeature | Run `scripts/init-openfeature.sh` in project root |
+| Find stale flags | Run `scripts/flag-cleanup.sh --src ./src` |
+| Audit flag inventory | Run `scripts/flag-audit.sh --provider unleash` |
+| Custom provider | Copy `assets/openfeature-provider.ts`, customize rules |
+| React integration | Copy `assets/react-feature-flag.tsx`, wrap app |
+| Server middleware | Copy `assets/flag-middleware.ts` for Express/Fastify |
+| CI flag hygiene | Copy `assets/github-actions.yml` into `.github/workflows/` |

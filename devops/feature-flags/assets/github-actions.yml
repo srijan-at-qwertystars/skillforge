@@ -1,0 +1,961 @@
+# =============================================================================
+# Feature Flag Lifecycle Management — GitHub Actions Workflow
+# =============================================================================
+# Manages the full lifecycle of feature flags: detection, validation, cleanup,
+# and auditing. Integrates with a feature-flag platform API and optionally
+# posts notifications to Slack.
+#
+# Required secrets:
+#   FLAG_PLATFORM_API_URL  — Base URL of the feature-flag platform API
+#   FLAG_PLATFORM_API_KEY  — Bearer token for the platform API
+#   SLACK_WEBHOOK_URL      — (optional) Incoming-webhook URL for Slack
+#   GITHUB_TOKEN           — Provided automatically by Actions
+#
+# Required variables (repository-level):
+#   FLAG_STALE_THRESHOLD_DAYS  — Days before a flag is considered stale (default: 30)
+#   FLAG_NAMING_PATTERN        — Regex for valid flag names (default: see below)
+# =============================================================================
+
+name: Feature Flag Lifecycle Management
+
+on:
+  # PR checks: validate new flags introduced in pull requests
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  schedule:
+    # Stale-flag detection — every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+    # Cleanup reminders — daily at 09:00 UTC
+    - cron: "0 9 * * *"
+    # Monthly audit report — first day of every month at 06:00 UTC
+    - cron: "0 6 1 * *"
+
+  # Allow manual dispatch for any job
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "Job to run"
+        required: true
+        type: choice
+        options:
+          - stale-flag-detection
+          - cleanup-reminders
+          - audit-report
+          - all
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+# ── Shared environment ──────────────────────────────────────────────────────
+env:
+  FLAG_PLATFORM_API_URL: ${{ secrets.FLAG_PLATFORM_API_URL }}
+  FLAG_PLATFORM_API_KEY: ${{ secrets.FLAG_PLATFORM_API_KEY }}
+  STALE_THRESHOLD_DAYS: ${{ vars.FLAG_STALE_THRESHOLD_DAYS || '30' }}
+  # Default naming convention: <type>.<team>.<feature>
+  # e.g. release.payments.new-checkout, experiment.growth.onboarding-v2
+  FLAG_NAMING_PATTERN: ${{ vars.FLAG_NAMING_PATTERN || '^(release|experiment|ops|permission)\.[a-z][a-z0-9-]+\.[a-z][a-z0-9-]+$' }}
+
+# =============================================================================
+# JOB 1 — Stale Flag Detection (weekly)
+# =============================================================================
+jobs:
+  stale-flag-detection:
+    name: "\U0001F50D Stale Flag Detection"
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1'
+      || (github.event_name == 'workflow_dispatch'
+          && (github.event.inputs.job == 'stale-flag-detection'
+              || github.event.inputs.job == 'all'))
+
+    strategy:
+      # Scan across multiple language ecosystems in parallel
+      matrix:
+        include:
+          - language: javascript
+            glob: "**/*.{js,jsx,ts,tsx}"
+            # Matches: isEnabled('flag'), getFlag("flag"), useFeatureFlag('flag')
+            pattern: '(?:isEnabled|getFlag|useFeatureFlag|isFeatureEnabled)\s*\(\s*[''"]([^''"]+)[''"]'
+          - language: python
+            glob: "**/*.py"
+            # Matches: is_enabled("flag"), get_flag('flag'), flag_enabled("flag")
+            pattern: '(?:is_enabled|get_flag|flag_enabled|feature_flag)\s*\(\s*[''"]([^''"]+)[''"]'
+          - language: go
+            glob: "**/*.go"
+            # Matches: IsEnabled("flag"), GetFlag("flag"), BoolVariation("flag", …)
+            pattern: '(?:IsEnabled|GetFlag|BoolVariation|StringVariation)\s*\(\s*"([^"]+)"'
+          - language: ruby
+            glob: "**/*.rb"
+            # Matches: enabled?("flag"), feature_flag("flag")
+            pattern: '(?:enabled\?|feature_flag|flag_enabled\?)\s*\(\s*[''"]([^''"]+)[''"]'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: "Scan codebase for ${{ matrix.language }} flag references"
+        id: scan
+        shell: bash
+        run: |
+          echo "::group::Scanning ${{ matrix.language }} files"
+          FLAGS_FILE=$(mktemp)
+
+          # Find all flag references matching the language-specific pattern
+          grep -roPh '${{ matrix.pattern }}' \
+            --include='${{ matrix.glob }}' \
+            . 2>/dev/null \
+            | sort -u > "$FLAGS_FILE" || true
+
+          FLAG_COUNT=$(wc -l < "$FLAGS_FILE" | tr -d ' ')
+          echo "Found $FLAG_COUNT unique flag(s) in ${{ matrix.language }} code"
+
+          # Export as multiline output
+          {
+            echo "flags<<EOF"
+            cat "$FLAGS_FILE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "count=$FLAG_COUNT" >> "$GITHUB_OUTPUT"
+          echo "::endgroup::"
+
+      - name: Check flag ages against platform API
+        if: steps.scan.outputs.count != '0'
+        id: age_check
+        shell: bash
+        run: |
+          STALE_FLAGS_FILE=$(mktemp)
+          SUMMARY_FILE=$(mktemp)
+          NOW_EPOCH=$(date +%s)
+          THRESHOLD_SECONDS=$(( STALE_THRESHOLD_DAYS * 86400 ))
+          STALE_COUNT=0
+
+          echo "| Flag | Age (days) | Owner | Status |" > "$SUMMARY_FILE"
+          echo "|------|-----------|-------|--------|" >> "$SUMMARY_FILE"
+
+          while IFS= read -r flag_name; do
+            [ -z "$flag_name" ] && continue
+
+            # Query the platform API for flag metadata
+            RESPONSE=$(curl -sf \
+              -H "Authorization: Bearer ${FLAG_PLATFORM_API_KEY}" \
+              -H "Accept: application/json" \
+              "${FLAG_PLATFORM_API_URL}/api/v1/flags/${flag_name}" 2>/dev/null) || {
+              echo "::warning::Could not fetch metadata for flag: $flag_name"
+              continue
+            }
+
+            CREATED_AT=$(echo "$RESPONSE" | jq -r '.createdAt // empty')
+            OWNER=$(echo "$RESPONSE" | jq -r '.owner // "unknown"')
+            FLAG_STATUS=$(echo "$RESPONSE" | jq -r '.status // "unknown"')
+
+            [ -z "$CREATED_AT" ] && continue
+
+            CREATED_EPOCH=$(date -d "$CREATED_AT" +%s 2>/dev/null) || continue
+            AGE_DAYS=$(( (NOW_EPOCH - CREATED_EPOCH) / 86400 ))
+
+            echo "| \`$flag_name\` | $AGE_DAYS | $OWNER | $FLAG_STATUS |" >> "$SUMMARY_FILE"
+
+            if [ "$AGE_DAYS" -gt "$STALE_THRESHOLD_DAYS" ]; then
+              echo "$flag_name|$AGE_DAYS|$OWNER" >> "$STALE_FLAGS_FILE"
+              STALE_COUNT=$((STALE_COUNT + 1))
+            fi
+          done <<< "${{ steps.scan.outputs.flags }}"
+
+          echo "stale_count=$STALE_COUNT" >> "$GITHUB_OUTPUT"
+          {
+            echo "summary<<EOF"
+            cat "$SUMMARY_FILE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "stale_flags<<EOF"
+            cat "$STALE_FLAGS_FILE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub issues for stale flags
+        if: steps.age_check.outputs.stale_count != '0'
+        uses: actions/github-script@v7
+        env:
+          STALE_FLAGS: ${{ steps.age_check.outputs.stale_flags }}
+        with:
+          script: |
+            const lines = process.env.STALE_FLAGS.trim().split('\n').filter(Boolean);
+
+            for (const line of lines) {
+              const [flagName, ageDays, owner] = line.split('|');
+              const title = `🚩 Stale feature flag: ${flagName}`;
+
+              // Check if an open issue already exists for this flag
+              const { data: existing } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: 'feature-flag,stale',
+                per_page: 100,
+              });
+
+              const alreadyTracked = existing.some(i => i.title === title);
+              if (alreadyTracked) {
+                core.info(`Issue already exists for ${flagName} — skipping`);
+                continue;
+              }
+
+              const body = [
+                `## Stale Feature Flag Detected`,
+                ``,
+                `| Property | Value |`,
+                `|----------|-------|`,
+                `| **Flag** | \`${flagName}\` |`,
+                `| **Age**  | ${ageDays} days |`,
+                `| **Owner** | ${owner} |`,
+                `| **Threshold** | ${process.env.STALE_THRESHOLD_DAYS} days |`,
+                `| **Language** | ${{ matrix.language }} |`,
+                ``,
+                `### Action Required`,
+                `This flag has exceeded the configured staleness threshold.`,
+                `Please evaluate whether it can be removed:`,
+                ``,
+                `1. Verify the flag is at 100 % rollout (or permanently off)`,
+                `2. Remove all flag checks from the codebase`,
+                `3. Archive the flag in the platform`,
+                `4. Close this issue`,
+                ``,
+                `> _Automatically created by the Feature Flag Lifecycle workflow._`,
+              ].join('\n');
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['feature-flag', 'stale', 'tech-debt'],
+              });
+
+              core.info(`Created issue for stale flag: ${flagName}`);
+            }
+
+      - name: Post summary to Slack
+        if: >-
+          steps.age_check.outputs.stale_count != '0'
+          && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          STALE_COUNT: ${{ steps.age_check.outputs.stale_count }}
+        run: |
+          curl -sfX POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d @- <<PAYLOAD
+          {
+            "text": "🚩 *Stale Flag Report (${{ matrix.language }})*: Found ${STALE_COUNT} flag(s) older than ${STALE_THRESHOLD_DAYS} days.",
+            "blocks": [
+              {
+                "type": "header",
+                "text": { "type": "plain_text", "text": "🚩 Stale Feature Flags — ${{ matrix.language }}" }
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "${STALE_COUNT} flag(s) exceed the ${STALE_THRESHOLD_DAYS}-day threshold.\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View full report>"
+                }
+              }
+            ]
+          }
+          PAYLOAD
+
+  # =============================================================================
+  # JOB 2 — PR Checks for New Flags (on pull_request)
+  # =============================================================================
+  pr-flag-checks:
+    name: "\U0001F6A6 PR Flag Validation"
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect new flag references in the PR diff
+        id: detect
+        shell: bash
+        run: |
+          BASE_SHA=${{ github.event.pull_request.base.sha }}
+          HEAD_SHA=${{ github.event.pull_request.head.sha }}
+
+          # Unified pattern covering all supported SDKs
+          PATTERN='(?:isEnabled|getFlag|useFeatureFlag|isFeatureEnabled|is_enabled|get_flag|flag_enabled|feature_flag|IsEnabled|GetFlag|BoolVariation|StringVariation|enabled\?|feature_flag)\s*\(\s*['"'"'""]([^'"'"'""]+)['"'"'""]'
+
+          NEW_FLAGS_FILE=$(mktemp)
+
+          # Extract flags that appear only in added lines of the diff
+          git diff "$BASE_SHA".."$HEAD_SHA" --unified=0 --diff-filter=ACMR \
+            | grep -oP '^\+(?!\+\+).*'"$PATTERN" \
+            | grep -oP "$PATTERN" \
+            | sort -u > "$NEW_FLAGS_FILE" 2>/dev/null || true
+
+          NEW_COUNT=$(wc -l < "$NEW_FLAGS_FILE" | tr -d ' ')
+          echo "count=$NEW_COUNT" >> "$GITHUB_OUTPUT"
+          {
+            echo "flags<<EOF"
+            cat "$NEW_FLAGS_FILE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Found $NEW_COUNT new flag reference(s) in this PR"
+
+      - name: Validate flag naming convention
+        if: steps.detect.outputs.count != '0'
+        id: naming
+        shell: bash
+        run: |
+          VIOLATIONS=""
+          VIOLATION_COUNT=0
+
+          while IFS= read -r flag; do
+            [ -z "$flag" ] && continue
+            if ! echo "$flag" | grep -qP "${FLAG_NAMING_PATTERN}"; then
+              VIOLATIONS="${VIOLATIONS}- \`${flag}\` does not match pattern \`${FLAG_NAMING_PATTERN}\`\n"
+              VIOLATION_COUNT=$((VIOLATION_COUNT + 1))
+            fi
+          done <<< "${{ steps.detect.outputs.flags }}"
+
+          echo "violation_count=$VIOLATION_COUNT" >> "$GITHUB_OUTPUT"
+          {
+            echo "violations<<EOF"
+            echo -e "$VIOLATIONS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Check platform definitions and documentation
+        if: steps.detect.outputs.count != '0'
+        id: platform
+        shell: bash
+        run: |
+          MISSING_DEF=""
+          MISSING_DOC=""
+          RESULTS_FILE=$(mktemp)
+          MISSING_DEF_COUNT=0
+          MISSING_DOC_COUNT=0
+
+          while IFS= read -r flag; do
+            [ -z "$flag" ] && continue
+
+            RESPONSE=$(curl -sf \
+              -H "Authorization: Bearer ${FLAG_PLATFORM_API_KEY}" \
+              -H "Accept: application/json" \
+              "${FLAG_PLATFORM_API_URL}/api/v1/flags/${flag}" 2>/dev/null) || {
+              MISSING_DEF="${MISSING_DEF}- \`${flag}\` — no platform definition found\n"
+              MISSING_DEF_COUNT=$((MISSING_DEF_COUNT + 1))
+              continue
+            }
+
+            # Verify required documentation fields
+            DESCRIPTION=$(echo "$RESPONSE" | jq -r '.description // empty')
+            OWNER=$(echo "$RESPONSE" | jq -r '.owner // empty')
+            TTL=$(echo "$RESPONSE" | jq -r '.ttl // empty')
+
+            MISSING_FIELDS=""
+            [ -z "$DESCRIPTION" ] && MISSING_FIELDS="${MISSING_FIELDS}description, "
+            [ -z "$OWNER" ]       && MISSING_FIELDS="${MISSING_FIELDS}owner, "
+            [ -z "$TTL" ]         && MISSING_FIELDS="${MISSING_FIELDS}ttl, "
+
+            if [ -n "$MISSING_FIELDS" ]; then
+              MISSING_FIELDS="${MISSING_FIELDS%, }"
+              MISSING_DOC="${MISSING_DOC}- \`${flag}\` — missing: ${MISSING_FIELDS}\n"
+              MISSING_DOC_COUNT=$((MISSING_DOC_COUNT + 1))
+            fi
+
+            echo "$flag|${DESCRIPTION:-n/a}|${OWNER:-n/a}|${TTL:-n/a}" >> "$RESULTS_FILE"
+          done <<< "${{ steps.detect.outputs.flags }}"
+
+          echo "missing_def_count=$MISSING_DEF_COUNT" >> "$GITHUB_OUTPUT"
+          echo "missing_doc_count=$MISSING_DOC_COUNT" >> "$GITHUB_OUTPUT"
+          {
+            echo "missing_definitions<<EOF"
+            echo -e "$MISSING_DEF"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "missing_docs<<EOF"
+            echo -e "$MISSING_DOC"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "results<<EOF"
+            cat "$RESULTS_FILE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post PR comment with flag summary
+        if: steps.detect.outputs.count != '0'
+        uses: actions/github-script@v7
+        env:
+          NEW_COUNT: ${{ steps.detect.outputs.count }}
+          NAMING_VIOLATIONS: ${{ steps.naming.outputs.violations }}
+          NAMING_VIOLATION_COUNT: ${{ steps.naming.outputs.violation_count }}
+          MISSING_DEFINITIONS: ${{ steps.platform.outputs.missing_definitions }}
+          MISSING_DEF_COUNT: ${{ steps.platform.outputs.missing_def_count }}
+          MISSING_DOCS: ${{ steps.platform.outputs.missing_docs }}
+          MISSING_DOC_COUNT: ${{ steps.platform.outputs.missing_doc_count }}
+          FLAG_RESULTS: ${{ steps.platform.outputs.results }}
+        with:
+          script: |
+            const newCount = parseInt(process.env.NEW_COUNT, 10);
+            const namingViolationCount = parseInt(process.env.NAMING_VIOLATION_COUNT, 10);
+            const missingDefCount = parseInt(process.env.MISSING_DEF_COUNT, 10);
+            const missingDocCount = parseInt(process.env.MISSING_DOC_COUNT, 10);
+            const hasErrors = namingViolationCount > 0 || missingDefCount > 0 || missingDocCount > 0;
+
+            const statusIcon = hasErrors ? '🔴' : '🟢';
+            const lines = [];
+
+            lines.push(`## 🚦 Feature Flag Check — ${statusIcon} ${hasErrors ? 'Issues Found' : 'All Clear'}`);
+            lines.push('');
+            lines.push(`This PR introduces **${newCount}** new feature flag reference(s).`);
+            lines.push('');
+
+            // Flag inventory table
+            const results = (process.env.FLAG_RESULTS || '').trim();
+            if (results) {
+              lines.push('### Flag Inventory');
+              lines.push('| Flag | Description | Owner | TTL |');
+              lines.push('|------|-------------|-------|-----|');
+              for (const row of results.split('\n').filter(Boolean)) {
+                const [flag, desc, owner, ttl] = row.split('|');
+                lines.push(`| \`${flag}\` | ${desc} | ${owner} | ${ttl} |`);
+              }
+              lines.push('');
+            }
+
+            // Naming violations
+            if (namingViolationCount > 0) {
+              lines.push(`### ❌ Naming Convention Violations (${namingViolationCount})`);
+              lines.push(process.env.NAMING_VIOLATIONS.trim());
+              lines.push('');
+              lines.push(`> Expected pattern: \`${process.env.FLAG_NAMING_PATTERN}\``);
+              lines.push('');
+            }
+
+            // Missing platform definitions
+            if (missingDefCount > 0) {
+              lines.push(`### ❌ Missing Platform Definitions (${missingDefCount})`);
+              lines.push(process.env.MISSING_DEFINITIONS.trim());
+              lines.push('');
+              lines.push('> Create the flag in the feature-flag platform before merging.');
+              lines.push('');
+            }
+
+            // Missing documentation
+            if (missingDocCount > 0) {
+              lines.push(`### ⚠️ Incomplete Flag Documentation (${missingDocCount})`);
+              lines.push(process.env.MISSING_DOCS.trim());
+              lines.push('');
+              lines.push('> Every flag must have a **description**, **owner**, and **TTL**.');
+              lines.push('');
+            }
+
+            if (!hasErrors) {
+              lines.push('✅ All flags pass naming, definition, and documentation checks.');
+            }
+
+            lines.push('');
+            lines.push('---');
+            lines.push('_Automated by the Feature Flag Lifecycle workflow._');
+
+            // Upsert: update existing bot comment or create a new one
+            const COMMENT_TAG = '<!-- feature-flag-check -->';
+            lines.unshift(COMMENT_TAG);
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(c => c.body?.includes(COMMENT_TAG));
+            const body = lines.join('\n');
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Fail PR if flag checks have errors
+        if: >-
+          steps.naming.outputs.violation_count != '0'
+          || steps.platform.outputs.missing_def_count != '0'
+          || steps.platform.outputs.missing_doc_count != '0'
+        run: |
+          echo "::error::Feature flag checks failed. See the PR comment for details."
+          exit 1
+
+  # =============================================================================
+  # JOB 3 — Automatic Cleanup Reminders (daily)
+  # =============================================================================
+  cleanup-reminders:
+    name: "\U0001F9F9 Cleanup Reminders"
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' && github.event.schedule == '0 9 * * *'
+      || (github.event_name == 'workflow_dispatch'
+          && (github.event.inputs.job == 'cleanup-reminders'
+              || github.event.inputs.job == 'all'))
+
+    steps:
+      - name: Query flags at 100% rollout
+        id: full_rollout
+        shell: bash
+        run: |
+          RESPONSE=$(curl -sf \
+            -H "Authorization: Bearer ${FLAG_PLATFORM_API_KEY}" \
+            -H "Accept: application/json" \
+            "${FLAG_PLATFORM_API_URL}/api/v1/flags?rolloutPercentage=100&status=active" 2>/dev/null) || {
+            echo "::warning::Could not query platform API for full-rollout flags"
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          FLAGS=$(echo "$RESPONSE" | jq -r '.flags[]? | "\(.key)|\(.owner // "unknown")|\(.createdAt // "unknown")"')
+          FLAG_COUNT=$(echo "$FLAGS" | grep -c . || echo 0)
+
+          echo "count=$FLAG_COUNT" >> "$GITHUB_OUTPUT"
+          {
+            echo "flags<<EOF"
+            echo "$FLAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Found $FLAG_COUNT flag(s) at 100% rollout"
+
+      - name: Query flags past their TTL
+        id: expired_ttl
+        shell: bash
+        run: |
+          RESPONSE=$(curl -sf \
+            -H "Authorization: Bearer ${FLAG_PLATFORM_API_KEY}" \
+            -H "Accept: application/json" \
+            "${FLAG_PLATFORM_API_URL}/api/v1/flags?ttlExpired=true&status=active" 2>/dev/null) || {
+            echo "::warning::Could not query platform API for expired-TTL flags"
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          FLAGS=$(echo "$RESPONSE" | jq -r '.flags[]? | "\(.key)|\(.owner // "unknown")|\(.ttl // "unknown")"')
+          FLAG_COUNT=$(echo "$FLAGS" | grep -c . || echo 0)
+
+          echo "count=$FLAG_COUNT" >> "$GITHUB_OUTPUT"
+          {
+            echo "flags<<EOF"
+            echo "$FLAGS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "Found $FLAG_COUNT flag(s) past their TTL"
+
+      - name: Create or update cleanup tracking issues
+        uses: actions/github-script@v7
+        env:
+          FULL_ROLLOUT_FLAGS: ${{ steps.full_rollout.outputs.flags }}
+          FULL_ROLLOUT_COUNT: ${{ steps.full_rollout.outputs.count }}
+          EXPIRED_TTL_FLAGS: ${{ steps.expired_ttl.outputs.flags }}
+          EXPIRED_TTL_COUNT: ${{ steps.expired_ttl.outputs.count }}
+        with:
+          script: |
+            // ── Helper: look up a GitHub user from a flag owner string ────────
+            async function resolveAssignee(owner) {
+              if (!owner || owner === 'unknown') return undefined;
+              try {
+                await github.rest.users.getByUsername({ username: owner });
+                return owner;
+              } catch {
+                return undefined;
+              }
+            }
+
+            // ── Helper: create or update a cleanup issue ────────────────────
+            async function upsertCleanupIssue({ flagName, reason, owner, detail }) {
+              const title = `🧹 Cleanup flag: ${flagName}`;
+              const labels = ['feature-flag', 'cleanup'];
+
+              const { data: existing } = await github.rest.issues.listForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'open',
+                labels: labels.join(','),
+                per_page: 100,
+              });
+
+              const issue = existing.find(i => i.title === title);
+
+              if (issue) {
+                // Post a daily reminder comment on existing issue
+                const today = new Date().toISOString().slice(0, 10);
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: [
+                    `### 🔔 Daily Cleanup Reminder (${today})`,
+                    '',
+                    `**Reason:** ${reason}`,
+                    `**Owner:** ${owner}`,
+                    '',
+                    'This flag is still awaiting cleanup. Please remove it from the codebase and archive it in the platform.',
+                  ].join('\n'),
+                });
+                core.info(`Posted reminder on issue #${issue.number} for ${flagName}`);
+              } else {
+                // Create a new tracking issue
+                const assignee = await resolveAssignee(owner);
+                const body = [
+                  `## Feature Flag Cleanup Required`,
+                  '',
+                  `| Property | Value |`,
+                  `|----------|-------|`,
+                  `| **Flag** | \`${flagName}\` |`,
+                  `| **Reason** | ${reason} |`,
+                  `| **Owner** | ${owner} |`,
+                  `| **Detail** | ${detail} |`,
+                  '',
+                  `### Steps`,
+                  '- [ ] Verify the flag can be safely removed',
+                  '- [ ] Remove all references from the codebase',
+                  '- [ ] Archive the flag in the platform',
+                  '- [ ] Merge cleanup PR and close this issue',
+                  '',
+                  '> _Automatically created by the Feature Flag Lifecycle workflow._',
+                ].join('\n');
+
+                const createParams = {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  title,
+                  body,
+                  labels,
+                };
+                if (assignee) createParams.assignees = [assignee];
+
+                const { data: newIssue } = await github.rest.issues.create(createParams);
+                core.info(`Created issue #${newIssue.number} for ${flagName}`);
+              }
+            }
+
+            // ── Process full-rollout flags ───────────────────────────────────
+            const fullRolloutLines = (process.env.FULL_ROLLOUT_FLAGS || '').trim().split('\n').filter(Boolean);
+            for (const line of fullRolloutLines) {
+              const [flagName, owner, createdAt] = line.split('|');
+              await upsertCleanupIssue({
+                flagName,
+                reason: 'Flag is at 100 % rollout — safe to remove',
+                owner,
+                detail: `Created on ${createdAt}`,
+              });
+            }
+
+            // ── Process expired-TTL flags ────────────────────────────────────
+            const expiredLines = (process.env.EXPIRED_TTL_FLAGS || '').trim().split('\n').filter(Boolean);
+            for (const line of expiredLines) {
+              const [flagName, owner, ttl] = line.split('|');
+              await upsertCleanupIssue({
+                flagName,
+                reason: 'Flag has exceeded its TTL',
+                owner,
+                detail: `TTL was ${ttl}`,
+              });
+            }
+
+            core.info(`Processed ${fullRolloutLines.length} full-rollout and ${expiredLines.length} expired-TTL flags`);
+
+      - name: Post Slack summary
+        if: >-
+          (steps.full_rollout.outputs.count != '0' || steps.expired_ttl.outputs.count != '0')
+          && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          FR_COUNT: ${{ steps.full_rollout.outputs.count }}
+          TTL_COUNT: ${{ steps.expired_ttl.outputs.count }}
+        run: |
+          curl -sfX POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d @- <<PAYLOAD
+          {
+            "text": "🧹 *Daily Flag Cleanup*: ${FR_COUNT} at 100% rollout, ${TTL_COUNT} past TTL.",
+            "blocks": [
+              {
+                "type": "header",
+                "text": { "type": "plain_text", "text": "🧹 Daily Flag Cleanup Reminders" }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*100% Rollout:* ${FR_COUNT} flag(s)" },
+                  { "type": "mrkdwn", "text": "*Past TTL:* ${TTL_COUNT} flag(s)" }
+                ]
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "<${{ github.server_url }}/${{ github.repository }}/issues?q=is%3Aissue+is%3Aopen+label%3Afeature-flag+label%3Acleanup|View cleanup issues>"
+                }
+              }
+            ]
+          }
+          PAYLOAD
+
+  # =============================================================================
+  # JOB 4 — Flag Audit Report (monthly)
+  # =============================================================================
+  audit-report:
+    name: "\U0001F4CA Flag Audit Report"
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' && github.event.schedule == '0 6 1 * *'
+      || (github.event_name == 'workflow_dispatch'
+          && (github.event.inputs.job == 'audit-report'
+              || github.event.inputs.job == 'all'))
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate flag inventory from platform
+        id: inventory
+        shell: bash
+        run: |
+          RESPONSE=$(curl -sf \
+            -H "Authorization: Bearer ${FLAG_PLATFORM_API_KEY}" \
+            -H "Accept: application/json" \
+            "${FLAG_PLATFORM_API_URL}/api/v1/flags?limit=1000" 2>/dev/null) || {
+            echo "::error::Could not query platform API for flag inventory"
+            exit 1
+          }
+
+          TOTAL=$(echo "$RESPONSE" | jq '.flags | length')
+          ACTIVE=$(echo "$RESPONSE" | jq '[.flags[] | select(.status == "active")] | length')
+          ARCHIVED=$(echo "$RESPONSE" | jq '[.flags[] | select(.status == "archived")] | length')
+
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "active=$ACTIVE" >> "$GITHUB_OUTPUT"
+          echo "archived=$ARCHIVED" >> "$GITHUB_OUTPUT"
+
+          # Persist full response for the report step
+          echo "$RESPONSE" > /tmp/flag_inventory.json
+
+      - name: Calculate flag debt metrics
+        id: metrics
+        shell: bash
+        run: |
+          NOW_EPOCH=$(date +%s)
+
+          # Age distribution buckets
+          UNDER_7=0; UNDER_30=0; UNDER_90=0; OVER_90=0
+
+          while IFS= read -r created_at; do
+            [ -z "$created_at" ] && continue
+            CREATED_EPOCH=$(date -d "$created_at" +%s 2>/dev/null) || continue
+            AGE_DAYS=$(( (NOW_EPOCH - CREATED_EPOCH) / 86400 ))
+
+            if   [ "$AGE_DAYS" -le 7 ];  then UNDER_7=$((UNDER_7 + 1))
+            elif [ "$AGE_DAYS" -le 30 ]; then UNDER_30=$((UNDER_30 + 1))
+            elif [ "$AGE_DAYS" -le 90 ]; then UNDER_90=$((UNDER_90 + 1))
+            else OVER_90=$((OVER_90 + 1))
+            fi
+          done < <(jq -r '.flags[]? | select(.status == "active") | .createdAt' /tmp/flag_inventory.json)
+
+          # Flags at 100% rollout (debt candidates)
+          FULL_ROLLOUT=$(jq '[.flags[] | select(.status == "active" and .rolloutPercentage == 100)] | length' /tmp/flag_inventory.json)
+
+          # Flags past TTL
+          PAST_TTL=$(jq --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '[.flags[] | select(.status == "active" and .ttlExpiresAt != null and .ttlExpiresAt < $now)] | length' \
+            /tmp/flag_inventory.json)
+
+          # By type
+          TYPE_BREAKDOWN=$(jq -r '[.flags[] | select(.status == "active") | .type // "unknown"] | group_by(.) | map({type: .[0], count: length}) | .[] | "\(.type): \(.count)"' /tmp/flag_inventory.json)
+
+          # By team
+          TEAM_BREAKDOWN=$(jq -r '[.flags[] | select(.status == "active") | .team // "unknown"] | group_by(.) | map({team: .[0], count: length}) | .[] | "\(.team): \(.count)"' /tmp/flag_inventory.json)
+
+          {
+            echo "under_7=$UNDER_7"
+            echo "under_30=$UNDER_30"
+            echo "under_90=$UNDER_90"
+            echo "over_90=$OVER_90"
+            echo "full_rollout=$FULL_ROLLOUT"
+            echo "past_ttl=$PAST_TTL"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "type_breakdown<<EOF"
+            echo "$TYPE_BREAKDOWN"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "team_breakdown<<EOF"
+            echo "$TEAM_BREAKDOWN"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate markdown audit report
+        env:
+          TOTAL: ${{ steps.inventory.outputs.total }}
+          ACTIVE: ${{ steps.inventory.outputs.active }}
+          ARCHIVED: ${{ steps.inventory.outputs.archived }}
+          UNDER_7: ${{ steps.metrics.outputs.under_7 }}
+          UNDER_30: ${{ steps.metrics.outputs.under_30 }}
+          UNDER_90: ${{ steps.metrics.outputs.under_90 }}
+          OVER_90: ${{ steps.metrics.outputs.over_90 }}
+          FULL_ROLLOUT: ${{ steps.metrics.outputs.full_rollout }}
+          PAST_TTL: ${{ steps.metrics.outputs.past_ttl }}
+          TYPE_BREAKDOWN: ${{ steps.metrics.outputs.type_breakdown }}
+          TEAM_BREAKDOWN: ${{ steps.metrics.outputs.team_breakdown }}
+        shell: bash
+        run: |
+          REPORT_DATE=$(date -u +%Y-%m-%d)
+          REPORT_FILE="/tmp/flag-audit-report-${REPORT_DATE}.md"
+
+          cat > "$REPORT_FILE" <<REPORT
+          # 📊 Feature Flag Audit Report
+
+          **Date:** ${REPORT_DATE}
+          **Repository:** ${{ github.repository }}
+          **Generated by:** Feature Flag Lifecycle Workflow
+
+          ---
+
+          ## Summary
+
+          | Metric | Count |
+          |--------|-------|
+          | Total flags | ${TOTAL} |
+          | Active flags | ${ACTIVE} |
+          | Archived flags | ${ARCHIVED} |
+          | **Technical debt candidates** | **$((FULL_ROLLOUT + PAST_TTL))** |
+
+          ## Age Distribution (Active Flags)
+
+          | Bucket | Count |
+          |--------|-------|
+          | ≤ 7 days | ${UNDER_7} |
+          | 8 – 30 days | ${UNDER_30} |
+          | 31 – 90 days | ${UNDER_90} |
+          | > 90 days ⚠️ | ${OVER_90} |
+
+          ## Debt Indicators
+
+          | Indicator | Count | Action |
+          |-----------|-------|--------|
+          | Flags at 100% rollout | ${FULL_ROLLOUT} | Remove flag checks; code is fully enabled |
+          | Flags past TTL | ${PAST_TTL} | Evaluate and clean up or extend TTL |
+
+          ## Breakdown by Type
+
+          $(echo "$TYPE_BREAKDOWN" | while IFS=: read -r t c; do echo "- **${t}**: ${c}"; done)
+
+          ## Breakdown by Team
+
+          $(echo "$TEAM_BREAKDOWN" | while IFS=: read -r t c; do echo "- **${t}**: ${c}"; done)
+
+          ## Detailed Flag Inventory
+
+          | Flag | Type | Team | Owner | Status | Age (days) | Rollout |
+          |------|------|------|-------|--------|-----------|---------|
+          $(jq -r --arg now_epoch "$(date +%s)" '
+            .flags[]
+            | select(.status == "active")
+            | {
+                key,
+                type: (.type // "—"),
+                team: (.team // "—"),
+                owner: (.owner // "—"),
+                status,
+                age: (((($now_epoch | tonumber) - ((.createdAt | sub("\\.[0-9]+"; "") | strptime("%Y-%m-%dT%H:%M:%S%Z") | mktime))) / 86400) | floor),
+                rollout: (.rolloutPercentage // "—")
+              }
+            | "| \(.key) | \(.type) | \(.team) | \(.owner) | \(.status) | \(.age) | \(.rollout)% |"
+          ' /tmp/flag_inventory.json 2>/dev/null || echo "| _Unable to parse inventory_ | | | | | | |")
+
+          ---
+
+          ## Recommendations
+
+          1. **Clean up ${FULL_ROLLOUT} flag(s) at 100 % rollout.** These represent dead code paths.
+          2. **Review ${PAST_TTL} flag(s) past TTL.** Extend the TTL or remove the flag.
+          3. **Investigate ${OVER_90} flag(s) older than 90 days.** Long-lived flags increase complexity.
+
+          ---
+          _Generated automatically by the [Feature Flag Lifecycle workflow](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})._
+          REPORT
+
+          echo "report_file=$REPORT_FILE" >> "$GITHUB_ENV"
+
+      - name: Upload audit report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: flag-audit-report-${{ github.run_id }}
+          path: ${{ env.report_file }}
+          retention-days: 90
+
+      - name: Post audit summary to Slack
+        if: env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TOTAL: ${{ steps.inventory.outputs.total }}
+          ACTIVE: ${{ steps.inventory.outputs.active }}
+          FULL_ROLLOUT: ${{ steps.metrics.outputs.full_rollout }}
+          PAST_TTL: ${{ steps.metrics.outputs.past_ttl }}
+          OVER_90: ${{ steps.metrics.outputs.over_90 }}
+        run: |
+          DEBT_TOTAL=$((FULL_ROLLOUT + PAST_TTL))
+          curl -sfX POST "$SLACK_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d @- <<PAYLOAD
+          {
+            "text": "📊 Monthly Flag Audit: ${ACTIVE} active flags, ${DEBT_TOTAL} debt candidates.",
+            "blocks": [
+              {
+                "type": "header",
+                "text": { "type": "plain_text", "text": "📊 Monthly Feature Flag Audit" }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*Active Flags:* ${ACTIVE}" },
+                  { "type": "mrkdwn", "text": "*Total Flags:* ${TOTAL}" },
+                  { "type": "mrkdwn", "text": "*100% Rollout:* ${FULL_ROLLOUT}" },
+                  { "type": "mrkdwn", "text": "*Past TTL:* ${PAST_TTL}" },
+                  { "type": "mrkdwn", "text": "*> 90 days old:* ${OVER_90}" },
+                  { "type": "mrkdwn", "text": "*Debt Candidates:* ${DEBT_TOTAL}" }
+                ]
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Download full report>"
+                }
+              }
+            ]
+          }
+          PAYLOAD

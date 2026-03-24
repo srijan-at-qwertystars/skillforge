@@ -470,3 +470,25 @@ function UserMenu() {
 | Live region populated on mount | Mount empty container, then update |
 | `tabindex` > 0 | Use 0 or -1 only; rely on DOM order |
 | Placeholder as only label | Always provide visible `<label>` |
+
+## Additional Resources
+
+### references/ — In-depth reference documents
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Complex widget patterns: combobox, tree view, data grid, tabs, accordion, drag-and-drop, virtual scrolling, SPA route announcements, toasts, tooltips, disclosure, mega menus, accessible charts.
+- **[testing-guide.md](references/testing-guide.md)** — A11y testing: axe-core (Jest/Cypress/Playwright), Storybook addon, pa11y CI, screen reader testing (VoiceOver/NVDA/JAWS), manual checklist, WAVE, Lighthouse, custom axe rules, CI/CD pipelines.
+- **[react-accessibility.md](references/react-accessibility.md)** — React a11y: React Aria hooks, Radix UI, Headless UI, React Hook Form + a11y, focus management, live regions, accessible routing, SSR considerations, component library audits.
+
+### scripts/ — Executable utilities (`./scripts/<name>.sh`)
+
+- **[audit-site.sh](scripts/audit-site.sh)** — A11y audit on a URL via pa11y/axe CLI, violations grouped by severity with WCAG refs. Usage: `./scripts/audit-site.sh https://example.com`
+- **[check-contrast.sh](scripts/check-contrast.sh)** — Contrast ratio calculator, WCAG AA/AAA pass/fail for normal and large text. Usage: `./scripts/check-contrast.sh "#333" "#fff"`
+- **[generate-a11y-tests.sh](scripts/generate-a11y-tests.sh)** — Generate a11y test templates (axe, keyboard, screen reader) for a component. Usage: `./scripts/generate-a11y-tests.sh Modal`
+
+### assets/ — Copy-paste-ready templates
+
+- **[accessible-modal.tsx](assets/accessible-modal.tsx)** — Modal dialog: focus trap, Escape to close, aria-modal, return focus, inert background.
+- **[accessible-form.tsx](assets/accessible-form.tsx)** — Form: labels, aria-describedby errors, required indicators, fieldset/legend, live validation, error summary.
+- **[skip-navigation.tsx](assets/skip-navigation.tsx)** — Skip navigation with visible-on-focus styling, single or multiple targets.
+- **[axe-test-setup.ts](assets/axe-test-setup.ts)** — Jest/Vitest + axe-core setup: custom matchers, `checkA11y`, `checkWCAG22`, `describeA11y` helpers.
+- **[eslint-a11y-config.json](assets/eslint-a11y-config.json)** — Strict eslint-plugin-jsx-a11y config with component mappings and test overrides.

@@ -1,0 +1,891 @@
+# =============================================================================
+# Feature Flag Configuration Template
+# =============================================================================
+#
+# A comprehensive template for configuring feature flags in Unleash/Flipt-style
+# systems. Copy this file, remove the sections you don't need, and customize
+# the rest to define your flags.
+#
+# Compatibility notes:
+#   - Unleash uses "strategies" with "constraints" for targeting rules.
+#   - Flipt uses "rules" with "segments" and "distributions" for targeting.
+#   - This template covers both styles. Fields are annotated with [Unleash],
+#     [Flipt], or [Both] to indicate where each pattern applies.
+#   - When a concept exists in both systems but uses different terminology,
+#     both terms are shown.
+#
+# Hierarchy:
+#   project -> flags -> strategies/rules -> segments -> constraints
+#
+# Usage:
+#   1. Define reusable segments at the top.
+#   2. Define your flags with the appropriate type.
+#   3. Attach strategies/rules to control who sees what.
+#   4. Add variants when you need more than on/off.
+#
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Global Defaults
+# -----------------------------------------------------------------------------
+# Settings that apply to all flags unless overridden at the flag level.
+
+version: "1.0"                         # Schema version for migration tooling
+
+project: "skillforge"                  # [Unleash] Project grouping for flags
+namespace: "skillforge"                # [Flipt]   Namespace grouping for flags
+
+defaults:
+  # The environment in which this config is active. Flags can override this.
+  # Common values: development, staging, production
+  environment: "production"
+
+  # Default stickiness key used for percentage rollouts and variant assignment.
+  # "userId"   — consistent per user (most common)
+  # "sessionId"— consistent per session
+  # "random"   — no consistency, re-evaluated every request
+  stickiness: "userId"
+
+  # When true, newly created flags start disabled. Recommended for production
+  # configs to prevent accidental exposure.
+  default_enabled: false
+
+
+# =============================================================================
+# SEGMENTS — Reusable audience definitions
+# =============================================================================
+# Segments let you define a group of users once and reference it across
+# multiple flags. This avoids duplicating targeting rules.
+#
+# [Unleash] Segments are a first-class object attached to strategy constraints.
+# [Flipt]   Segments are defined separately and referenced inside rules.
+#
+# Constraint operators (supported by both systems):
+#   IN              — value is in the provided list
+#   NOT_IN          — value is NOT in the provided list
+#   STR_CONTAINS    — string contains substring
+#   STR_STARTS_WITH — string starts with prefix
+#   STR_ENDS_WITH   — string ends with suffix
+#   NUM_EQ          — number equals
+#   NUM_GT          — number greater than
+#   NUM_GTE         — number greater than or equal
+#   NUM_LT          — number less than
+#   NUM_LTE         — number less than or equal
+#   DATE_BEFORE     — date is before the given ISO-8601 timestamp
+#   DATE_AFTER      — date is after the given ISO-8601 timestamp
+#   SEMVER_EQ       — semantic version equals
+#   SEMVER_GT       — semantic version greater than
+#   SEMVER_LT       — semantic version less than
+#   IS_TRUE         — boolean attribute is true
+#   IS_FALSE        — boolean attribute is false
+
+segments:
+
+  # ---------------------------------------------------------------------------
+  # Beta Testers — Users who have opted in to early access features
+  # ---------------------------------------------------------------------------
+  - name: "beta-testers"
+    description: "Users enrolled in the beta program via account settings."
+    # match_type controls how multiple constraints combine:
+    #   ALL_OF — every constraint must match (logical AND) [default]
+    #   ANY_OF — at least one constraint must match (logical OR)
+    match_type: "ANY_OF"
+    constraints:
+      # Match users who have the beta flag on their profile
+      - field: "beta_enrolled"            # Context attribute name
+        operator: "IS_TRUE"
+      # OR match specific user IDs that were manually added
+      - field: "userId"
+        operator: "IN"
+        values:
+          - "user-001"
+          - "user-002"
+          - "user-003"
+
+  # ---------------------------------------------------------------------------
+  # Enterprise Users — Customers on paid enterprise plans
+  # ---------------------------------------------------------------------------
+  - name: "enterprise-users"
+    description: "Customers on Enterprise or Enterprise Plus billing plans."
+    match_type: "ALL_OF"
+    constraints:
+      - field: "plan"
+        operator: "IN"
+        values:
+          - "enterprise"
+          - "enterprise-plus"
+      # Optionally require a minimum seat count to qualify
+      - field: "seat_count"
+        operator: "NUM_GTE"
+        value: 10
+
+  # ---------------------------------------------------------------------------
+  # Internal Employees — Staff and contractors with corporate emails
+  # ---------------------------------------------------------------------------
+  - name: "internal-employees"
+    description: "Internal team members identified by email domain or role."
+    match_type: "ANY_OF"
+    constraints:
+      - field: "email"
+        operator: "STR_ENDS_WITH"
+        values:
+          - "@skillforge.io"
+          - "@skillforge.dev"
+      - field: "role"
+        operator: "IN"
+        values:
+          - "employee"
+          - "contractor"
+          - "admin"
+
+  # ---------------------------------------------------------------------------
+  # Geographic: EU Region — Users within the European Union
+  # ---------------------------------------------------------------------------
+  - name: "eu-region"
+    description: "Users whose requests originate from EU member states."
+    match_type: "ALL_OF"
+    constraints:
+      - field: "country"
+        operator: "IN"
+        values:
+          - "DE"    # Germany
+          - "FR"    # France
+          - "ES"    # Spain
+          - "IT"    # Italy
+          - "NL"    # Netherlands
+          - "PL"    # Poland
+          - "SE"    # Sweden
+          - "BE"    # Belgium
+          - "AT"    # Austria
+          - "IE"    # Ireland
+          # ... add remaining EU country codes as needed
+
+  # ---------------------------------------------------------------------------
+  # Geographic: APAC Region — Asia-Pacific users
+  # ---------------------------------------------------------------------------
+  - name: "apac-region"
+    description: "Users in the Asia-Pacific region for latency-sensitive features."
+    match_type: "ALL_OF"
+    constraints:
+      - field: "region"
+        operator: "IN"
+        values:
+          - "ap-southeast-1"
+          - "ap-southeast-2"
+          - "ap-northeast-1"
+          - "ap-northeast-2"
+          - "ap-south-1"
+
+  # ---------------------------------------------------------------------------
+  # High-Value Accounts — Large customers by MRR
+  # ---------------------------------------------------------------------------
+  - name: "high-value-accounts"
+    description: "Accounts with monthly recurring revenue above $10,000."
+    match_type: "ALL_OF"
+    constraints:
+      - field: "mrr_cents"
+        operator: "NUM_GTE"
+        value: 1000000               # $10,000 in cents
+
+
+# =============================================================================
+# FLAGS — Feature flag definitions
+# =============================================================================
+# Each flag has:
+#   - A unique key (kebab-case recommended)
+#   - A type (boolean, string, number, json)
+#   - Metadata (owner, tags, description, etc.)
+#   - One or more strategies/rules that control evaluation
+#   - Optional variants for multi-armed experiments
+
+flags:
+
+  # ===========================================================================
+  # FLAG TYPE 1: Boolean Release Flag (simple on/off)
+  # ===========================================================================
+  # The most common flag type. Used to gate new features behind a kill switch
+  # that can be toggled without a deployment.
+  #
+  # Evaluation result: true | false
+  # ===========================================================================
+
+  - key: "new-checkout-flow"
+    type: "boolean"                    # boolean | string | number | json
+    enabled: true                      # Master switch — false disables for everyone
+
+    # -------------------------------------------------------------------------
+    # Metadata
+    # -------------------------------------------------------------------------
+    meta:
+      description: >
+        Enables the redesigned checkout flow with single-page layout,
+        Apple Pay integration, and address auto-complete. Replaces the
+        legacy multi-step checkout.
+      owner: "payments-team"           # Team or individual responsible
+      contact: "payments@skillforge.io"
+      tags:
+        - "checkout"
+        - "payments"
+        - "q3-release"
+        - "customer-facing"
+      created_at: "2025-01-15T10:00:00Z"
+
+      # TTL / Expiry — When should this flag be cleaned up?
+      # After a feature is fully rolled out, stale flags become tech debt.
+      # Set an expiry to remind the team to remove the flag from code.
+      ttl:
+        expires_at: "2025-09-01T00:00:00Z"      # Hard expiry date
+        reminder_days_before: 14                  # Alert 14 days before expiry
+        action_on_expiry: "warn"                  # warn | disable | remove
+
+      # Dependencies — Other flags that must be enabled for this flag to work.
+      # If any dependency is disabled, this flag evaluates to its default value
+      # regardless of its own strategies.
+      dependencies:
+        - flag: "payment-service-v2"
+          # Optional: require the dependency to evaluate to a specific variant
+          # variant: "enabled"
+        - flag: "address-autocomplete-api"
+
+      # Audit / lifecycle tracking
+      lifecycle:
+        stage: "pre-live"              # initial | pre-live | live | completed
+        # Stages help track where a flag is in its lifecycle:
+        #   initial    — flag created, not yet configured
+        #   pre-live   — strategies configured, testing in non-prod
+        #   live       — actively serving traffic in production
+        #   completed  — fully rolled out, ready for code cleanup
+
+    # -------------------------------------------------------------------------
+    # Strategies / Rules
+    # -------------------------------------------------------------------------
+    # Strategies are evaluated top-to-bottom. The FIRST matching strategy wins.
+    # If no strategy matches, the flag returns its default value (false for
+    # boolean flags).
+    #
+    # [Unleash] calls these "activation strategies."
+    # [Flipt]   calls these "rules" containing "distributions."
+
+    strategies:
+
+      # Strategy 1: Internal employees always see the new flow
+      # Use case: Dogfooding — let the team use the feature first.
+      - name: "internal-dogfood"
+        description: "Enable for all internal employees for dogfooding."
+        # Segments reference the reusable audience definitions above
+        segments:
+          - "internal-employees"
+        # No percentage — 100% of matching users get the flag
+        result: true
+
+      # Strategy 2: Beta testers on enterprise plans
+      # Use case: Targeted early access for high-value beta customers.
+      - name: "enterprise-beta"
+        description: "Enable for enterprise customers in the beta program."
+        segments:
+          - "beta-testers"
+          - "enterprise-users"
+        # When multiple segments are listed, segment_combination controls logic:
+        #   AND — user must be in ALL listed segments (default)
+        #   OR  — user must be in at least ONE segment
+        segment_combination: "AND"
+        result: true
+
+      # Strategy 3: Gradual percentage rollout
+      # Use case: Slowly ramp traffic from 0% to 100% while monitoring metrics.
+      #
+      # How it works:
+      #   1. Hash the stickiness key (e.g., userId) to get a number 0–99.
+      #   2. If the hash < rollout_percentage, the user gets the flag.
+      #   3. The same userId always hashes to the same bucket, ensuring a
+      #      consistent experience across requests.
+      - name: "gradual-rollout"
+        description: "Gradually roll out to a percentage of all remaining users."
+        percentage:
+          rollout: 25                  # 0–100. Start low, increase over time.
+          stickiness: "userId"         # Key to hash for consistent bucketing
+          # group_id differentiates rollout cohorts across flags. Two flags with
+          # the same group_id and percentage will target the SAME users. Use
+          # different group_ids to get independent cohorts.
+          group_id: "new-checkout-flow"
+        # Optional: add constraints to limit the rollout further
+        constraints:
+          - field: "country"
+            operator: "NOT_IN"
+            values:
+              - "CN"                   # Exclude China (regulatory review pending)
+              - "RU"                   # Exclude Russia
+        result: true
+
+      # Strategy 4: Environment-specific override
+      # Use case: Always enable in dev/staging, use rules only in production.
+      - name: "non-prod-override"
+        description: "Always enabled in non-production environments."
+        constraints:
+          - field: "environment"
+            operator: "IN"
+            values:
+              - "development"
+              - "staging"
+              - "test"
+        result: true
+
+    # Default value when no strategy matches
+    default_value: false
+
+
+  # ===========================================================================
+  # FLAG TYPE 2: Multivariate String Flag (A/B/C testing)
+  # ===========================================================================
+  # Returns one of several string values instead of true/false. Ideal for
+  # A/B/n experiments where each variant maps to a different UI treatment.
+  #
+  # Evaluation result: "control" | "variant-a" | "variant-b" | ...
+  # ===========================================================================
+
+  - key: "onboarding-flow-experiment"
+    type: "string"
+    enabled: true
+
+    meta:
+      description: >
+        A/B/C test for the user onboarding flow. Tests three approaches:
+        control (existing wizard), variant-a (interactive tutorial),
+        and variant-b (video walkthrough).
+      owner: "growth-team"
+      contact: "#growth-experiments (Slack)"
+      tags:
+        - "experiment"
+        - "onboarding"
+        - "growth"
+      created_at: "2025-02-20T14:30:00Z"
+      ttl:
+        expires_at: "2025-06-01T00:00:00Z"
+        action_on_expiry: "warn"
+
+      # Experiment-specific metadata — not part of flag evaluation, but useful
+      # for tracking and analysis tooling.
+      experiment:
+        hypothesis: >
+          An interactive tutorial will increase Day-7 retention by 15%
+          compared to the existing wizard.
+        primary_metric: "day_7_retention_rate"
+        secondary_metrics:
+          - "onboarding_completion_rate"
+          - "time_to_first_value_seconds"
+          - "support_ticket_rate_7d"
+        minimum_sample_size: 5000
+        expected_duration_days: 21
+
+    # -------------------------------------------------------------------------
+    # Variants — Weighted distribution of values
+    # -------------------------------------------------------------------------
+    # Each variant has a name, weight, and optional payload. Weights must sum
+    # to 100 (or 1000 for finer granularity in some systems).
+    #
+    # [Unleash] Variants are defined at the flag level.
+    # [Flipt]   Variants are defined at the flag level but distributions are
+    #           set per-rule, allowing different weights in different rules.
+
+    variants:
+      - name: "control"
+        description: "Existing multi-step wizard (baseline)."
+        weight: 34                     # 34% of users
+        payload:
+          type: "json"                 # string | json | number | csv
+          value:
+            flow: "wizard"
+            steps: 5
+            skip_allowed: true
+
+      - name: "variant-a"
+        description: "Interactive tutorial with guided actions."
+        weight: 33                     # 33% of users
+        payload:
+          type: "json"
+          value:
+            flow: "interactive-tutorial"
+            steps: 3
+            skip_allowed: false
+            tooltip_style: "spotlight"
+
+      - name: "variant-b"
+        description: "Video walkthrough with chapter navigation."
+        weight: 33                     # 33% of users
+        payload:
+          type: "json"
+          value:
+            flow: "video-walkthrough"
+            video_url: "https://cdn.skillforge.io/onboarding/v2.mp4"
+            chapters:
+              - title: "Welcome"
+                timestamp: 0
+              - title: "Create your first project"
+                timestamp: 45
+              - title: "Invite your team"
+                timestamp: 120
+
+    # -------------------------------------------------------------------------
+    # Variant overrides — Force specific users into a specific variant
+    # -------------------------------------------------------------------------
+    # Use overrides to ensure QA testers, stakeholders, or demo accounts always
+    # see a specific variant, regardless of the random distribution.
+
+    variant_overrides:
+      - variant: "variant-a"
+        stickiness: "userId"
+        values:
+          - "qa-user-001"              # QA tester — always sees variant-a
+          - "pm-sarah"                 # Product manager reviewing variant-a
+      - variant: "variant-b"
+        stickiness: "userId"
+        values:
+          - "qa-user-002"
+          - "demo-account"             # Sales demo always shows video flow
+
+    strategies:
+      # All non-new users get the experiment
+      - name: "existing-users"
+        description: "Run the experiment for users who signed up more than 24h ago."
+        constraints:
+          - field: "account_age_days"
+            operator: "NUM_GTE"
+            value: 1
+        percentage:
+          rollout: 100
+          stickiness: "userId"
+          group_id: "onboarding-experiment-q2"
+
+    default_value: "control"
+
+
+  # ===========================================================================
+  # FLAG TYPE 3: Number Flag (rate limits, thresholds, counts)
+  # ===========================================================================
+  # Returns a numeric value. Useful for tuning system parameters without
+  # deployments — rate limits, batch sizes, timeout values, etc.
+  #
+  # Evaluation result: <number>
+  # ===========================================================================
+
+  - key: "api-rate-limit-per-minute"
+    type: "number"
+    enabled: true
+
+    meta:
+      description: >
+        Controls the per-user API rate limit (requests per minute). Different
+        tiers get different limits. Allows instant adjustment during incidents
+        without deploying config changes.
+      owner: "platform-team"
+      contact: "#platform-oncall (Slack)"
+      tags:
+        - "rate-limiting"
+        - "platform"
+        - "operational"
+      created_at: "2025-01-05T09:00:00Z"
+      ttl:
+        # Operational flags often don't expire — they're permanent knobs.
+        expires_at: null
+        action_on_expiry: "none"
+
+    strategies:
+
+      # Internal employees get generous limits for testing
+      - name: "internal-unlimited"
+        segments:
+          - "internal-employees"
+        result: 10000
+
+      # Enterprise customers get the highest tier
+      - name: "enterprise-tier"
+        segments:
+          - "enterprise-users"
+        result: 5000
+
+      # High-value accounts get elevated limits
+      - name: "high-value-tier"
+        segments:
+          - "high-value-accounts"
+        result: 3000
+
+      # Strategy with IP-based targeting
+      # Use case: Allow higher limits from known office IPs or CI/CD runners.
+      - name: "trusted-ips"
+        description: "Elevated limits for requests from trusted IP ranges."
+        constraints:
+          - field: "remoteAddress"       # [Unleash] built-in context field for IP
+            operator: "IN"
+            values:
+              - "10.0.0.0/8"            # Internal network
+              - "172.16.0.0/12"         # VPN range
+              - "203.0.113.0/24"        # Office IP range
+              # Note: CIDR notation support depends on the flag system.
+              # Some systems require individual IPs.
+        result: 8000
+
+      # Region-specific limits (e.g., reduce load from high-traffic regions)
+      - name: "apac-reduced"
+        description: "Slightly lower limits in APAC during capacity expansion."
+        segments:
+          - "apac-region"
+        result: 800
+
+    # Everyone else gets the standard limit
+    default_value: 1000
+
+
+  # ===========================================================================
+  # FLAG TYPE 4: JSON/Object Flag (complex configuration)
+  # ===========================================================================
+  # Returns a structured JSON object. Use for complex feature configurations
+  # that have multiple interrelated settings. Avoids creating dozens of
+  # separate flags for one feature.
+  #
+  # Evaluation result: { ... } (JSON object)
+  #
+  # Caution: JSON flags are powerful but harder to reason about. Prefer
+  # simpler flag types when possible. Reserve JSON flags for configurations
+  # where the settings are tightly coupled and must change atomically.
+  # ===========================================================================
+
+  - key: "search-ranking-config"
+    type: "json"
+    enabled: true
+
+    meta:
+      description: >
+        Configuration for the search ranking algorithm. Controls weights,
+        boosting factors, and result limits. Allows the search team to tune
+        ranking parameters in real time without deployments.
+      owner: "search-team"
+      contact: "search-team@skillforge.io"
+      tags:
+        - "search"
+        - "ranking"
+        - "ml-config"
+      created_at: "2025-03-01T08:00:00Z"
+      ttl:
+        expires_at: null
+        action_on_expiry: "none"
+      dependencies:
+        - flag: "search-v2-engine"
+
+    strategies:
+
+      # Beta testers get the experimental ranking
+      - name: "experimental-ranking"
+        description: "New ML-based ranking for beta testers."
+        segments:
+          - "beta-testers"
+        result:
+          algorithm: "ml-v2"
+          model_version: "2025-03-15"
+          weights:
+            relevance: 0.40
+            freshness: 0.25
+            popularity: 0.20
+            personalization: 0.15
+          boost_factors:
+            exact_match: 2.5
+            title_match: 1.8
+            verified_content: 1.3
+          limits:
+            max_results: 100
+            max_suggestions: 8
+          features:
+            typo_tolerance: true
+            semantic_search: true
+            personalized_reranking: true
+
+      # EU region gets a privacy-conscious config (no personalization)
+      - name: "eu-privacy-config"
+        description: "GDPR-compliant ranking without personalization signals."
+        segments:
+          - "eu-region"
+        result:
+          algorithm: "bm25-enhanced"
+          model_version: "2025-02-01"
+          weights:
+            relevance: 0.50
+            freshness: 0.30
+            popularity: 0.20
+            personalization: 0.00          # Disabled for GDPR compliance
+          boost_factors:
+            exact_match: 2.0
+            title_match: 1.5
+            verified_content: 1.2
+          limits:
+            max_results: 50
+            max_suggestions: 5
+          features:
+            typo_tolerance: true
+            semantic_search: true
+            personalized_reranking: false   # No personalization in EU
+
+    # Production default — stable, proven configuration
+    default_value:
+      algorithm: "bm25-enhanced"
+      model_version: "2025-01-10"
+      weights:
+        relevance: 0.45
+        freshness: 0.25
+        popularity: 0.20
+        personalization: 0.10
+      boost_factors:
+        exact_match: 2.0
+        title_match: 1.5
+        verified_content: 1.2
+      limits:
+        max_results: 50
+        max_suggestions: 5
+      features:
+        typo_tolerance: true
+        semantic_search: false
+        personalized_reranking: false
+
+
+  # ===========================================================================
+  # FLAG TYPE 5: Time-Based / Scheduled Flag
+  # ===========================================================================
+  # A boolean flag that uses DATE_BEFORE / DATE_AFTER constraints to activate
+  # within a specific time window. Useful for launches, promotions, and
+  # maintenance windows.
+  #
+  # Neither Unleash nor Flipt has a native "scheduled" flag type, but you can
+  # achieve scheduling with date constraints on a boolean flag.
+  # ===========================================================================
+
+  - key: "holiday-promo-banner"
+    type: "boolean"
+    enabled: true
+
+    meta:
+      description: >
+        Shows a promotional banner for the summer sale. Automatically activates
+        on June 15 and deactivates on July 5. No manual intervention needed.
+      owner: "marketing-team"
+      tags:
+        - "promotion"
+        - "marketing"
+        - "scheduled"
+        - "temporary"
+      created_at: "2025-05-01T12:00:00Z"
+      ttl:
+        expires_at: "2025-07-15T00:00:00Z"    # Clean up 10 days after promo ends
+        action_on_expiry: "disable"
+
+    strategies:
+
+      # Time-window activation using date constraints
+      - name: "promo-window"
+        description: "Active only during the summer sale window."
+        constraints:
+          # After the start date...
+          - field: "currentTime"               # [Unleash] built-in context field
+            operator: "DATE_AFTER"
+            value: "2025-06-15T00:00:00Z"
+          # ...and before the end date
+          - field: "currentTime"
+            operator: "DATE_BEFORE"
+            value: "2025-07-05T23:59:59Z"
+        result: true
+
+      # Allow marketing team to preview the banner before the promo goes live
+      - name: "marketing-preview"
+        description: "Let marketing team preview the banner before launch."
+        constraints:
+          - field: "role"
+            operator: "IN"
+            values:
+              - "marketing"
+              - "admin"
+        result: true
+
+    default_value: false
+
+
+  # ===========================================================================
+  # FLAG TYPE 6: Operational Kill Switch
+  # ===========================================================================
+  # A flag designed to be toggled during incidents. Kept simple with minimal
+  # strategies — the goal is fast, predictable behavior under pressure.
+  # ===========================================================================
+
+  - key: "disable-external-integrations"
+    type: "boolean"
+    enabled: false                     # false = integrations are ON (normal state)
+
+    meta:
+      description: >
+        Emergency kill switch to disable all external API integrations
+        (Stripe, SendGrid, Slack webhooks, etc.) during outages or incidents.
+        Toggle to true to activate circuit breaker. Keep strategies minimal —
+        this must be simple to reason about at 3 AM.
+      owner: "sre-team"
+      contact: "#incident-response (Slack)"
+      tags:
+        - "kill-switch"
+        - "incident-response"
+        - "operational"
+        - "sre"
+      created_at: "2025-01-01T00:00:00Z"
+      ttl:
+        expires_at: null               # Kill switches never expire
+        action_on_expiry: "none"
+      lifecycle:
+        stage: "live"
+
+    # Kill switches have no complex strategies — they are globally on or off.
+    # Toggle the top-level `enabled` field to activate.
+    strategies: []
+
+    default_value: false
+
+
+# =============================================================================
+# ENVIRONMENT OVERRIDES
+# =============================================================================
+# Per-environment settings that override the flag defaults above. This is how
+# you keep a single config file but vary behavior across environments.
+#
+# [Unleash] Environments are a first-class concept — each flag has separate
+#           enabled/disabled state and strategies per environment.
+# [Flipt]   Use namespaces or separate config files per environment.
+
+environments:
+
+  development:
+    # In development, most feature flags are enabled for rapid iteration.
+    overrides:
+      - flag: "new-checkout-flow"
+        enabled: true
+        # Override strategies to always return true in dev
+        strategies:
+          - name: "dev-all-on"
+            result: true
+
+      - flag: "onboarding-flow-experiment"
+        enabled: true
+        # Force a specific variant in dev for consistent testing
+        strategies:
+          - name: "dev-force-variant"
+            result: "variant-a"
+
+      - flag: "api-rate-limit-per-minute"
+        enabled: true
+        # Higher limits in dev so rate limiting doesn't block testing
+        strategies:
+          - name: "dev-high-limits"
+            result: 50000
+
+  staging:
+    overrides:
+      - flag: "new-checkout-flow"
+        enabled: true
+        # Mirror production strategies but at 100% rollout
+        strategies:
+          - name: "staging-full-rollout"
+            percentage:
+              rollout: 100
+              stickiness: "userId"
+              group_id: "new-checkout-flow"
+            result: true
+
+  production:
+    # Production uses the flag definitions as-is (no overrides needed).
+    # Listed here for completeness.
+    overrides: []
+
+
+# =============================================================================
+# REFERENCE: Context Fields
+# =============================================================================
+# Flags evaluate against a "context" object provided by your application at
+# runtime. Below are the standard fields and common custom fields.
+#
+# Built-in context fields (available in most systems):
+#
+#   userId        — Unique identifier for the current user
+#   sessionId     — Current session identifier
+#   remoteAddress — Client IP address (for IP-based targeting)
+#   environment   — Current deployment environment
+#   appName       — Name of the calling application
+#   currentTime   — Current timestamp (for time-based activation) [Unleash]
+#
+# Custom context fields (you define these in your application):
+#
+#   plan              — Billing plan (free, pro, enterprise)
+#   role              — User role (admin, editor, viewer)
+#   email             — User email (for domain-based targeting)
+#   country           — ISO 3166-1 alpha-2 country code
+#   region            — Cloud region identifier
+#   beta_enrolled     — Whether user opted into beta (boolean)
+#   account_age_days  — Days since account creation
+#   mrr_cents         — Monthly recurring revenue in cents
+#   seat_count        — Number of seats on the account
+#   sdk_version       — Client SDK version (for compatibility flags)
+#   device_type       — mobile | desktop | tablet
+#
+# Providing context (pseudocode):
+#
+#   context = {
+#     userId: currentUser.id,
+#     email: currentUser.email,
+#     plan: currentUser.account.plan,
+#     country: geoip(request.ip),
+#     environment: process.env.NODE_ENV,
+#     beta_enrolled: currentUser.preferences.beta,
+#   }
+#
+#   flagValue = client.getValue("new-checkout-flow", context)
+#
+# =============================================================================
+
+
+# =============================================================================
+# REFERENCE: SDK Evaluation Pseudocode
+# =============================================================================
+#
+# This illustrates how a flag is evaluated at runtime:
+#
+#   function evaluate(flag, context):
+#       if not flag.enabled:
+#           return flag.default_value
+#
+#       # Check dependencies
+#       for dep in flag.meta.dependencies:
+#           if not evaluate(dep.flag, context):
+#               return flag.default_value
+#
+#       # Evaluate strategies top-to-bottom (first match wins)
+#       for strategy in flag.strategies:
+#
+#           # Check segment membership
+#           if strategy.segments:
+#               if not matchesSegments(strategy, context):
+#                   continue
+#
+#           # Check inline constraints
+#           if strategy.constraints:
+#               if not matchesConstraints(strategy.constraints, context):
+#                   continue
+#
+#           # Check percentage rollout
+#           if strategy.percentage:
+#               bucket = hash(context[strategy.percentage.stickiness]
+#                             + strategy.percentage.group_id) % 100
+#               if bucket >= strategy.percentage.rollout:
+#                   continue
+#
+#           # Strategy matched — resolve variants if applicable
+#           if flag.variants:
+#               return resolveVariant(flag, context)
+#           else:
+#               return strategy.result
+#
+#       # No strategy matched
+#       return flag.default_value
+#
+# =============================================================================

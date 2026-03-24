@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json.schemastore.org/eslintrc.json",
+  "plugins": ["jsx-a11y"],
+  "extends": ["plugin:jsx-a11y/strict"],
+  "rules": {
+    "jsx-a11y/alt-text": ["error", {
+      "elements": ["img", "object", "area", "input[type=\"image\"]"],
+      "img": ["Image", "Img"],
+      "object": [],
+      "area": [],
+      "input[type=\"image\"]": []
+    }],
+    "jsx-a11y/anchor-has-content": "error",
+    "jsx-a11y/anchor-is-valid": ["error", {
+      "components": ["Link", "NavLink"],
+      "specialLink": ["to", "href"],
+      "aspects": ["noHref", "invalidHref", "preferButton"]
+    }],
+    "jsx-a11y/aria-activedescendant-has-tabindex": "error",
+    "jsx-a11y/aria-props": "error",
+    "jsx-a11y/aria-proptypes": "error",
+    "jsx-a11y/aria-role": ["error", {
+      "allowedInvalidRoles": [],
+      "ignoreNonDOM": true
+    }],
+    "jsx-a11y/aria-unsupported-elements": "error",
+    "jsx-a11y/autocomplete-valid": "error",
+    "jsx-a11y/click-events-have-key-events": "error",
+    "jsx-a11y/control-has-associated-label": ["error", {
+      "labelAttributes": ["label"],
+      "controlComponents": ["CustomInput", "CustomButton"],
+      "ignoreElements": ["audio", "canvas", "embed", "input", "textarea", "tr", "video"],
+      "ignoreRoles": ["grid", "listbox", "menu", "menubar", "radiogroup", "row", "tablist", "toolbar", "tree", "treegrid"],
+      "depth": 3
+    }],
+    "jsx-a11y/heading-has-content": "error",
+    "jsx-a11y/html-has-lang": "error",
+    "jsx-a11y/iframe-has-title": "error",
+    "jsx-a11y/img-redundant-alt": ["error", {
+      "words": ["image", "photo", "picture", "logo", "icon"]
+    }],
+    "jsx-a11y/interactive-supports-focus": ["error", {
+      "tabbable": [
+        "button",
+        "checkbox",
+        "link",
+        "searchbox",
+        "spinbutton",
+        "switch",
+        "textbox"
+      ]
+    }],
+    "jsx-a11y/label-has-associated-control": ["error", {
+      "labelComponents": ["Label", "FormLabel"],
+      "labelAttributes": ["label", "aria-label"],
+      "controlComponents": ["Input", "Select", "Textarea", "CustomInput"],
+      "assert": "both",
+      "depth": 3
+    }],
+    "jsx-a11y/lang": "error",
+    "jsx-a11y/media-has-caption": ["error", {
+      "audio": ["Audio"],
+      "video": ["Video"],
+      "track": ["Track"]
+    }],
+    "jsx-a11y/mouse-events-have-key-events": "error",
+    "jsx-a11y/no-access-key": "error",
+    "jsx-a11y/no-autofocus": ["error", {
+      "ignoreNonDOM": true
+    }],
+    "jsx-a11y/no-distracting-elements": ["error", {
+      "elements": ["marquee", "blink"]
+    }],
+    "jsx-a11y/no-interactive-element-to-noninteractive-role": ["error", {
+      "tr": ["none", "presentation"],
+      "canvas": ["img"]
+    }],
+    "jsx-a11y/no-noninteractive-element-interactions": ["error", {
+      "handlers": [
+        "onClick",
+        "onMouseDown",
+        "onMouseUp",
+        "onKeyPress",
+        "onKeyDown",
+        "onKeyUp"
+      ],
+      "alert": ["onKeyUp", "onKeyDown", "onKeyPress"],
+      "body": ["onError", "onLoad"],
+      "dialog": ["onKeyUp", "onKeyDown", "onKeyPress"],
+      "iframe": ["onError", "onLoad"],
+      "img": ["onError", "onLoad"]
+    }],
+    "jsx-a11y/no-noninteractive-element-to-interactive-role": ["error", {
+      "ul": ["listbox", "menu", "menubar", "radiogroup", "tablist", "tree", "treegrid"],
+      "ol": ["listbox", "menu", "menubar", "radiogroup", "tablist", "tree", "treegrid"],
+      "li": ["menuitem", "menuitemradio", "menuitemcheckbox", "option", "row", "tab", "treeitem"],
+      "table": ["grid"],
+      "td": ["gridcell"],
+      "fieldset": ["radiogroup", "presentation"]
+    }],
+    "jsx-a11y/no-noninteractive-tabindex": ["error", {
+      "tags": [],
+      "roles": ["tabpanel"],
+      "allowExpressionValues": true
+    }],
+    "jsx-a11y/no-redundant-roles": ["error", {
+      "nav": ["navigation"],
+      "main": ["main"]
+    }],
+    "jsx-a11y/no-static-element-interactions": ["error", {
+      "handlers": [
+        "onClick",
+        "onMouseDown",
+        "onMouseUp",
+        "onKeyPress",
+        "onKeyDown",
+        "onKeyUp"
+      ],
+      "allowExpressionValues": true
+    }],
+    "jsx-a11y/prefer-tag-over-role": "error",
+    "jsx-a11y/role-has-required-aria-props": "error",
+    "jsx-a11y/role-supports-aria-props": "error",
+    "jsx-a11y/scope": "error",
+    "jsx-a11y/tabindex-no-positive": "error"
+  },
+  "overrides": [
+    {
+      "files": ["*.test.tsx", "*.test.jsx", "*.spec.tsx", "*.spec.jsx", "*.stories.tsx", "*.stories.jsx"],
+      "rules": {
+        "jsx-a11y/no-autofocus": "off",
+        "jsx-a11y/click-events-have-key-events": "warn",
+        "jsx-a11y/no-static-element-interactions": "warn"
+      }
+    }
+  ],
+  "settings": {
+    "jsx-a11y": {
+      "polymorphicPropName": "as",
+      "components": {
+        "Button": "button",
+        "IconButton": "button",
+        "Link": "a",
+        "NavLink": "a",
+        "Image": "img",
+        "Img": "img",
+        "Input": "input",
+        "Select": "select",
+        "Textarea": "textarea",
+        "TextArea": "textarea"
+      }
+    }
+  }
+}
