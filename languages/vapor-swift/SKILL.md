@@ -496,3 +496,5 @@ Use `.testing` environment with a separate test database. `app.test()` supports 
 | [docker-compose.yml](assets/docker-compose.yml) | Full dev stack: Vapor + PostgreSQL + Redis + optional admin UIs |
 | [configure.swift](assets/configure.swift) | Template with CORS, database, JWT, Redis, queues, logging setup |
 | [github-actions-vapor.yml](assets/github-actions-vapor.yml) | CI workflow: lint, test on Linux & macOS with PostgreSQL + Redis services, Docker build |
+
+<!-- tested: needs-fix -->

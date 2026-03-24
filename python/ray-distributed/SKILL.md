@@ -404,3 +404,6 @@ Reusable configuration and example code in `assets/`:
 - **[data-pipeline.py](assets/data-pipeline.py)** — Ray Data preprocessing pipeline: multi-format reading (Parquet/CSV/JSON), streaming transforms, feature engineering, GPU-accelerated preprocessing with ActorPoolStrategy, sample data generation.
 
 - **[docker-compose.yml](assets/docker-compose.yml)** — Local Ray cluster with Docker Compose: head + 2 workers (scalable), shared storage, health checks, dashboard at localhost:8265.
+
+
+<!-- tested: needs-fix -->

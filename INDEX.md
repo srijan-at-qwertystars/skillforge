@@ -173,6 +173,6 @@
 | databases | [meilisearch-patterns](databases/meilisearch-patterns/) | Meilisearch search engine — instant search, facets, filters, hybrid search, multi-tenancy | tested |
 | api | [graphql-federation](api/graphql-federation/) | GraphQL Federation — Apollo supergraph, subgraphs, router, entity resolution | tested |
 | devops | [k3s-lightweight](devops/k3s-lightweight/) | K3s lightweight Kubernetes — edge deployment, HA, HelmChart CRD, air-gap | tested |
-| languages | [vapor-swift](languages/vapor-swift/) | Vapor Swift server-side framework — routing, Fluent ORM, auth, WebSockets, deployment | enriched |
-| python | [ray-distributed](python/ray-distributed/) | Ray distributed computing — tasks, actors, Serve, Tune, Data, KubeRay | enriched |
-| databases | [litestream-replication](databases/litestream-replication/) | Litestream SQLite replication — WAL streaming, S3/GCS backup, restore, sidecar | enriched |
+| languages | [vapor-swift](languages/vapor-swift/) | Vapor Swift server-side framework — routing, Fluent ORM, auth, WebSockets, deployment | tested |
+| python | [ray-distributed](python/ray-distributed/) | Ray distributed computing — tasks, actors, Serve, Tune, Data, KubeRay | tested |
+| databases | [litestream-replication](databases/litestream-replication/) | Litestream SQLite replication — WAL streaming, S3/GCS backup, restore, sidecar | tested |

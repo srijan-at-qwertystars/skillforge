@@ -475,3 +475,5 @@ Ready-to-use configuration files in `assets/`:
 | `docker-compose.yml` | Full dev stack: app + Litestream + MinIO (local S3), init restore container |
 | `systemd-litestream.service` | systemd unit with security hardening, journal logging, auto-restart |
 | `k8s-sidecar.yaml` | Complete K8s manifests: StatefulSet, ConfigMap, Secret, Service, PDB, probes |
+
+<!-- tested: needs-fix -->
