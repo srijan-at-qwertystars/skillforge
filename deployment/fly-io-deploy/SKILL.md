@@ -486,3 +486,5 @@ fly scale count 2 --region iad && fly scale count 2 --region cdg && fly scale co
 | `assets/docker-compose.yml` | Local dev environment with Postgres + Redis mimicking Fly services and env vars |
 | `assets/github-actions-deploy.yml` | GitHub Actions workflow with staging (on push) and production (on release) deploy pipelines |
 | `assets/litefs.yml` | LiteFS config for distributed SQLite: FUSE mount, proxy, Consul lease, write forwarding |
+
+<!-- tested: pass -->

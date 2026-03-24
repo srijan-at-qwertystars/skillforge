@@ -446,3 +446,5 @@ POST /_query
 | [ingest-pipeline.json](assets/ingest-pipeline.json) | Log processing pipeline: grok, dissect, date, GeoIP, user-agent |
 | [search-template.json](assets/search-template.json) | Parameterized search with highlighting, aggregations, facets |
 | [ilm-policy.json](assets/ilm-policy.json) | Hot→warm→cold→frozen→delete ILM policy |
+
+<!-- tested: pass -->

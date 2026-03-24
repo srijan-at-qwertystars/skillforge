@@ -498,3 +498,5 @@ Test HTTP handler components: `wasmtime serve -S cli component.wasm &` then `cur
 | AssemblyScript| asc              | (default)                  | Browser module  |
 
 ## Additional Resources
+
+<!-- tested: pass -->
