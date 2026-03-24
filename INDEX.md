@@ -200,3 +200,6 @@
 | devops | packer-images | HashiCorp Packer image building with HCL2 templates, multi-cloud builders, and golden image pipelines | tested |
 | frontend | accessibility-patterns | Web accessibility (a11y) with WCAG 2.2, ARIA, keyboard navigation, and screen reader support | tested |
 | devops | feature-flags | Feature flag implementation with OpenFeature, LaunchDarkly, rollout strategies, and flag lifecycle | tested |
+| backend | websocket-patterns | WebSocket protocol, Socket.IO, scaling, authentication, and real-time messaging patterns | created |
+| frontend | i18n-patterns | Internationalization with Intl API, react-intl/i18next, ICU MessageFormat, RTL, and SEO | created |
+| testing | load-testing | Load testing with k6, Locust, Artillery, test types, CI/CD integration, and reporting | created |
