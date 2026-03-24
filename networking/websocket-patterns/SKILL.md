@@ -1,19 +1,23 @@
 ---
 name: websocket-patterns
 description: >
-  Use when user implements WebSocket connections, asks about real-time messaging,
-  Socket.IO, ws library, WebSocket authentication, heartbeat/keepalive,
-  reconnection strategies, or scaling WebSockets with Redis pub/sub.
-  Do NOT use for HTTP long polling, Server-Sent Events (SSE), gRPC streaming,
-  or general HTTP protocol questions.
+  Guide for building real-time WebSocket applications. Use when implementing WebSocket servers/clients,
+  real-time communication, Socket.IO, the ws library, bidirectional messaging, live updates, chat systems,
+  notification services, collaborative editing, or multiplayer features. Covers protocol fundamentals,
+  server/client implementations, authentication, reconnection, scaling with Redis, message patterns,
+  and security hardening. Do NOT use for REST API design, Server-Sent Events (SSE) for one-way streams,
+  gRPC streaming, HTTP polling for infrequent updates, or serving static content.
 ---
 
-# WebSocket Patterns & Implementation
+# WebSocket Patterns
 
 ## Protocol Fundamentals
 
-WebSocket starts as HTTP/1.1 GET with `Upgrade: websocket` header. Server responds `101 Switching Protocols`. The TCP connection then carries bidirectional WebSocket frames.
+### Handshake
 
+WebSocket upgrades an HTTP/1.1 connection to a persistent full-duplex channel.
+
+Client request:
 ```
 GET /ws HTTP/1.1
 Host: example.com
@@ -23,274 +27,345 @@ Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
 Sec-WebSocket-Version: 13
 ```
 
-Frame types: Text (0x1), Binary (0x2), Close (0x8), Ping (0x9), Pong (0xA).
+Server response:
+```
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+```
+
+The server computes `Sec-WebSocket-Accept` by concatenating the client key with `258EAFA5-E914-47DA-95CA-5AB9DC85B711`, then SHA-1 hashing and base64-encoding the result.
+
+### Frame Structure
+
+Each frame contains: FIN bit (1=final fragment), RSV1-3 (reserved for extensions), opcode (4 bits), mask bit, payload length, optional masking key, and payload data. Client-to-server frames MUST be masked.
+
+### Opcodes
+
+| Opcode | Type | Purpose |
+|--------|------|---------|
+| 0x0 | Continuation | Multi-frame message continuation |
+| 0x1 | Text | UTF-8 encoded text data |
+| 0x2 | Binary | Binary data |
+| 0x8 | Close | Initiate or confirm connection close |
+| 0x9 | Ping | Heartbeat request |
+| 0xA | Pong | Heartbeat response |
 
 ### Close Codes
 
-| Code | Meaning              | Action                               |
-|------|----------------------|--------------------------------------|
-| 1000 | Normal closure       | Don't reconnect                      |
-| 1001 | Going away           | Server shutdown / page navigation    |
-| 1006 | Abnormal closure     | No close frame — network failure     |
-| 1008 | Policy violation     | Auth failure — redirect to login     |
-| 1009 | Message too big      | Payload exceeds `maxPayload`         |
-| 1011 | Server error         | Internal error — reconnect           |
-| 1012 | Service restart      | Reconnect immediately                |
-| 1013 | Try again later      | Reconnect with backoff               |
+| Code | Meaning |
+|------|---------|
+| 1000 | Normal closure |
+| 1001 | Going away (page navigation, server shutdown) |
+| 1002 | Protocol error |
+| 1003 | Unsupported data type |
+| 1006 | Abnormal closure (no close frame, internal use only) |
+| 1007 | Invalid payload (e.g., non-UTF-8 in text frame) |
+| 1008 | Policy violation |
+| 1009 | Message too large |
+| 1011 | Server internal error |
+| 4000-4999 | Application-specific codes |
 
----
+## Server Implementations
 
-## Server: Node.js ws Library
+### Node.js — ws Library
 
 ```js
 import { WebSocketServer } from 'ws';
-import { createServer } from 'http';
-
-const server = createServer();
-const wss = new WebSocketServer({ server, maxPayload: 1024 * 1024 });
+const wss = new WebSocketServer({ port: 8080 });
 
 wss.on('connection', (ws, req) => {
-  ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
-
   ws.on('message', (data, isBinary) => {
-    for (const client of wss.clients) {
-      if (client !== ws && client.readyState === 1)
-        client.send(data, { binary: isBinary });
-    }
+    ws.send(JSON.stringify({ echo: isBinary ? data : data.toString() }));
   });
-
-  ws.on('error', (err) => console.error('WS error:', err.message));
+  ws.on('close', (code, reason) => console.log(`Disconnected: ${code}`));
+  ws.on('error', (err) => console.error('WS error:', err));
+  const interval = setInterval(() => { if (ws.readyState === ws.OPEN) ws.ping(); }, 30000);
+  ws.on('close', () => clearInterval(interval));
 });
-
-// Heartbeat — terminate dead connections every 30s
-const hb = setInterval(() => {
-  for (const ws of wss.clients) {
-    if (!ws.isAlive) return ws.terminate();
-    ws.isAlive = false;
-    ws.ping();
-  }
-}, 30_000);
-wss.on('close', () => clearInterval(hb));
-server.listen(8080);
 ```
 
-## Server: Socket.IO
+### Socket.IO Server
 
 ```js
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 
-const io = new Server(httpServer, {
-  pingInterval: 25_000, pingTimeout: 20_000,
-  maxHttpBufferSize: 1e6,
-  cors: { origin: ['https://myapp.com'] },
+const io = new Server(3000, {
+  cors: { origin: 'https://example.com' },
+  pingInterval: 25000, pingTimeout: 20000, maxHttpBufferSize: 1e6,
 });
-
-// Redis adapter for horizontal scaling
 const pub = createClient({ url: 'redis://localhost:6379' });
 const sub = pub.duplicate();
 await Promise.all([pub.connect(), sub.connect()]);
 io.adapter(createAdapter(pub, sub));
-
-// Auth middleware
-io.use((socket, next) => {
-  try { socket.user = verifyJWT(socket.handshake.auth.token); next(); }
-  catch { next(new Error('Authentication failed')); }
-});
-
-io.on('connection', (socket) => {
-  socket.join(`user:${socket.user.id}`);
-  socket.on('chat:message', (data, ack) => {
-    socket.to(data.room).emit('chat:message', {
-      from: socket.user.id, text: data.text, ts: Date.now(),
-    });
-    ack?.({ status: 'ok' });
-  });
-});
 ```
 
-## Server: Python websockets
+### Python — websockets Library
 
 ```python
-import asyncio, websockets
+import asyncio
+import websockets
 
-CLIENTS = set()
-
-async def handler(ws):
-    CLIENTS.add(ws)
-    try:
-        async for msg in ws:
-            await asyncio.gather(
-                *[c.send(msg) for c in CLIENTS if c != ws],
-                return_exceptions=True)
-    finally:
-        CLIENTS.discard(ws)
+async def handler(websocket):
+    async for message in websocket:
+        await websocket.send(f"echo: {message}")
 
 async def main():
-    async with websockets.serve(handler, "0.0.0.0", 8765,
-                                ping_interval=20, ping_timeout=20):
+    async with websockets.serve(handler, "0.0.0.0", 8765):
         await asyncio.Future()
 
 asyncio.run(main())
 ```
 
-## Server: Go nhooyr.io/websocket
+### Go — gorilla/websocket
 
 ```go
-conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-    OriginPatterns: []string{"myapp.com"},
-})
-if err != nil { return }
-defer conn.CloseNow()
-for {
-    typ, data, err := conn.Read(ctx)
-    if err != nil { return }
-    conn.Write(ctx, typ, data)
+var upgrader = websocket.Upgrader{
+    CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == "https://example.com" },
+}
+func wsHandler(w http.ResponseWriter, r *http.Request) {
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil { log.Println(err); return }
+    defer conn.Close()
+    for { mt, msg, err := conn.ReadMessage(); if err != nil { break }; conn.WriteMessage(mt, msg) }
 }
 ```
 
----
+## Client-Side WebSocket
 
-## Client: Browser API with Reconnection
+### Browser API
 
 ```js
-class ResilientWebSocket {
-  constructor(url, opts = {}) {
-    this.url = url;
-    this.maxRetries = opts.maxRetries ?? 10;
+const ws = new WebSocket('wss://example.com/ws');
+ws.onopen = () => ws.send(JSON.stringify({ type: 'subscribe', channel: 'updates' }));
+ws.onmessage = (event) => console.log('Received:', JSON.parse(event.data));
+ws.onclose = (event) => console.log(`Closed: ${event.code} ${event.reason}`);
+ws.onerror = (error) => console.error('WS error:', error);
+```
+
+### Reconnecting Client with Exponential Backoff
+
+Jitter prevents thundering herd on reconnect storms. Reset attempt counter on successful open. Skip reconnect on intentional close (code 1000).
+
+```js
+class ReconnectingWebSocket {
+  constructor(url, { baseDelay = 500, maxDelay = 30000, maxRetries = Infinity } = {}) {
+    Object.assign(this, { url, baseDelay, maxDelay, maxRetries, attempt: 0 });
     this.handlers = { message: [], open: [], close: [] };
-    this.attempt = 0;
     this.connect();
   }
   connect() {
     this.ws = new WebSocket(this.url);
-    this.ws.onopen = () => {
-      this.attempt = 0;
-      this.hb = setInterval(() => {
-        if (this.ws.readyState === 1) this.ws.send('ping');
-      }, 25_000);
-      this.handlers.open.forEach(fn => fn());
-    };
-    this.ws.onmessage = (e) => {
-      if (e.data === 'pong') return;
-      this.handlers.message.forEach(fn => fn(e));
-    };
+    this.ws.onopen = () => { this.attempt = 0; this.handlers.open.forEach(h => h()); };
+    this.ws.onmessage = (e) => this.handlers.message.forEach(h => h(e));
     this.ws.onclose = (e) => {
-      clearInterval(this.hb);
-      this.handlers.close.forEach(fn => fn(e));
-      if (e.code !== 1000 && this.attempt < this.maxRetries) this.reconnect();
+      this.handlers.close.forEach(h => h(e));
+      if (this.attempt < this.maxRetries && e.code !== 1000) this.scheduleReconnect();
     };
-    this.ws.onerror = () => this.ws.close();
   }
-  reconnect() {
-    const base = Math.min(1000 * 2 ** this.attempt, 30_000);
-    const jitter = Math.random() * base * 0.5;
+  scheduleReconnect() {
+    const exp = Math.min(this.baseDelay * 2 ** this.attempt, this.maxDelay);
+    setTimeout(() => this.connect(), exp * (0.5 + Math.random() * 0.5));
     this.attempt++;
-    setTimeout(() => this.connect(), base + jitter);
   }
-  send(data) { if (this.ws.readyState === 1) this.ws.send(data); }
-  on(event, fn) { this.handlers[event].push(fn); }
-  close() { this.ws.close(1000, 'Client closing'); }
+  send(data) { if (this.ws.readyState === WebSocket.OPEN) this.ws.send(data); }
+  on(event, handler) { this.handlers[event]?.push(handler); }
+  close() { this.maxRetries = 0; this.ws.close(1000); }
 }
 ```
 
----
+## Socket.IO Patterns
 
-## Authentication
+### Rooms and Namespaces
 
-### Token in Query Parameter
+```js
+const chatNs = io.of('/chat');
+
+chatNs.on('connection', (socket) => {
+  socket.on('join-room', (roomId) => {
+    socket.join(roomId);
+    chatNs.to(roomId).emit('user-joined', { userId: socket.id });
+  });
+
+  socket.on('message', (data) => {
+    chatNs.to(data.roomId).emit('message', data);
+  });
+});
+```
+
+### Acknowledgements
+
+```js
+// Server emits with callback
+socket.emit('save-document', docData, (response) => {
+  console.log('Client confirmed:', response.status);
+});
+
+// Client responds
+socket.on('save-document', (data, callback) => {
+  try { saveLocally(data); callback({ status: 'ok' }); }
+  catch (err) { callback({ status: 'error', message: err.message }); }
+});
+```
+
+### Middleware
+
+```js
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  try {
+    socket.data.user = verifyJWT(token);
+    next();
+  } catch (err) {
+    next(new Error('Authentication failed'));
+  }
+});
+
+// Namespace-level middleware
+adminNs.use((socket, next) => {
+  if (socket.data.user?.role !== 'admin') return next(new Error('Forbidden'));
+  next();
+});
+```
+
+## Authentication Patterns
+
+### Token-Based (JWT)
 
 ```js
 // Client
-const ws = new WebSocket(`wss://api.example.com/ws?token=${jwt}`);
+const socket = io('wss://api.example.com', {
+  auth: { token: localStorage.getItem('jwt') },
+});
 
-// Server — verify during upgrade
-const wss = new WebSocketServer({
-  server,
-  verifyClient: ({ req }, cb) => {
-    const token = new URL(req.url, 'http://x').searchParams.get('token');
-    try { req.user = verifyJWT(token); cb(true); }
-    catch { cb(false, 401, 'Unauthorized'); }
-  },
+// Server
+io.use((socket, next) => {
+  const decoded = verifyJWT(socket.handshake.auth.token);
+  if (!decoded) return next(new Error('Invalid token'));
+  socket.data.userId = decoded.sub;
+  next();
 });
 ```
 
-Caution: tokens in URLs appear in server logs. Use short-lived tokens (<60s) scoped to WebSocket only.
-
-### First-Message Auth
+### Cookie-Based
 
 ```js
-ws.once('message', (data) => {
-  const msg = JSON.parse(data);
-  if (msg.type !== 'auth') return ws.close(1008, 'Auth required');
-  try { ws.user = verifyJWT(msg.token); ws.authenticated = true; }
-  catch { ws.close(1008, 'Invalid token'); }
+const server = new WebSocketServer({ noServer: true });
+httpServer.on('upgrade', (req, socket, head) => {
+  const session = parseCookie(req.headers.cookie);
+  if (!session?.valid) { socket.destroy(); return; }
+  server.handleUpgrade(req, socket, head, (ws) => {
+    ws.userId = session.userId;
+    server.emit('connection', ws, req);
+  });
 });
 ```
 
-**Cookie-based:** Cookies transmit automatically during HTTP upgrade. Validate session cookie in `verifyClient`. Best when WebSocket is same-origin.
+### Per-Message Authentication
 
----
-
-## Heartbeat / Keepalive
-
-**Protocol-level:** `ws` library auto-replies to pings. Server sends `ws.ping()` on interval, marks dead connections via `isAlive` flag (see server example above).
-
-**Application-level** — use when proxies (Cloudflare, ALB) strip control frames:
-
+Verify tokens on sensitive operations:
 ```js
-// Server sends JSON ping; client replies with pong
-setInterval(() => ws.send(JSON.stringify({ type: 'ping', ts: Date.now() })), 25_000);
+ws.on('message', (raw) => {
+  const { token, action, payload } = JSON.parse(raw);
+  if (!verifyJWT(token)) return ws.close(4001, 'Unauthorized');
+  handleAction(action, payload);
+});
 ```
 
-**Nginx config** — set `proxy_read_timeout` above heartbeat interval:
+## Heartbeat and Connection Health
+
+```js
+wss.on('connection', (ws) => {
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
+});
+
+const heartbeat = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (!ws.isAlive) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000);
+
+wss.on('close', () => clearInterval(heartbeat));
+```
+
+## Scaling with Redis
+
+### Redis Adapter (Pub/Sub)
+
+Each Socket.IO instance publishes events to Redis; all instances subscribe and deliver to local clients. Enables room broadcasts across nodes.
+
+```js
+import { createAdapter } from '@socket.io/redis-adapter';
+const pub = createClient({ url: 'redis://redis:6379' });
+const sub = pub.duplicate();
+await Promise.all([pub.connect(), sub.connect()]);
+io.adapter(createAdapter(pub, sub));
+```
+
+### Redis Streams Adapter (Durable)
+
+Use for guaranteed delivery and connection state recovery:
+```js
+import { createAdapter } from '@socket.io/redis-streams-adapter';
+const client = createClient({ url: 'redis://redis:6379' });
+await client.connect();
+io.adapter(createAdapter(client));
+```
+
+### Sticky Sessions (nginx)
 
 ```nginx
-location /ws {
-    proxy_pass http://backend;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_read_timeout 60s;
+upstream websocket_servers {
+    ip_hash;
+    server ws1:3000;
+    server ws2:3000;
+}
+server {
+    location /socket.io/ {
+        proxy_pass http://websocket_servers;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
 }
 ```
-
----
-
-## Reconnection Strategies
-
-**Exponential backoff with jitter** prevents thundering herd on server restart:```js
-function getReconnectDelay(attempt) {
-  const base = Math.min(1000 * 2 ** attempt, 30_000);
-  return base + Math.random() * base * 0.5;
-}
-```
-
-**State recovery:** Track last received message ID. On reconnect, send `{ type: 'resume', lastSeenId }`. Server replays missed messages or sends full snapshot.
-
-**Socket.IO v4+ recovery** — built-in:
-
-```js
-const io = new Server(httpServer, {
-  connectionStateRecovery: { maxDisconnectionDuration: 120_000, skipMiddlewares: true },
-});
-```
-
----
 
 ## Message Patterns
 
-### Request-Response (RPC)
+### Pub/Sub
+
+```js
+const topics = new Map(); // topic -> Set<ws>
+ws.on('message', (raw) => {
+  const { action, topic, payload } = JSON.parse(raw);
+  if (action === 'subscribe') {
+    if (!topics.has(topic)) topics.set(topic, new Set());
+    topics.get(topic).add(ws);
+  } else if (action === 'publish') {
+    topics.get(topic)?.forEach((c) => {
+      if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ topic, payload }));
+    });
+  }
+});
+```
+
+### Request-Response over WebSocket
+
+Correlate requests/responses with unique IDs and timeouts:
 
 ```js
 let reqId = 0;
 const pending = new Map();
-function rpcCall(method, params) {
+function request(method, params) {
   return new Promise((resolve, reject) => {
     const id = ++reqId;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error('timeout')); }, 10_000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error('Timeout')); }, 5000);
     pending.set(id, { resolve, timer });
     ws.send(JSON.stringify({ id, method, params }));
   });
@@ -305,130 +380,83 @@ ws.onmessage = (e) => {
 };
 ```
 
-### Pub/Sub Channels
+### Broadcasting
 
 ```js
-const channels = new Map(); // channel → Set<ws>
-ws.on('message', (raw) => {
-  const msg = JSON.parse(raw);
-  if (msg.type === 'subscribe') {
-    if (!channels.has(msg.channel)) channels.set(msg.channel, new Set());
-    channels.get(msg.channel).add(ws);
-  } else if (msg.type === 'publish') {
-    const subs = channels.get(msg.channel);
-    if (!subs) return;
-    const out = JSON.stringify({ channel: msg.channel, data: msg.data });
-    for (const c of subs) { if (c.readyState === 1) c.send(out); }
-  }
-});
-```
-
-### Rooms (Socket.IO)
-
-```js
-socket.join('room:123');
-io.to('room:123').emit('update', data);     // all in room
-socket.to('room:123').emit('update', data); // exclude sender
-```
-
----
-
-## Scaling WebSockets
-
-```
-Clients → Load Balancer (ip_hash or sticky cookie)
-             ├─ WS Server 1 ─┐
-             ├─ WS Server 2 ─┼─ Redis Pub/Sub
-             └─ WS Server 3 ─┘
-```
-
-### Redis Pub/Sub Cross-Instance Messaging
-
-```js
-const pub = createClient({ url: 'redis://redis:6379' });
-const sub = pub.duplicate();
-await Promise.all([pub.connect(), sub.connect()]);
-
-ws.on('message', (data) => pub.publish('chat:global', data.toString()));
-
-await sub.subscribe('chat:global', (message) => {
-  for (const c of wss.clients) { if (c.readyState === 1) c.send(message); }
-});
-```
-
-### Sticky Sessions (Nginx)
-
-```nginx
-upstream ws_backend {
-    ip_hash;
-    server ws1:8080;
-    server ws2:8080;
+function broadcast(sender, data) {
+  wss.clients.forEach((c) => {
+    if (c !== sender && c.readyState === WebSocket.OPEN) c.send(data);
+  });
 }
 ```
 
-### Scaling Checklist
-
-- Store session state in Redis, not process memory.
-- Use Redis adapter (Socket.IO) or manual pub/sub (ws) for cross-node messaging.
-- Configure load balancer for WebSocket upgrade headers.
-- Single Node.js process handles ~50K–65K concurrent connections.
-- Use cluster module for multi-core. For guaranteed delivery, use Redis Streams or Kafka.
-
----
-
-## Binary Data
+## Binary Data and Streaming
 
 ```js
-// Send ArrayBuffer from client
-ws.send(new Float64Array([3.14159]).buffer);
-// Receive binary on server
+// Server: handle binary frames
 ws.on('message', (data, isBinary) => {
-  if (isBinary) new Float64Array(data.buffer, data.byteOffset, data.byteLength / 8);
+  if (isBinary) {
+    const buffer = Buffer.from(data);
+    processFile(buffer);
+    ws.send(JSON.stringify({ status: 'received', size: buffer.length }));
+  }
 });
-// Protobuf: ws.send(MyMessage.encode({ id: 1 }).finish())
-// Decode:   MyMessage.decode(new Uint8Array(data))
+
+// Client: chunked upload
+const CHUNK_SIZE = 64 * 1024;
+for (let offset = 0; offset < buffer.byteLength; offset += CHUNK_SIZE) {
+  const chunk = buffer.slice(offset, offset + CHUNK_SIZE);
+  ws.send(JSON.stringify({ type: 'chunk', seq: offset / CHUNK_SIZE }));
+  ws.send(chunk);
+}
 ```
 
-Use protobuf/MessagePack/FlatBuffers for high-throughput. Reduces bandwidth 2–10x vs JSON.
-
----
-
-## Error Handling
+## Error Handling and Graceful Degradation
 
 ```js
-// Server — validate inbound messages
-ws.on('message', (raw) => {
-  let msg;
-  try { msg = JSON.parse(raw); }
-  catch { return ws.send(JSON.stringify({ error: 'INVALID_JSON' })); }
-  if (!msg.type || typeof msg.type !== 'string')
-    return ws.send(JSON.stringify({ error: 'MISSING_TYPE' }));
+ws.on('error', (err) => console.error(`WS error [${ws.userId}]:`, err.message));
+
+process.on('SIGTERM', () => {
+  wss.clients.forEach((ws) => ws.close(1001, 'Server shutting down'));
+  wss.close(() => process.exit(0));
 });
-
-ws.on('error', (err) => console.error('WS error:', err.message));
-
-// Client — handle close codes
-ws.onclose = (e) => {
-  if (e.code === 1000) return;               // normal
-  if (e.code === 1008) return redirectToLogin();
-  if (e.code === 1012) return reconnectNow();
-  reconnectWithBackoff();                     // default
-};
 ```
 
----
+Socket.IO automatic fallback: `io('https://example.com', { transports: ['websocket', 'polling'] })`.
+
+## Testing WebSocket Services
+
+```js
+import { WebSocket } from 'ws';
+import assert from 'node:assert';
+const ws = new WebSocket('ws://localhost:8080');
+ws.on('open', () => ws.send(JSON.stringify({ action: 'ping' })));
+ws.on('message', (data) => { assert.strictEqual(JSON.parse(data).action, 'pong'); ws.close(); });
+```
+
+Load test with Artillery (`artillery run ws-test.yml`):
+```yaml
+config:
+  target: "ws://localhost:8080"
+  phases: [{ duration: 60, arrivalRate: 50 }]
+  engines: { ws: {} }
+scenarios:
+  - engine: ws
+    flow:
+      - send: '{"action":"subscribe","topic":"news"}'
+      - think: 1
+      - send: '{"action":"publish","topic":"news","payload":"hello"}'
+```
 
 ## Security
 
-### Origin Checking
+### Origin Validation
 
 ```js
 const wss = new WebSocketServer({
-  server,
-  verifyClient: (info, cb) => {
-    const allowed = ['https://myapp.com', 'https://staging.myapp.com'];
-    if (!allowed.includes(info.origin)) return cb(false, 403, 'Forbidden');
-    cb(true);
+  verifyClient: (info) => {
+    const origin = info.origin || info.req.headers.origin;
+    return ['https://example.com', 'https://app.example.com'].includes(origin);
   },
 });
 ```
@@ -436,66 +464,34 @@ const wss = new WebSocketServer({
 ### Rate Limiting
 
 ```js
-const LIMIT = 100, WINDOW = 60_000;
-const rates = new Map();
-
-ws.on('message', (data) => {
-  const now = Date.now();
-  let r = rates.get(ws);
-  if (!r || now - r.start > WINDOW) { r = { start: now, count: 0 }; rates.set(ws, r); }
-  if (++r.count > LIMIT) return ws.close(1008, 'Rate limit exceeded');
+const messageCounts = new Map();
+ws.on('message', () => {
+  const count = (messageCounts.get(ws) || 0) + 1;
+  messageCounts.set(ws, count);
+  if (count > 100) { ws.close(1008, 'Rate limit exceeded'); return; }
 });
+setInterval(() => messageCounts.clear(), 60000);
 ```
 
-### Security Checklist
-
-- Always `wss://` in production. Validate `Origin` header during upgrade.
-- Set `maxPayload` to reject oversized messages.
-- Rate-limit connections per IP and messages per connection.
-- Validate all inbound messages as untrusted input.
-- Use short-lived auth tokens. Revalidate periodically.
-- Log auth failures, rate-limit hits, and abnormal disconnects.
-
----
-
-## Testing
+### Message Size Limits
 
 ```js
-// Unit test with Node.js test runner
-import { WebSocketServer } from 'ws';
-import { test } from 'node:test';
-import assert from 'node:assert';
+const wss = new WebSocketServer({ port: 8080, maxPayload: 1024 * 1024 }); // 1MB
+```
 
-test('echo', async () => {
-  const wss = new WebSocketServer({ port: 0 });
-  wss.on('connection', (ws) => ws.on('message', (d) => ws.send(d)));
-  const ws = new WebSocket(`ws://localhost:${wss.address().port}`);
-  await new Promise(r => ws.addEventListener('open', r));
-  ws.send('hello');
-  const reply = await new Promise(r => ws.addEventListener('message', e => r(e.data)));
-  assert.strictEqual(reply, 'hello');
-  ws.close(); wss.close();
+Socket.IO equivalent: set `maxHttpBufferSize: 1e6` in server options. Always use `wss://` in production. Validate and sanitize all incoming messages on both client and server.
+
+## Monitoring and Debugging
+
+Track in production: connection count (current/peak), message throughput (msg/sec), round-trip ping latency, error rate by close code (especially 1006, 1011), memory per connection.
+
+```js
+let connectionCount = 0;
+wss.on('connection', () => connectionCount++);
+
+app.get('/metrics', (req, res) => {
+  res.json({ connections: connectionCount, uptime: process.uptime(), memory: process.memoryUsage() });
 });
 ```
 
-CLI: `npx wscat -c ws://localhost:8080` or `websocat ws://localhost:8080`. Load test with `artillery` (engine: ws) or `k6`.
-
----
-
-## Socket.IO vs Raw WebSocket — Decision Guide
-
-| Factor                | Raw WebSocket (ws)                 | Socket.IO                         |
-|-----------------------|------------------------------------|------------------------------------|
-| Latency               | ~12ms p99, minimal overhead        | ~32ms p99                          |
-| Memory / connection   | ~3 KB                              | ~8–10 KB                           |
-| Auto reconnect        | Build yourself                     | Built-in with backoff              |
-| Rooms / namespaces    | Build yourself                     | Built-in                           |
-| Binary support        | Native                             | Supported, less flexible           |
-| Cross-language clients| Any WS client                      | Socket.IO-specific client needed   |
-| Scaling               | Manual Redis pub/sub               | Redis adapter, drop-in             |
-| Transport fallback    | None                               | HTTP long-polling fallback         |
-| Ideal for             | Trading, gaming, IoT, high-freq    | Chat, collab, notifications        |
-
-**Use `ws`** when performance and protocol control matter. **Use Socket.IO** when developer velocity and built-in reliability matter. Both scale with Redis.
-
-<!-- tested: pass -->
+Debug Socket.IO: `DEBUG=socket.io* node server.js`. Inspect browser frames in Chrome DevTools → Network → WS tab. CLI tool: `npx wscat -c wss://example.com/ws`.
