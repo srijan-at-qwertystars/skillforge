@@ -400,82 +400,20 @@ Never commit plaintext secrets in values files. Strategies:
 
 ## Production Best Practices
 
-### Security Defaults
-
-```yaml
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 65534
-  fsGroup: 65534
-  seccompProfile:
-    type: RuntimeDefault
-
-containerSecurityContext:
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop: [ALL]
-```
-
-### Resource Management
-
-Always set resource requests. Use LimitRange as cluster safety net. Set `resources` via values with sensible commented-out defaults.
-
-### Availability
-
-- Set PodDisruptionBudget: `minAvailable: 1` or `maxUnavailable: 25%`.
-- Use `topologySpreadConstraints` over `podAntiAffinity` for even distribution.
-- Add readiness, liveness, and startup probes.
-- Pin images by digest in production: `image: myapp@sha256:abc123...`.
-
-### Rollout Safety
-
-```bash
-# Atomic upgrade — auto-rollback on failure
-helm upgrade myrelease ./mychart --install --atomic --timeout 5m
-
-# Force pod restart on config change (add to deployment annotations)
-checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-```
-
-### Chart Hygiene
-
-- Run `helm lint --strict` in CI.
-- Version the chart (semver) independently from appVersion.
-- Keep `NOTES.txt` useful — show access URLs, credentials hints.
-- Use `.helmignore` to exclude CI files, tests, docs from package.
-- Document all values with `helm-docs` or inline `# --` comments.
+- **Security defaults** — `runAsNonRoot: true`, `readOnlyRootFilesystem: true`, `capabilities.drop: [ALL]`, `seccompProfile: RuntimeDefault`. See [assets/_helpers.tpl](assets/_helpers.tpl) for ready-made templates.
+- **Resources** — always set requests. Use LimitRange as cluster safety net. Provide commented-out defaults in values.yaml.
+- **Availability** — PodDisruptionBudget (`minAvailable: 1`), `topologySpreadConstraints`, readiness/liveness/startup probes, pin images by digest.
+- **Rollout safety** — `helm upgrade --atomic --timeout 5m` for auto-rollback. Add `checksum/config` annotation for config-change restarts.
+- **Chart hygiene** — `helm lint --strict` in CI, semver chart versions, useful NOTES.txt, `.helmignore`, document all values.
 
 ## Common Patterns
 
-### Library Charts
-
-Create shared templates (`type: library` in Chart.yaml) consumed by multiple charts. Define reusable named templates for deployments, services, labels. Consuming chart adds library as dependency and calls `{{ include "common-lib.deployment" . }}`.
-
-### CRD Management
-
-Place CRDs in `crds/` directory — Helm installs them before templates but never upgrades or deletes them. For CRD lifecycle control, use a separate CRD chart or operator.
-
-### Conditional Resources
-
-```yaml
-{{- if .Values.serviceMonitor.enabled }}
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: {{ include "myapp.fullname" . }}
-spec:
-  selector:
-    matchLabels: {{- include "myapp.selectorLabels" . | nindent 6 }}
-  endpoints:
-    - port: metrics
-      interval: {{ .Values.serviceMonitor.interval | default "30s" }}
-{{- end }}
-```
-
-### Multi-container Pods
-
-Add sidecars conditionally with `{{- if .Values.sidecar.enabled }}` blocks containing name, image, and resources from values.
+- **Library charts** — `type: library` in Chart.yaml, shared named templates consumed via dependency. See [advanced-patterns.md](references/advanced-patterns.md).
+- **Umbrella charts** — deploy full stack via dependencies, gate with `condition:` and `tags:`.
+- **CRD management** — `crds/` dir for initial install; separate CRD chart or operator for lifecycle control.
+- **Conditional resources** — guard with `{{- if .Values.feature.enabled }}`, check cluster capabilities with `.Capabilities.APIVersions.Has`.
+- **Multi-container pods** — sidecars via `{{- if .Values.sidecar.enabled }}` blocks.
+- **GitOps** — ArgoCD `Application` / Flux `HelmRelease` for declarative Helm. See [advanced-patterns.md](references/advanced-patterns.md).
 
 ## Quick Command Reference
 
@@ -495,3 +433,33 @@ helm dependency update ./mychart           # Fetch/update deps
 helm test rel -n ns                        # Run chart tests
 helm plugin install <url>                  # Install plugin
 ```
+
+## References
+
+In-depth guides in `references/`:
+
+| Reference | Contents |
+|-----------|----------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Library charts, umbrella charts, CRD management, operator patterns, multi-cluster deployments, GitOps with ArgoCD/Flux, chart testing strategies (helm-unittest, ct, conftest), Helm Go SDK, advanced templating (dynamic resources, feature flags, post-renderer Kustomize) |
+| [troubleshooting.md](references/troubleshooting.md) | Failed releases, stuck/pending releases, rollback problems, hook failures, template rendering errors, dependency issues, OCI registry problems, upgrade conflicts, values issues, namespace/RBAC issues, resource conflicts, performance/timeout issues, diagnostic commands |
+| [template-functions.md](references/template-functions.md) | Complete Go template and Sprig function reference: string ops, math, date, defaults, encoding, crypto, list/dict manipulation, type conversion, flow control, named templates, regex, semver, UUID/random, `.Files` and `lookup` usage, common idioms |
+
+## Scripts
+
+Helper scripts in `scripts/` (all executable):
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [create-chart.sh](scripts/create-chart.sh) | Scaffold a production-ready chart with hardened security defaults, PDB, HPA, ServiceMonitor, tests, CI values, and schema | `./scripts/create-chart.sh myapp [output-dir]` |
+| [lint-chart.sh](scripts/lint-chart.sh) | Run helm lint, kubeconform, chart-testing, and custom validation (security, semver, structure checks) | `./scripts/lint-chart.sh ./mychart [values.yaml...]` |
+| [publish-chart.sh](scripts/publish-chart.sh) | Package and push chart to OCI registry or ChartMuseum with auto-login, lint, and verification | `./scripts/publish-chart.sh ./mychart oci://registry/charts` |
+
+## Assets
+
+Reusable templates in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [values-schema.json](assets/values-schema.json) | Comprehensive JSON Schema template for values.yaml validation — covers image, service, ingress, resources, autoscaling, PDB, security contexts, env, serviceMonitor |
+| [ci-pipeline.yaml](assets/ci-pipeline.yaml) | GitHub Actions workflow with lint → schema validate → integration test (Kind cluster) → publish (OCI/GHCR) stages |
+| [_helpers.tpl](assets/_helpers.tpl) | Production-ready named templates: fullname, labels, selectors, component labels, annotations, checksums, image reference (with digest/registry support), security context defaults, value validation |

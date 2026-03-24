@@ -1,0 +1,204 @@
+name: Helm Chart CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "charts/**"
+
+env:
+  HELM_VERSION: "3.16.0"
+  PYTHON_VERSION: "3.12"
+  CHART_TESTING_VERSION: "3.11.0"
+  KUBECONFORM_VERSION: "0.6.7"
+
+jobs:
+  # ── Lint ────────────────────────────────────────────────────────────
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Set up Python (for chart-testing)
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+        with:
+          version: v${{ env.CHART_TESTING_VERSION }}
+
+      - name: List changed charts
+        id: list-changed
+        run: |
+          changed=$(ct list-changed --config ct.yaml --target-branch ${{ github.event.repository.default_branch }})
+          if [[ -n "$changed" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Changed charts:"
+            echo "$changed"
+          fi
+
+      - name: Add dependency repos
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+          helm repo update
+
+      - name: Lint changed charts
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct lint --config ct.yaml --target-branch ${{ github.event.repository.default_branch }}
+
+  # ── Schema Validation ──────────────────────────────────────────────
+  validate:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          curl -sSLo /tmp/kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
+          chmod +x /usr/local/bin/kubeconform
+
+      - name: Validate rendered manifests
+        run: |
+          for chart_dir in charts/*/; do
+            chart_name=$(basename "$chart_dir")
+            echo "=== Validating ${chart_name} ==="
+
+            # Build dependencies
+            if [[ -f "${chart_dir}/Chart.lock" ]]; then
+              helm dependency build "$chart_dir"
+            fi
+
+            # Render and validate with default values
+            helm template test "$chart_dir" | \
+              kubeconform -strict -summary \
+                -kubernetes-version 1.29.0 \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
+            # Render and validate with CI values
+            for ci_values in "${chart_dir}"/ci/*.yaml; do
+              if [[ -f "$ci_values" ]]; then
+                echo "  → with $(basename "$ci_values")"
+                helm template test "$chart_dir" -f "$ci_values" | \
+                  kubeconform -strict -summary -kubernetes-version 1.29.0
+              fi
+            done
+          done
+
+  # ── Integration Test ───────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+        with:
+          version: v${{ env.CHART_TESTING_VERSION }}
+
+      - name: List changed charts
+        id: list-changed
+        run: |
+          changed=$(ct list-changed --config ct.yaml --target-branch ${{ github.event.repository.default_branch }})
+          if [[ -n "$changed" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Kind cluster
+        if: steps.list-changed.outputs.changed == 'true'
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: chart-testing
+
+      - name: Install and test changed charts
+        if: steps.list-changed.outputs.changed == 'true'
+        run: ct install --config ct.yaml --target-branch ${{ github.event.repository.default_branch }} --upgrade
+
+  # ── Publish ────────────────────────────────────────────────────────
+  publish:
+    runs-on: ubuntu-latest
+    needs: [lint, validate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
+
+      - name: Detect and publish changed charts
+        run: |
+          REGISTRY="oci://ghcr.io/${{ github.repository_owner }}/charts"
+          for chart_dir in charts/*/; do
+            chart_name=$(basename "$chart_dir")
+            chart_version=$(grep '^version:' "${chart_dir}/Chart.yaml" | awk '{print $2}')
+
+            # Check if this version already exists
+            if helm show chart "${REGISTRY}/${chart_name}" --version "${chart_version}" > /dev/null 2>&1; then
+              echo "⏭ ${chart_name}:${chart_version} already published — skipping"
+              continue
+            fi
+
+            echo "📦 Publishing ${chart_name}:${chart_version}"
+
+            # Build dependencies
+            if grep -q '^dependencies:' "${chart_dir}/Chart.yaml" 2>/dev/null; then
+              helm dependency build "$chart_dir"
+            fi
+
+            # Package and push
+            helm package "$chart_dir" -d /tmp/charts/
+            helm push "/tmp/charts/${chart_name}-${chart_version}.tgz" "${REGISTRY}"
+            echo "✅ Published ${chart_name}:${chart_version}"
+          done

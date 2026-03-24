@@ -457,3 +457,37 @@ SHOW GLOBAL STATUS LIKE 'Created_tmp_tables';
 8. Set `innodb_io_capacity` matching storage IOPS
 9. Enable `performance_schema` for ongoing monitoring
 10. Use `innodb_dedicated_server = ON` on MySQL 8.0.14+ dedicated hosts
+
+---
+
+## Reference Documents
+
+Deep-dive guides in `references/`:
+
+| Reference | Topics |
+|-----------|--------|
+| `references/advanced-patterns.md` | InnoDB internals (clustered index, MVCC, change buffer, AHI, doublewrite, redo log), partitioning (range/hash/list/sub), JSON optimization (functional indexes, multi-valued indexes, partial updates), window functions, CTE optimization, optimizer hints, invisible indexes, histogram statistics |
+| `references/troubleshooting.md` | Lock waits & deadlocks, replication lag diagnosis & fixing, disk I/O bottlenecks, memory pressure & OOM, connection storms, slow query patterns, crash recovery & force recovery levels |
+| `references/performance-schema.md` | Enabling instruments/consumers, key tables (statements/waits/stages/locks/memory/I/O), bottleneck queries, wait analysis, statement analysis, memory tracking, sys schema views & procedures |
+
+## Helper Scripts
+
+Executable scripts in `scripts/` — run with `--help` for full usage:
+
+```bash
+# Analyze slow query log — top N queries, optional EXPLAIN plans
+scripts/analyze-slow-queries.sh -f /var/log/mysql/slow.log -n 10 -e -d myapp
+
+# Health check — buffer pool, threads, table cache, temp tables, locks, replication
+scripts/health-check.sh -u admin -H db.example.com --warn-only
+
+# Generate tuned my.cnf — auto-detects RAM, supports OLTP/OLAP/mixed + SSD/NVMe/HDD
+scripts/tune-config.sh --ram 64 --workload oltp --dedicated -o /tmp/my.cnf
+```
+
+## Assets & Templates
+
+| Asset | Description |
+|-------|-------------|
+| `assets/my.cnf.template` | Production my.cnf with small/medium/large server profiles, commented settings, replication config |
+| `assets/monitoring-queries.sql` | 10 categories of diagnostic SQL: buffer pool, connections, query perf, locks, replication, I/O, memory, alerting thresholds |

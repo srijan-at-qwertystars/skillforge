@@ -1,0 +1,230 @@
+# ============================================================================
+# MySQL Server Configuration Template
+# ============================================================================
+#
+# This template provides production-ready MySQL 8.0+ settings for three
+# server sizes. Uncomment the appropriate section for your environment.
+#
+# Usage:
+#   1. Copy this file: cp my.cnf.template /etc/mysql/conf.d/server.cnf
+#   2. Uncomment ONE size section (small, medium, or large)
+#   3. Review and adjust values for your specific workload
+#   4. Restart MySQL: systemctl restart mysql
+#
+# Server Sizes:
+#   Small:  2-8 GB RAM,  2-4 CPU cores  (dev, staging, small apps)
+#   Medium: 16-32 GB RAM, 4-8 CPU cores  (production, moderate traffic)
+#   Large:  64-128 GB RAM, 16-32 CPU cores (high-traffic production)
+#
+# ============================================================================
+
+[mysqld]
+
+# --- Common Settings (all sizes) ---
+
+# Identity — set a unique server-id for each MySQL instance
+server-id                       = 1
+
+# Character set — use utf8mb4 for full Unicode support
+character_set_server            = utf8mb4
+collation_server                = utf8mb4_0900_ai_ci
+
+# Networking
+skip_name_resolve               = ON
+max_allowed_packet              = 64M
+max_connect_errors              = 1000000
+
+# Binary logging
+log_bin                         = mysql-bin
+binlog_format                   = ROW
+binlog_row_image                = MINIMAL
+binlog_expire_logs_seconds      = 604800
+binlog_row_value_options        = PARTIAL_JSON
+
+# Slow query log — always enable in production
+slow_query_log                  = ON
+slow_query_log_file             = /var/log/mysql/slow.log
+long_query_time                 = 0.5
+log_queries_not_using_indexes   = ON
+log_slow_admin_statements       = ON
+min_examined_row_limit          = 100
+
+# Error log
+log_error                       = /var/log/mysql/error.log
+log_error_verbosity             = 2
+
+# InnoDB fundamentals
+innodb_file_per_table           = ON
+innodb_flush_method             = O_DIRECT
+innodb_use_native_aio           = ON
+innodb_doublewrite              = ON
+innodb_print_all_deadlocks      = ON
+innodb_stats_on_metadata        = OFF
+innodb_adaptive_hash_index      = ON
+
+# Buffer pool persistence across restarts
+innodb_buffer_pool_dump_at_shutdown = ON
+innodb_buffer_pool_load_at_startup  = ON
+
+# Performance Schema
+performance_schema              = ON
+
+# Timeouts
+wait_timeout                    = 600
+interactive_timeout             = 600
+
+
+# ============================================================================
+# SMALL SERVER (2-8 GB RAM, 2-4 CPU cores)
+# ============================================================================
+# Suitable for: development, staging, small production apps (<100 req/s)
+# ============================================================================
+
+# [SMALL] InnoDB Buffer Pool — 50% of RAM for shared servers
+# innodb_buffer_pool_size         = 2G
+# innodb_buffer_pool_instances    = 2
+#
+# [SMALL] Redo log
+# innodb_redo_log_capacity        = 512M
+# innodb_log_buffer_size          = 16M
+#
+# [SMALL] I/O
+# innodb_io_capacity              = 1000
+# innodb_io_capacity_max          = 2000
+# innodb_read_io_threads          = 4
+# innodb_write_io_threads         = 4
+#
+# [SMALL] Durability — full ACID
+# innodb_flush_log_at_trx_commit  = 1
+# sync_binlog                     = 1
+#
+# [SMALL] Connections
+# max_connections                 = 100
+# thread_cache_size               = 16
+#
+# [SMALL] Caches
+# table_open_cache                = 400
+# table_definition_cache          = 200
+#
+# [SMALL] Per-connection buffers — keep small
+# tmp_table_size                  = 32M
+# max_heap_table_size             = 32M
+# sort_buffer_size                = 256K
+# join_buffer_size                = 256K
+# read_buffer_size                = 128K
+# read_rnd_buffer_size            = 256K
+
+
+# ============================================================================
+# MEDIUM SERVER (16-32 GB RAM, 4-8 CPU cores)
+# ============================================================================
+# Suitable for: standard production, moderate traffic (100-1000 req/s)
+# ============================================================================
+
+# [MEDIUM] InnoDB Buffer Pool — 60% of RAM
+# innodb_buffer_pool_size         = 12G
+# innodb_buffer_pool_instances    = 8
+#
+# [MEDIUM] Redo log
+# innodb_redo_log_capacity        = 4G
+# innodb_log_buffer_size          = 64M
+#
+# [MEDIUM] I/O
+# innodb_io_capacity              = 2000
+# innodb_io_capacity_max          = 4000
+# innodb_read_io_threads          = 8
+# innodb_write_io_threads         = 8
+#
+# [MEDIUM] Durability
+# innodb_flush_log_at_trx_commit  = 1
+# sync_binlog                     = 1
+#
+# [MEDIUM] Connections
+# max_connections                 = 300
+# thread_cache_size               = 64
+#
+# [MEDIUM] Caches
+# table_open_cache                = 2048
+# table_definition_cache          = 1024
+#
+# [MEDIUM] Per-connection buffers
+# tmp_table_size                  = 128M
+# max_heap_table_size             = 128M
+# sort_buffer_size                = 512K
+# join_buffer_size                = 512K
+# read_buffer_size                = 128K
+# read_rnd_buffer_size            = 256K
+#
+# [MEDIUM] InnoDB extras
+# innodb_purge_threads            = 4
+# innodb_change_buffering         = all
+
+
+# ============================================================================
+# LARGE SERVER (64-128 GB RAM, 16-32 CPU cores)
+# ============================================================================
+# Suitable for: high-traffic production, large datasets (1000+ req/s)
+# ============================================================================
+
+# [LARGE] InnoDB Buffer Pool — 75% of RAM
+# innodb_buffer_pool_size         = 48G
+# innodb_buffer_pool_instances    = 16
+# innodb_buffer_pool_chunk_size   = 256M
+#
+# [LARGE] Redo log
+# innodb_redo_log_capacity        = 8G
+# innodb_log_buffer_size          = 128M
+#
+# [LARGE] I/O (NVMe assumed)
+# innodb_io_capacity              = 10000
+# innodb_io_capacity_max          = 20000
+# innodb_read_io_threads          = 8
+# innodb_write_io_threads         = 8
+#
+# [LARGE] Durability
+# innodb_flush_log_at_trx_commit  = 1
+# sync_binlog                     = 1
+#
+# [LARGE] Connections
+# max_connections                 = 1000
+# thread_cache_size               = 128
+#
+# [LARGE] Caches
+# table_open_cache                = 8192
+# table_definition_cache          = 4096
+#
+# [LARGE] Per-connection buffers
+# tmp_table_size                  = 256M
+# max_heap_table_size             = 256M
+# sort_buffer_size                = 1M
+# join_buffer_size                = 1M
+# read_buffer_size                = 256K
+# read_rnd_buffer_size            = 512K
+#
+# [LARGE] InnoDB extras
+# innodb_purge_threads            = 4
+# innodb_change_buffering         = all
+# innodb_adaptive_hash_index_parts = 8
+#
+# [LARGE] Parallel replication (if replica)
+# replica_parallel_workers        = 16
+# replica_parallel_type           = LOGICAL_CLOCK
+# replica_preserve_commit_order   = ON
+# binlog_transaction_dependency_tracking = WRITESET
+# transaction_write_set_extraction = XXHASH64
+
+
+# ============================================================================
+# REPLICATION (uncomment on replicas)
+# ============================================================================
+
+# gtid_mode                       = ON
+# enforce_gtid_consistency        = ON
+# log_replica_updates             = ON
+# replica_parallel_workers        = 8
+# replica_parallel_type           = LOGICAL_CLOCK
+# replica_preserve_commit_order   = ON
+
+# Relaxed durability on replicas for performance:
+# innodb_flush_log_at_trx_commit  = 2
+# sync_binlog                     = 0

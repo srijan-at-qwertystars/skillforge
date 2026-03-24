@@ -423,3 +423,33 @@ POST /auth/refresh
 Cookie: refreshToken=<revoked-token>
 → 401 {"error": "Invalid refresh token"}
 ```
+
+## References
+
+In-depth guides for advanced JWT topics:
+
+| Reference | What it covers |
+|-----------|---------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Token families, sliding window refresh, DPoP proof-of-possession, JWT sessions at scale, distributed revocation (Redis/DB), audience-scoped tokens, nested JWTs, JWE encryption, token downscoping, RFC 8693 token exchange |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Clock skew fixes, token-too-large diagnosis, CORS cookie issues, refresh rotation race conditions, key rotation during deployment, mobile storage (iOS/Android/React Native), debugging invalid signatures, library-specific gotchas (jsonwebtoken, PyJWT, golang-jwt, jose) |
+| [`references/security-checklist.md`](references/security-checklist.md) | Actionable checklist: algorithm validation, claim verification, key management, token storage (browser/mobile/server), transport security, revocation, logging/monitoring, compliance (GDPR, PCI-DSS, HIPAA, SOC 2), implementation hardening, operational security |
+
+## Scripts
+
+Helper scripts in `scripts/` — run with `--help` for usage:
+
+| Script | Purpose |
+|--------|---------|
+| [`scripts/generate-keys.sh`](scripts/generate-keys.sh) | Generate RS256/ES256/EdDSA key pairs in PEM and JWK formats. Usage: `./generate-keys.sh es256` |
+| [`scripts/decode-jwt.sh`](scripts/decode-jwt.sh) | Decode and pretty-print JWT header, payload, expiry status. Usage: `./decode-jwt.sh <token>` |
+| [`scripts/rotate-keys.sh`](scripts/rotate-keys.sh) | Rotate signing keys with JWKS update and grace period. Usage: `./rotate-keys.sh es256 jwks.json 7` |
+
+## Assets
+
+Ready-to-use templates in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [`assets/jwks-endpoint.json`](assets/jwks-endpoint.json) | Example JWKS endpoint response with EC, RSA, EdDSA signing keys and an RSA encryption key |
+| [`assets/middleware-express.js`](assets/middleware-express.js) | Express.js middleware template: access token verification, refresh rotation with reuse detection, role-based auth, login/logout handlers |
+| [`assets/middleware-fastapi.py`](assets/middleware-fastapi.py) | FastAPI middleware template: dependency injection auth, refresh rotation, role-based access control, token store interface |

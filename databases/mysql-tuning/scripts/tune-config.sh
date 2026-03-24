@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+#
+# tune-config.sh — Generate my.cnf recommendations based on system resources and workload
+#
+# Usage:
+#   ./tune-config.sh [OPTIONS]
+#
+# Options:
+#   -r, --ram GB          System RAM in GB (auto-detected if omitted)
+#   -w, --workload TYPE   Workload type: oltp, olap, mixed (default: oltp)
+#   -s, --storage TYPE    Storage type: ssd, nvme, hdd (default: ssd)
+#   -d, --dedicated       Server is dedicated to MySQL (uses more RAM)
+#   -o, --output FILE     Write config to file instead of stdout
+#   -c, --current FILE    Compare with current my.cnf and show diff
+#   -h, --help            Show this help message
+#
+# Examples:
+#   ./tune-config.sh --ram 64 --workload oltp --dedicated
+#   ./tune-config.sh --ram 16 --workload olap --storage nvme -o /tmp/my.cnf
+#   ./tune-config.sh --current /etc/mysql/my.cnf
+#
+# The generated config includes explanatory comments for each setting.
+# Always review and test in a staging environment before applying to production.
+#
+
+set -euo pipefail
+
+# Defaults
+RAM_GB=""
+WORKLOAD="oltp"
+STORAGE="ssd"
+DEDICATED=false
+OUTPUT=""
+CURRENT_CNF=""
+
+usage() {
+    sed -n '3,/^$/s/^# \?//p' "$0"
+    exit 0
+}
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -r|--ram)       RAM_GB="$2"; shift 2 ;;
+        -w|--workload)  WORKLOAD="$2"; shift 2 ;;
+        -s|--storage)   STORAGE="$2"; shift 2 ;;
+        -d|--dedicated) DEDICATED=true; shift ;;
+        -o|--output)    OUTPUT="$2"; shift 2 ;;
+        -c|--current)   CURRENT_CNF="$2"; shift 2 ;;
+        -h|--help)      usage ;;
+        *)              echo "Unknown option: $1"; usage ;;
+    esac
+done
+
+# Auto-detect RAM if not specified
+if [[ -z "$RAM_GB" ]]; then
+    if [[ -f /proc/meminfo ]]; then
+        RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        RAM_GB=$(echo "scale=0; $RAM_KB / 1024 / 1024" | bc)
+    elif command -v sysctl &>/dev/null; then
+        RAM_BYTES=$(sysctl -n hw.memsize 2>/dev/null || sysctl -n hw.physmem 2>/dev/null || echo 0)
+        RAM_GB=$(echo "scale=0; $RAM_BYTES / 1024 / 1024 / 1024" | bc)
+    fi
+    if [[ -z "$RAM_GB" || "$RAM_GB" -eq 0 ]]; then
+        echo "ERROR: Could not detect system RAM. Specify with --ram GB"
+        exit 1
+    fi
+fi
+
+# Validate inputs
+case "$WORKLOAD" in
+    oltp|olap|mixed) ;;
+    *) echo "ERROR: Invalid workload type: $WORKLOAD (use: oltp, olap, mixed)"; exit 1 ;;
+esac
+case "$STORAGE" in
+    ssd|nvme|hdd) ;;
+    *) echo "ERROR: Invalid storage type: $STORAGE (use: ssd, nvme, hdd)"; exit 1 ;;
+esac
+
+# Calculate settings based on RAM and workload
+if [[ "$DEDICATED" == true ]]; then
+    BP_PCT=75
+else
+    BP_PCT=50
+fi
+
+# Buffer pool size
+BP_SIZE=$((RAM_GB * BP_PCT / 100))
+[[ "$BP_SIZE" -lt 1 ]] && BP_SIZE=1
+
+# Buffer pool instances (1 per GB, max 64, min 1)
+BP_INSTANCES=$BP_SIZE
+[[ "$BP_INSTANCES" -gt 64 ]] && BP_INSTANCES=64
+[[ "$BP_INSTANCES" -lt 1 ]] && BP_INSTANCES=1
+
+# Redo log capacity (25-50% of buffer pool)
+case "$WORKLOAD" in
+    oltp)  REDO_CAP=$((BP_SIZE * 25 / 100)) ;;
+    olap)  REDO_CAP=$((BP_SIZE * 50 / 100)) ;;
+    mixed) REDO_CAP=$((BP_SIZE * 35 / 100)) ;;
+esac
+[[ "$REDO_CAP" -lt 1 ]] && REDO_CAP=1
+[[ "$REDO_CAP" -gt 16 ]] && REDO_CAP=16
+
+# Log buffer size
+case "$WORKLOAD" in
+    oltp)  LOG_BUFFER="64M" ;;
+    olap)  LOG_BUFFER="128M" ;;
+    mixed) LOG_BUFFER="64M" ;;
+esac
+
+# I/O capacity
+case "$STORAGE" in
+    nvme) IO_CAP=10000; IO_CAP_MAX=20000 ;;
+    ssd)  IO_CAP=2000;  IO_CAP_MAX=4000 ;;
+    hdd)  IO_CAP=200;   IO_CAP_MAX=400 ;;
+esac
+
+# IO threads
+CPU_CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+IO_THREADS=$((CPU_CORES > 8 ? 8 : CPU_CORES))
+[[ "$IO_THREADS" -lt 4 ]] && IO_THREADS=4
+
+# Max connections
+case "$WORKLOAD" in
+    oltp)  MAX_CONN=$((RAM_GB * 20)); [[ "$MAX_CONN" -gt 1000 ]] && MAX_CONN=1000 ;;
+    olap)  MAX_CONN=$((RAM_GB * 5));  [[ "$MAX_CONN" -gt 200 ]] && MAX_CONN=200 ;;
+    mixed) MAX_CONN=$((RAM_GB * 15)); [[ "$MAX_CONN" -gt 500 ]] && MAX_CONN=500 ;;
+esac
+[[ "$MAX_CONN" -lt 50 ]] && MAX_CONN=50
+
+# Thread cache
+THREAD_CACHE=$((MAX_CONN / 4))
+[[ "$THREAD_CACHE" -gt 256 ]] && THREAD_CACHE=256
+[[ "$THREAD_CACHE" -lt 8 ]] && THREAD_CACHE=8
+
+# Table cache
+TABLE_CACHE=$((MAX_CONN * 4))
+[[ "$TABLE_CACHE" -gt 16384 ]] && TABLE_CACHE=16384
+[[ "$TABLE_CACHE" -lt 400 ]] && TABLE_CACHE=400
+
+# Temp table / sort buffer sizing
+case "$WORKLOAD" in
+    oltp)  TMP_TABLE="64M";  SORT_BUF="256K"; JOIN_BUF="256K" ;;
+    olap)  TMP_TABLE="512M"; SORT_BUF="4M";   JOIN_BUF="4M" ;;
+    mixed) TMP_TABLE="256M"; SORT_BUF="1M";   JOIN_BUF="1M" ;;
+esac
+
+# Flush settings
+case "$WORKLOAD" in
+    oltp)  FLUSH_LOG=1; SYNC_BINLOG=1 ;;
+    olap)  FLUSH_LOG=2; SYNC_BINLOG=0 ;;
+    mixed) FLUSH_LOG=1; SYNC_BINLOG=1 ;;
+esac
+
+# Binlog format
+BINLOG_FORMAT="ROW"
+BINLOG_ROW_IMAGE="MINIMAL"
+
+# Generate config
+CONFIG="# ============================================================
+# MySQL Server Configuration
+# Generated by tune-config.sh
+# Date: $(date '+%Y-%m-%d %H:%M:%S')
+# ============================================================
+# System:    ${RAM_GB}GB RAM, ${CPU_CORES} CPU cores
+# Workload:  ${WORKLOAD^^}
+# Storage:   ${STORAGE^^}
+# Dedicated: ${DEDICATED}
+# ============================================================
+#
+# IMPORTANT: Review all settings before applying to production.
+# Test in staging first. Some changes require a restart.
+#
+
+[mysqld]
+
+# --- Identity ---
+server-id = 1
+# Set a unique server-id for replication (change per server)
+
+# --- InnoDB Buffer Pool ---
+# The single most important tuning variable.
+# Set to ${BP_PCT}% of RAM for $(if $DEDICATED; then echo 'dedicated'; else echo 'shared'; fi) MySQL server.
+innodb_buffer_pool_size = ${BP_SIZE}G
+innodb_buffer_pool_instances = ${BP_INSTANCES}
+# Warm up buffer pool after restart
+innodb_buffer_pool_dump_at_shutdown = ON
+innodb_buffer_pool_load_at_startup = ON
+
+# --- InnoDB Redo Log ---
+# Size affects write throughput and recovery time.
+# Larger = better write performance, longer crash recovery.
+innodb_redo_log_capacity = ${REDO_CAP}G
+innodb_log_buffer_size = ${LOG_BUFFER}
+
+# --- InnoDB I/O ---
+# Match these to your storage capabilities.
+innodb_io_capacity = ${IO_CAP}
+innodb_io_capacity_max = ${IO_CAP_MAX}
+innodb_flush_method = O_DIRECT
+innodb_read_io_threads = ${IO_THREADS}
+innodb_write_io_threads = ${IO_THREADS}
+innodb_use_native_aio = ON
+innodb_file_per_table = ON
+
+# --- InnoDB Durability ---
+# 1 = full ACID (safest), 2 = flush once/sec (faster, ~1s data risk on crash)
+innodb_flush_log_at_trx_commit = ${FLUSH_LOG}
+sync_binlog = ${SYNC_BINLOG}
+# Set innodb_doublewrite = OFF only if storage guarantees atomic 16KB writes (ZFS, battery-backed RAID)
+innodb_doublewrite = ON
+
+# --- Connections ---
+max_connections = ${MAX_CONN}
+thread_cache_size = ${THREAD_CACHE}
+wait_timeout = 600
+interactive_timeout = 600
+max_connect_errors = 1000000
+# Reserve admin connections (MySQL 8.0.14+)
+# admin_address = 127.0.0.1
+# admin_port = 33062
+
+# --- Table Cache ---
+table_open_cache = ${TABLE_CACHE}
+table_definition_cache = $((TABLE_CACHE / 2))
+
+# --- Temp Tables & Sort Buffers ---
+# Per-connection settings — keep conservative, increase per-session if needed.
+tmp_table_size = ${TMP_TABLE}
+max_heap_table_size = ${TMP_TABLE}
+sort_buffer_size = ${SORT_BUF}
+join_buffer_size = ${JOIN_BUF}
+read_buffer_size = 128K
+read_rnd_buffer_size = 256K
+
+# --- Binary Logging ---
+log_bin = mysql-bin
+binlog_format = ${BINLOG_FORMAT}
+binlog_row_image = ${BINLOG_ROW_IMAGE}
+binlog_expire_logs_seconds = 604800
+# Enable partial JSON updates in binlog (MySQL 8.0+)
+binlog_row_value_options = PARTIAL_JSON
+# Enable binary log compression (MySQL 8.0.20+)
+binlog_transaction_compression = ON
+
+# --- Slow Query Log ---
+slow_query_log = ON
+slow_query_log_file = /var/log/mysql/slow.log
+long_query_time = 0.5
+log_queries_not_using_indexes = ON
+log_slow_admin_statements = ON
+min_examined_row_limit = 100
+
+# --- Error Log ---
+log_error = /var/log/mysql/error.log
+log_error_verbosity = 2
+
+# --- Performance Schema ---
+performance_schema = ON
+# Disable if memory is very constrained (saves 200-400MB)
+
+# --- Character Set ---
+character_set_server = utf8mb4
+collation_server = utf8mb4_0900_ai_ci
+
+# --- InnoDB Miscellaneous ---
+innodb_adaptive_hash_index = ON
+innodb_print_all_deadlocks = ON
+innodb_purge_threads = 4
+innodb_stats_on_metadata = OFF
+
+# --- Networking ---
+max_allowed_packet = 64M
+skip_name_resolve = ON"
+
+# Add workload-specific settings
+case "$WORKLOAD" in
+    oltp)
+        CONFIG="$CONFIG
+
+# --- OLTP-Specific Settings ---
+# Optimize for short, frequent transactions
+innodb_change_buffering = all
+# Use READ-COMMITTED for reduced gap locking (better concurrency)
+transaction_isolation = READ-COMMITTED
+innodb_autoinc_lock_mode = 2
+# Faster mutex for high-concurrency
+innodb_spin_wait_delay = 6"
+        ;;
+    olap)
+        CONFIG="$CONFIG
+
+# --- OLAP-Specific Settings ---
+# Optimize for complex queries and large scans
+innodb_change_buffering = none
+# Larger read-ahead for sequential scans
+innodb_read_ahead_threshold = 0
+# Allow larger result sets
+max_allowed_packet = 256M
+group_concat_max_len = 1048576
+# Increase optimizer cost model for better plans
+optimizer_search_depth = 62"
+        ;;
+    mixed)
+        CONFIG="$CONFIG
+
+# --- Mixed Workload Settings ---
+innodb_change_buffering = inserts
+transaction_isolation = READ-COMMITTED"
+        ;;
+esac
+
+# Add replication section
+CONFIG="$CONFIG
+
+# --- Replication (uncomment and configure if needed) ---
+# replica_parallel_workers = 8
+# replica_parallel_type = LOGICAL_CLOCK
+# replica_preserve_commit_order = ON
+# binlog_transaction_dependency_tracking = WRITESET
+# transaction_write_set_extraction = XXHASH64
+# log_replica_updates = ON
+# gtid_mode = ON
+# enforce_gtid_consistency = ON
+"
+
+# Output
+if [[ -n "$OUTPUT" ]]; then
+    echo "$CONFIG" > "$OUTPUT"
+    echo "Configuration written to: $OUTPUT"
+    echo
+    echo "Summary:"
+else
+    echo "$CONFIG"
+    echo
+    echo "# ============================================================"
+    echo "# Summary"
+    echo "# ============================================================"
+fi
+
+echo "# RAM: ${RAM_GB}GB | Buffer Pool: ${BP_SIZE}GB (${BP_PCT}%)"
+echo "# Workload: ${WORKLOAD^^} | Storage: ${STORAGE^^}"
+echo "# Max Connections: ${MAX_CONN} | Thread Cache: ${THREAD_CACHE}"
+echo "# I/O Capacity: ${IO_CAP} (max: ${IO_CAP_MAX})"
+echo "# Redo Log: ${REDO_CAP}GB | Durability: flush=${FLUSH_LOG}, sync_binlog=${SYNC_BINLOG}"
+echo "# Table Cache: ${TABLE_CACHE} | Temp Tables: ${TMP_TABLE}"
+
+# Compare with current config if requested
+if [[ -n "$CURRENT_CNF" ]]; then
+    if [[ ! -f "$CURRENT_CNF" ]]; then
+        echo "ERROR: Current config not found: $CURRENT_CNF"
+        exit 1
+    fi
+    echo
+    echo "# ============================================================"
+    echo "# Differences from current config (${CURRENT_CNF})"
+    echo "# ============================================================"
+
+    # Extract key variables from both configs and compare
+    TEMP_NEW=$(mktemp)
+    echo "$CONFIG" | grep -E '^\s*[a-z_]+ =' | sed 's/\s*#.*//' | sort > "$TEMP_NEW"
+    TEMP_CUR=$(mktemp)
+    grep -E '^\s*[a-z_]+ =' "$CURRENT_CNF" | sed 's/\s*#.*//' | sort > "$TEMP_CUR"
+
+    diff --side-by-side --suppress-common-lines "$TEMP_CUR" "$TEMP_NEW" || echo "(no differences found)"
+
+    rm -f "$TEMP_NEW" "$TEMP_CUR"
+fi
