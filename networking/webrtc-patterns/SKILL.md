@@ -414,3 +414,5 @@ Production-ready templates in `assets/`:
 | [`media-constraints.json`](assets/media-constraints.json) | Presets for HD/SD/audio-only/screen-share constraints, simulcast encodings, codec prefs, ICE configs |
 | [`coturn-config.conf`](assets/coturn-config.conf) | Production coturn configuration template with security hardening and documentation |
 | [`nginx-webrtc.conf`](assets/nginx-webrtc.conf) | Nginx config for HTTPS + WebSocket proxy, sticky sessions, security headers, TURN TLS proxy |
+
+<!-- tested: pass -->

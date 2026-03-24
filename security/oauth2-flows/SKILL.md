@@ -480,3 +480,5 @@ def handle_refresh(db, incoming_refresh_token: str, client_id: str):
     new_access = mint_jwt_access_token(sub=stored["sub"], scope=stored["scope"])
     return {"access_token": new_access, "refresh_token": new_refresh}
 ```
+
+<!-- tested: pass -->

@@ -498,3 +498,5 @@ Templates and configuration files for bootstrapping module infrastructure:
 | [`assets/github-actions-ci.yml`](assets/github-actions-ci.yml) | GitHub Actions CI workflow: format, validate, lint, security scan, plan tests, integration tests, release |
 | [`assets/terrafile.hcl`](assets/terrafile.hcl) | Example terraform test file demonstrating plan tests, validation tests, and apply tests |
 | [`assets/.tflint.hcl`](assets/.tflint.hcl) | TFLint configuration template with terraform, AWS, GCP, and Azure plugin sections |
+
+<!-- tested: pass -->
