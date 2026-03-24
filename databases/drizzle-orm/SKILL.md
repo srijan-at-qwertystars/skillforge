@@ -479,3 +479,4 @@ Use a real database per test suite via Testcontainers. Apply migrations with `pu
 - **[schema-template.ts](assets/schema-template.ts)** — Schema file with users, posts, tags, comments, many-to-many, self-referencing, soft-delete
 - **[db-client.ts](assets/db-client.ts)** — Database client setup for 11 driver variants (postgres-js, pg, Neon, Vercel, PlanetScale, mysql2, better-sqlite3, Turso, D1, Bun)
 - **[docker-compose.yml](assets/docker-compose.yml)** — Docker Compose for local Postgres 16 + pgAdmin
+<!-- tested: pass -->

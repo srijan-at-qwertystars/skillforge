@@ -485,3 +485,5 @@ nix fmt                                # Format        | nix flake check        
 - **`shell-template.nix`** — Configurable mkShell template with toggles for Node.js, Python, Rust, Go, C++. Import from your flake.
 - **`github-actions-nix.yml`** — GitHub Actions CI workflow with Nix + Cachix for flake check, build, and formatting.
 - **`.envrc`** — Annotated direnv config for automatic `nix develop` activation with caching notes.
+
+<!-- tested: pass -->

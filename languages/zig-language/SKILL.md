@@ -453,3 +453,4 @@ Templates and configs in `assets/`:
 - **[build.zig.zon](assets/build.zig.zon)** — Package manifest template with dependency examples (URL, git, local path).
 - **[main.zig](assets/main.zig)** — Starter main with arg parsing, file I/O, directory listing, logging, allocator setup with leak detection.
 - **[Dockerfile](assets/Dockerfile)** — Multi-stage Dockerfile for Zig development and CI (Alpine-based, multi-arch).
+<!-- tested: pass -->
