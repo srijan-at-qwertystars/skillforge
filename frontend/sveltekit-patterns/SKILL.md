@@ -483,3 +483,17 @@ SvelteKit forms work without JavaScript. `use:enhance` upgrades them to SPA-styl
 - Disable JS enhancement per-link: `<a data-sveltekit-reload>`
 - Disable preloading on sensitive links: `<a data-sveltekit-preload-data="off">`
 - Always handle the no-JS case in form actions — return data from actions, not just redirects
+
+## References (`references/`)
+- **`advanced-patterns.md`** — $state.raw/snapshot, fine-grained reactivity, class fields, param matchers, layout groups, breaking out of layouts, streaming, parallel loading, universal vs server load, tRPC, progressive enhancement, snapshots, service workers, page options, env vars, WebSocket/SSE
+- **`troubleshooting.md`** — Hydration mismatches, $state gotchas, form action redirect/return, load waterfalls, prerender errors, rune init errors, CORS, cookies, adapter issues (Vercel/Cloudflare/Node/Static), deployment, TypeScript errors, performance
+- **`migration-guide.md`** — Svelte 4→5 (stores→runes, $:→$derived/$effect, slots→snippets, events→callbacks), SvelteKit 1→2, React→SvelteKit, Next.js→SvelteKit
+
+## Scripts (`scripts/`, executable, self-contained with `--help`)
+- **`scaffold-sveltekit-project.sh`** — `./scaffold-sveltekit-project.sh my-app --template blog|saas|api --css tailwind|uno|vanilla --auth lucia|authjs|none`
+- **`sveltekit-route-generator.sh`** — `./sveltekit-route-generator.sh /blog/[slug] --layout --api --error --dry-run`
+
+## Assets (`assets/`, copy into projects)
+- **`svelte.config.js`** — Production config with aliases, CSP, prerender, adapter examples
+- **`hooks.server.ts`** — Auth, CSP/security headers, request logging, error handling via `sequence()`
+- **`+layout.server.ts`** — Root layout with user session pattern, protected route example

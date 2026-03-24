@@ -456,33 +456,18 @@ Optimize further:
 
 ## Docker Deployment
 
-Use the official `oven/bun` image. Multi-stage builds keep images small:
+Use the official `oven/bun` image. See [assets/Dockerfile](assets/Dockerfile) for a full multi-stage production template.
 
 ```dockerfile
-FROM oven/bun:1 AS base
+FROM oven/bun:1
 WORKDIR /app
-
-# Install dependencies
-FROM base AS install
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
-
-# Build (if needed)
-FROM base AS build
-COPY --from=install /app/node_modules ./node_modules
 COPY . .
-RUN bun build ./src/index.ts --outdir ./dist --target bun
-
-# Production
-FROM base AS release
-COPY --from=install /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
 USER bun
 EXPOSE 3000
-CMD ["bun", "run", "dist/index.js"]
+CMD ["bun", "run", "src/index.ts"]
 ```
-
-Use `--frozen-lockfile` in CI to ensure reproducible installs. Run as non-root `bun` user for security.
 
 ## Common Patterns and Best Practices
 
@@ -490,9 +475,25 @@ Use `--frozen-lockfile` in CI to ensure reproducible installs. Run as non-root `
 - **Scripts**: Define in `package.json`, run with `bun run <name>`. Faster than `npm run`.
 - **Executable scripts**: Use `#!/usr/bin/env bun` shebang for CLI tools.
 - **Monorepos**: Use `workspaces` in `package.json`. `bun install` links workspace packages.
-- **Migrate from Node.js**: Replace `node` with `bun`, `npm` with `bun`. Most code works unchanged.
+- **Migrate from Node.js**: Replace `node` with `bun`, `npm` with `bun`. See [migration guide](references/migration-guide.md).
 - **Error handling**: `Bun.serve()` supports `error(err)` handler for uncaught errors.
 - **Graceful shutdown**: Listen for `process.on("SIGTERM")` and call `server.stop()`.
-- **Type checking**: Bun transpiles TS but does not type-check. Run `tsc --noEmit` separately for type safety.
 - **Prefer `bun:` imports**: Use `bun:sqlite`, `bun:test`, `bun:ffi` for built-in modules.
 - **Use `bunfig.toml`** for project-level Bun configuration (test settings, plugins, install options).
+
+## References
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Bun.serve (WebSocket pub/sub, SSE, HTTP/2, graceful shutdown, clustering), Bun Shell deep dive, bundler plugins, Bun.build (tree shaking, code splitting, CSS), test runner advanced, bun:sqlite (transactions, FTS5, migrations), bun:ffi, Bun.password/CryptoHasher, S3 client, Semver API.
+- **[references/troubleshooting.md](references/troubleshooting.md)** — npm compatibility (native modules, node-gyp), Node.js API gaps, bundler vs runtime differences, TypeScript gotchas, lockfile conflicts, memory leaks, Docker optimization, CI/CD, Express migration pitfalls.
+- **[references/migration-guide.md](references/migration-guide.md)** — Node.js → Bun: npm→bun, npx→bunx, Jest→bun test, webpack→bun build, Express→Bun.serve/Hono/Elysia, fs→Bun.file, crypto→Bun.password, worker_threads→Web Workers, child_process→Bun.$, dotenv removal, tsconfig, Docker, step-by-step checklist.
+
+## Scripts
+
+- **[scripts/scaffold-bun-project.sh](scripts/scaffold-bun-project.sh)** — Scaffold a Bun project (`--type api|cli|library|fullstack`, `--framework hono|elysia|none`).
+- **[scripts/migrate-from-node.sh](scripts/migrate-from-node.sh)** — Analyze a Node.js project for Bun compatibility, generate migration checklist.
+- **[scripts/bun-benchmark.sh](scripts/bun-benchmark.sh)** — Benchmark Bun vs Node.js (startup, file I/O, JSON, crypto, HTTP, install).
+
+## Assets
+
+- **[assets/bunfig.toml](assets/bunfig.toml)** — Production-ready Bun configuration template.
+- **[assets/server.ts](assets/server.ts)** — Bun.serve template with WebSocket, static files, CORS, graceful shutdown.

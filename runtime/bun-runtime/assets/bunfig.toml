@@ -1,0 +1,72 @@
+# bunfig.toml — Production-ready Bun configuration
+# Docs: https://bun.sh/docs/runtime/bunfig
+
+# ─── Runtime ──────────────────────────────────────────────────────
+
+# Preload scripts (plugins, polyfills, setup)
+# preload = ["./src/preload.ts"]
+
+# Smol mode: reduces memory usage at cost of some performance
+# smol = true
+
+# JSX configuration (if not using tsconfig.json)
+# jsx = "react-jsx"
+# jsxImportSource = "react"
+
+# ─── Package Manager ─────────────────────────────────────────────
+
+[install]
+# Don't install peer dependencies automatically
+peer = false
+
+# Install optional dependencies
+optional = true
+
+# Use exact versions by default (like --save-exact)
+# exact = true
+
+# Lockfile format: "text" is human-readable (Bun 1.2+)
+# lockfile = "bun.lock"
+
+# Global install directory
+# globalDir = "~/.bun/install/global"
+
+# ─── Scoped Registries ───────────────────────────────────────────
+
+# [install.scopes]
+# "@myorg" = { token = "$NPM_TOKEN", url = "https://npm.pkg.github.com/" }
+# "@internal" = { token = "$INTERNAL_TOKEN", url = "https://registry.internal.com/" }
+
+# ─── Test Runner ──────────────────────────────────────────────────
+
+[test]
+# Enable code coverage
+coverage = true
+
+# Coverage threshold (0.0 to 1.0)
+coverageThreshold = 0.8
+
+# Don't count test files in coverage
+coverageSkipTestFiles = true
+
+# Preload for test environment (e.g., happy-dom for DOM testing)
+# preload = ["happy-dom"]
+
+# Default timeout per test (ms)
+# timeout = 5000
+
+# Bail after N failures (0 = no bail)
+# bail = 1
+
+# Ignore patterns for coverage
+# coverageIgnore = ["node_modules", "test", "**/*.test.ts", "**/*.spec.ts"]
+
+# ─── Bundler ──────────────────────────────────────────────────────
+
+# [bundle]
+# entrypoints = ["./src/index.ts"]
+# outdir = "./dist"
+# target = "bun"
+# minify = true
+# sourcemap = "external"
+# splitting = true

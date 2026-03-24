@@ -161,7 +161,6 @@ Add external IdPs under realm → Identity Providers. **Social login**: Built-in
 ## Authorization Services
 
 Enable on a client to use fine-grained authorization (UMA 2.0).
-
 **Resources** — Protected entities (APIs, files, UI elements). Each has a name, type, URI, and optional owner.
 
 **Scopes** — Actions on resources (e.g., `view`, `edit`, `delete`).
@@ -243,7 +242,6 @@ curl -X POST "https://auth.example.com/realms/my-realm/protocol/openid-connect/t
 ## Custom Themes
 
 Theme types: `login`, `account`, `admin`, `email`. Stored in `themes/` directory. Set `parent=keycloak.v2` in `theme.properties` to extend the default theme.
-
 ```
 themes/my-theme/login/
 ├── theme.properties       # parent=keycloak.v2, styles=css/styles.css
@@ -267,8 +265,6 @@ Override login page with FreeMarker:
 Mount custom themes via Docker volume or bake into the image.
 
 ## Custom SPIs
-
-### Custom Authenticator
 
 ```java
 public class MfaSmsAuthenticator implements Authenticator {
@@ -468,15 +464,14 @@ Set `KC_PROXY_HEADERS=xforwarded` on Keycloak when behind a reverse proxy.
 **Clustering** — Keycloak 25+ uses Infinispan for distributed caching (`KC_CACHE=ispn` default). Nodes discover via JGroups (UDP multicast default, TCP for cloud). **Database** — Use PostgreSQL with connection pooling. Configure `KC_DB_POOL_MIN_SIZE`/`KC_DB_POOL_MAX_SIZE`. **Session persistence** — Enable `--features=persistent-user-sessions` so sessions survive restarts. **Kubernetes** — Use Operator with `instances: 3+`, anti-affinity rules, shared DB, and external Infinispan for cross-site replication.
 
 ## Security Best Practices
-
-- **PKCE**: Enforce `S256` for all public clients. Set in client → Advanced → Proof Key for Code Exchange.
-- **Token rotation**: Enable refresh token rotation. Set short access token lifespans (5 min) and reasonable refresh token lifespans.
-- **Session management**: Configure session idle/max timeouts. Use `max-concurrent-sessions` to limit active sessions per user.
-- **Brute force protection**: Enable in realm → Security Defenses. Configure max login failures, wait time, and permanent lockout thresholds.
+- **PKCE**: Enforce `S256` for all public clients.
+- **Token rotation**: Enable refresh token rotation. Short access token lifespans (5 min).
+- **Session management**: Configure idle/max timeouts. Limit concurrent sessions per user.
+- **Brute force protection**: Enable in Security Defenses. Configure max failures and lockout.
 - **HTTPS only**: Set `KC_HOSTNAME_STRICT_HTTPS=true`. Never run production over HTTP.
-- **Content Security Policy**: Configure CSP headers for login pages to prevent XSS.
-- **Argon2 password hashing**: Default in KC 25+ (non-FIPS). Verify password policy includes sufficient Argon2 iterations and memory.
-- **Regular key rotation**: Rotate realm signing keys periodically. Keycloak supports multiple active keys for seamless rotation.
+- **Content Security Policy**: Configure CSP headers for login pages.
+- **Argon2 password hashing**: Default in KC 25+ (non-FIPS). Tune iterations and memory.
+- **Regular key rotation**: Rotate realm signing keys periodically.
 
 ## Monitoring & Auditing
 
@@ -485,3 +480,20 @@ Set `KC_PROXY_HEADERS=xforwarded` on Keycloak when behind a reverse proxy.
 **Prometheus metrics** — Enable with `KC_METRICS_ENABLED=true`. Scrape `/metrics`. Key metrics: `keycloak_logins`, `keycloak_failed_login_attempts`, `keycloak_registrations`, `keycloak_request_duration`.
 
 **Health checks** — Enable with `KC_HEALTH_ENABLED=true`. Endpoints: `/health/live`, `/health/ready`, `/health/started`. Use in Kubernetes liveness/readiness probes.
+
+## Reference Documentation
+
+- **`references/advanced-patterns.md`** — Custom authenticator/event listener/protocol mapper/user storage SPIs, custom REST endpoints, authorization services (policies, decision strategies), token exchange, fine-grained admin permissions, Organizations (KC 25+), Passkeys/WebAuthn.
+- **`references/troubleshooting.md`** — Token validation (clock skew, audience, issuer, JWKS), redirect URI mismatches, CORS, LDAP sync/pagination, sessions (sticky, distributed), DB migration, theme caching, TLS, reverse proxy, memory/CPU/Infinispan tuning.
+- **`references/integration-guide.md`** — Full code: Spring Boot 3, Node.js/Express, React SPA (react-oidc-context), Angular (angular-auth-oidc-client), Next.js (next-auth), Nginx/Apache proxy auth, Kong/APISIX, Kubernetes Ingress (oauth2-proxy), mobile PKCE (iOS/Android/React Native).
+
+## Helper Scripts
+
+- **`scripts/setup-keycloak.sh`** — Docker Compose setup (KC + PostgreSQL). `--import`, `--stop`, `--reset`.
+- **`scripts/keycloak-realm-export.sh`** — Export realm via Admin API, strips secrets. `--full`, `--strip-ids`.
+- **`scripts/keycloak-user-sync.sh`** — CSV user sync (create/update, groups/roles, `--dry-run`) or LDAP sync trigger.
+
+## Asset Templates
+
+- **`assets/docker-compose.yml`** — Production stack: health checks, resource limits, JVM tuning, optimized PostgreSQL.
+- **`assets/realm-export.json`** — Starter realm: SPA/API/confidential/mobile clients, roles, groups, scopes, security policies.
