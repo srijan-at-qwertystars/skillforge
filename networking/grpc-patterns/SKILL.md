@@ -482,3 +482,18 @@ Use `grpc_testing.server_from_dictionary` to create an in-process server. Call `
 - Use `buf lint` and `buf breaking` in CI to enforce schema quality.
 - Enable health checking and reflection on every production server.
 - Prefer `connect-go` when serving both gRPC and browser clients from one binary.
+
+## References
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Bidirectional streaming, gRPC-Gateway, Buf Schema Registry, proto versioning, custom resolvers, service mesh (Envoy/Istio), keepalives, retries, hedging, performance tuning.
+- **[Troubleshooting](references/troubleshooting.md)** — Connection refused, TLS errors, proto breaks, deadline exceeded, resource exhaustion, GOAWAY, L4/L7 LB issues, gRPC-Web proxy, codegen conflicts, channelz profiling.
+- **[API Reference](references/api-reference.md)** — All 17 status codes, well-known types, service patterns (health/reflection/channelz), protoc and buf CLI commands.
+## Scripts
+
+- **[generate-proto.sh](scripts/generate-proto.sh)** — Multi-language codegen (Go, Node, Python, Java) with gRPC-Gateway and buf mode. Run: `./scripts/generate-proto.sh --lang go --proto-dir proto --out-dir gen/go`
+- **[test-service.sh](scripts/test-service.sh)** — Test via grpcurl: list, describe, call, health. Run: `./scripts/test-service.sh call orders.v1.OrderService/CreateOrder '{"customer_id":"c1"}'`
+## Assets
+
+- **[service.proto](assets/service.proto)** — Proto3 template: messages, enums, oneofs, maps, all four RPC types, pagination, FieldMask.
+- **[buf.yaml](assets/buf.yaml)** — Buf config with lint rules, FILE-level breaking change detection, and deps.
+- **[grpc-server.go](assets/grpc-server.go)** — Go server: interceptors, health check, reflection, channelz, keepalive, graceful shutdown.

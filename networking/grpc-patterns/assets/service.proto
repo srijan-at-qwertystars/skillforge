@@ -1,0 +1,192 @@
+// Proto3 service template — complete example with all RPC types.
+//
+// Customize: replace "orders" with your domain, update messages and RPCs.
+// Run: buf generate   or   protoc --go_out=. --go-grpc_out=. service.proto
+
+syntax = "proto3";
+
+package orders.v1;
+
+option go_package = "github.com/myorg/myservice/gen/go/orders/v1;ordersv1";
+option java_package = "com.myorg.myservice.orders.v1";
+option java_multiple_files = true;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
+
+// ---------- Enums ----------
+
+// OrderStatus represents the lifecycle of an order.
+// Always start with _UNSPECIFIED = 0.
+enum OrderStatus {
+  ORDER_STATUS_UNSPECIFIED = 0;
+  ORDER_STATUS_PENDING     = 1;
+  ORDER_STATUS_CONFIRMED   = 2;
+  ORDER_STATUS_PROCESSING  = 3;
+  ORDER_STATUS_SHIPPED     = 4;
+  ORDER_STATUS_DELIVERED    = 5;
+  ORDER_STATUS_CANCELLED   = 6;
+}
+
+// ---------- Messages ----------
+
+// Order is the core domain entity.
+message Order {
+  string id = 1;
+  string customer_id = 2;
+  repeated LineItem items = 3;
+  OrderStatus status = 4;
+  map<string, string> metadata = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  google.protobuf.StringValue notes = 8;  // nullable string
+
+  // Reserved fields prevent reuse of deleted field numbers/names.
+  reserved 15, 16;
+  reserved "legacy_field";
+}
+
+// LineItem represents a single product line in an order.
+message LineItem {
+  string product_id = 1;
+  string product_name = 2;
+  int32 quantity = 3;
+  // Price in smallest currency unit (e.g., cents).
+  int64 price_cents = 4;
+}
+
+// Payment demonstrates oneof for polymorphic fields.
+message Payment {
+  string order_id = 1;
+  int64 amount_cents = 2;
+  string currency = 3;  // ISO 4217
+
+  oneof method {
+    CreditCard credit_card = 10;
+    BankTransfer bank_transfer = 11;
+    DigitalWallet digital_wallet = 12;
+  }
+}
+
+message CreditCard {
+  string last_four = 1;
+  string brand = 2;  // visa, mastercard, etc.
+  int32 exp_month = 3;
+  int32 exp_year = 4;
+}
+
+message BankTransfer {
+  string bank_name = 1;
+  string routing_number = 2;
+  string account_last_four = 3;
+}
+
+message DigitalWallet {
+  string provider = 1;  // apple_pay, google_pay, etc.
+  string wallet_id = 2;
+}
+
+// ---------- Request / Response Messages ----------
+// Per-RPC request/response types allow independent evolution.
+
+// Unary: CreateOrder
+message CreateOrderRequest {
+  string customer_id = 1;
+  repeated LineItem items = 2;
+  map<string, string> metadata = 3;
+}
+
+message CreateOrderResponse {
+  Order order = 1;
+}
+
+// Unary: GetOrder
+message GetOrderRequest {
+  string order_id = 1;
+}
+
+// Unary: UpdateOrder (with FieldMask for partial updates)
+message UpdateOrderRequest {
+  Order order = 1;
+  google.protobuf.FieldMask update_mask = 2;
+}
+
+// Unary: DeleteOrder
+message DeleteOrderRequest {
+  string order_id = 1;
+}
+
+// Unary: ListOrders (with pagination)
+message ListOrdersRequest {
+  string customer_id = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+  OrderStatus status_filter = 4;
+}
+
+message ListOrdersResponse {
+  repeated Order orders = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+// Server streaming: WatchOrderStatus
+message WatchOrderStatusRequest {
+  string order_id = 1;
+}
+
+message OrderStatusUpdate {
+  string order_id = 1;
+  OrderStatus previous_status = 2;
+  OrderStatus current_status = 3;
+  google.protobuf.Timestamp changed_at = 4;
+  string reason = 5;
+}
+
+// Client streaming: BatchCreateOrders
+message BatchCreateOrdersResponse {
+  int32 created_count = 1;
+  int32 failed_count = 2;
+  repeated string created_ids = 3;
+}
+
+// Bidirectional streaming: OrderChat (support/tracking)
+message OrderChatMessage {
+  string order_id = 1;
+  string sender_id = 2;
+  string content = 3;
+  google.protobuf.Timestamp sent_at = 4;
+  bool is_system_message = 5;
+}
+
+// ---------- Service Definition ----------
+
+// OrderService demonstrates all four RPC patterns.
+service OrderService {
+  // Unary RPC — create a new order.
+  rpc CreateOrder(CreateOrderRequest) returns (CreateOrderResponse);
+
+  // Unary RPC — get an order by ID.
+  rpc GetOrder(GetOrderRequest) returns (Order);
+
+  // Unary RPC — partial update using FieldMask.
+  rpc UpdateOrder(UpdateOrderRequest) returns (Order);
+
+  // Unary RPC — delete an order.
+  rpc DeleteOrder(DeleteOrderRequest) returns (google.protobuf.Empty);
+
+  // Unary RPC — list orders with pagination.
+  rpc ListOrders(ListOrdersRequest) returns (ListOrdersResponse);
+
+  // Server streaming RPC — watch for status changes.
+  rpc WatchOrderStatus(WatchOrderStatusRequest) returns (stream OrderStatusUpdate);
+
+  // Client streaming RPC — batch create multiple orders.
+  rpc BatchCreateOrders(stream CreateOrderRequest) returns (BatchCreateOrdersResponse);
+
+  // Bidirectional streaming RPC — real-time chat about an order.
+  rpc OrderChat(stream OrderChatMessage) returns (stream OrderChatMessage);
+}

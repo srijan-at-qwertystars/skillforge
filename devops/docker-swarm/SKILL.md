@@ -429,3 +429,61 @@ If quorum is lost (majority of managers down), the cluster becomes read-only. Re
 6. Verify DNS resolution between services on overlay.
 7. `docker node inspect --pretty <NODE>` — resource availability.
 8. `journalctl -u docker` on affected nodes — daemon logs.
+
+## References
+
+In-depth guides in the `references/` directory:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Blue-green deployments, canary releases, multi-stack architectures, global services for monitoring agents, configs/secrets rotation patterns, overlay network segmentation, Swarm + Traefik/Nginx reverse proxy, resource reservation vs limits, logging drivers (fluentd, GELF, syslog), and Swarm vs Kubernetes decision matrix.
+- **[Troubleshooting](references/troubleshooting.md)** — Services not scheduling, image pull failures, overlay network connectivity, DNS resolution failures, split-brain with even managers, certificate rotation failures, volume mount issues across nodes, log driver failures, ingress network congestion, stuck tasks, and disaster recovery procedures.
+
+## Scripts
+
+Ready-to-use operational scripts in `scripts/` (all executable):
+
+| Script | Purpose |
+|--------|---------|
+| [`init-swarm.sh`](scripts/init-swarm.sh) | Initialize a Swarm cluster: create manager, join workers via SSH, configure autolock, set cert expiry, create overlay network |
+| [`deploy-stack.sh`](scripts/deploy-stack.sh) | Deploy a stack with pre-flight checks: image availability, network existence, secret creation, port conflicts, convergence wait |
+| [`health-check.sh`](scripts/health-check.sh) | Cluster health check: node status, quorum, service replicas, task states, network connectivity, certificate expiry, disk usage |
+
+### Quick usage
+
+```bash
+# Initialize a 3-node cluster
+./scripts/init-swarm.sh --advertise-addr 10.0.1.1 --workers 10.0.1.2,10.0.1.3 --autolock
+
+# Deploy with pre-flight checks
+./scripts/deploy-stack.sh -f docker-compose.yml -n myapp --with-registry-auth --create-networks
+
+# Run health check
+./scripts/health-check.sh
+./scripts/health-check.sh --quiet            # failures/warnings only
+./scripts/health-check.sh --cert-warn 14     # warn if certs expire within 14 days
+```
+
+## Assets
+
+Production-ready stack templates in `assets/`:
+
+| Template | Description |
+|----------|-------------|
+| [`docker-stack.yml`](assets/docker-stack.yml) | Full stack: Nginx reverse proxy, web app, PostgreSQL, Redis, Prometheus, Node Exporter (global), Grafana — with secrets, configs, health checks, resource limits, and rolling update configuration |
+| [`traefik-stack.yml`](assets/traefik-stack.yml) | Traefik v3 reverse proxy: automatic Let's Encrypt SSL, Swarm service discovery, dashboard with basic auth, security headers, rate limiting, compression, Prometheus metrics endpoint |
+
+### Deploying with assets
+
+```bash
+# Create prerequisites
+docker network create --driver overlay --attachable frontend
+docker network create --driver overlay --internal backend
+docker network create --driver overlay monitoring
+echo "db-pass" | docker secret create db_password -
+
+# Deploy production stack
+docker stack deploy -c assets/docker-stack.yml myapp
+
+# Deploy Traefik ingress
+docker network create --driver overlay --attachable traefik-public
+docker stack deploy -c assets/traefik-stack.yml traefik
+```

@@ -1,0 +1,40 @@
+# buf.yaml — Buf module configuration
+# Docs: https://buf.build/docs/configuration/v2/buf-yaml
+version: v2
+
+modules:
+  - path: proto
+    # Replace with your BSR module name when publishing
+    # name: buf.build/myorg/myservice
+
+# Dependencies — well-known types and common protos
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+
+# Lint rules enforce proto style and API design best practices.
+lint:
+  use:
+    - STANDARD       # All standard lint rules
+  except:
+    # Uncomment to relax rules as needed:
+    # - PACKAGE_VERSION_SUFFIX    # Requires .v1 suffix on packages
+    # - RPC_REQUEST_RESPONSE_UNIQUE  # Allows shared request/response types
+  enum_zero_value_suffix: _UNSPECIFIED
+  rpc_allow_same_request_response: false
+  rpc_allow_google_protobuf_empty_requests: true
+  rpc_allow_google_protobuf_empty_responses: true
+  # Ignore generated files
+  ignore:
+    - gen
+
+# Breaking change detection prevents accidentally breaking API contracts.
+breaking:
+  use:
+    - FILE           # Check at file level (strictest)
+  # Alternatives:
+  #   - PACKAGE      # Check at package level
+  #   - WIRE_JSON    # Only check wire + JSON compatibility
+  #   - WIRE         # Only check wire format compatibility
+  ignore:
+    - gen

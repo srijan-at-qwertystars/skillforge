@@ -351,3 +351,32 @@ spring:
 - **coreos/go-oidc**: OIDC token verification and provider discovery.
 
 Select libraries that are actively maintained, support PKCE, and handle token refresh automatically. Avoid writing custom OAuth flows from scratch.
+
+## References
+
+Detailed deep-dive guides for advanced topics:
+
+| Reference | Description |
+|-----------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Token introspection, token exchange (RFC 8693), DPoP, PAR, RAR, CIBA, device authorization deep dive, federated identity, multi-tenant OAuth, and microservices patterns (token relay, service-to-service auth) |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Debugging common OAuth2 issues: redirect URI mismatches, CORS errors, token expiry, PKCE failures, state validation, clock skew, refresh token rotation, third-party cookie blocking, mobile deep links, and debugging tools |
+| [`references/provider-guide.md`](references/provider-guide.md) | Integration guides for Google, GitHub, Microsoft/Azure AD, Auth0, Okta, Keycloak, and AWS Cognito — discovery URLs, required scopes, token endpoint config, and provider-specific gotchas |
+
+## Scripts
+
+Utility scripts for testing and development:
+
+| Script | Description |
+|--------|-------------|
+| [`scripts/generate-pkce.sh`](scripts/generate-pkce.sh) | Generate a PKCE code verifier and S256 challenge pair. Usage: `./scripts/generate-pkce.sh` (random) or `./scripts/generate-pkce.sh <verifier>` (compute challenge for a given verifier) |
+| [`scripts/test-oauth-flow.sh`](scripts/test-oauth-flow.sh) | End-to-end OAuth2 authorization code flow test: starts a local callback server, opens the browser, captures the code, exchanges for tokens, and displays results. Usage: `./scripts/test-oauth-flow.sh --auth-url URL --token-url URL --client-id ID` |
+
+## Assets
+
+Reusable code templates — copy into your project and customize:
+
+| Asset | Description |
+|-------|-------------|
+| [`assets/oauth-middleware.ts`](assets/oauth-middleware.ts) | Express/Node middleware for JWT access token validation with JWKS auto-discovery, key caching with rotation, and scope-based authorization |
+| [`assets/oauth-client.ts`](assets/oauth-client.ts) | TypeScript OAuth2 client with PKCE (S256), OIDC discovery, automatic token refresh with mutex, configurable token storage, and typed OAuth errors |
+| [`assets/nextauth-config.ts`](assets/nextauth-config.ts) | NextAuth.js configuration template with Google, GitHub, Azure AD, Auth0, Okta, and Keycloak providers — includes JWT callbacks with token refresh and session management |
