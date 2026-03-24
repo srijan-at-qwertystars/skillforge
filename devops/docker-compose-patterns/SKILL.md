@@ -491,3 +491,5 @@ secrets: { db_password: { file: ./secrets/db_password.txt } }
 - `ci-compose.yaml` — CI/CD: tmpfs-backed DB, fast healthchecks, exit code propagation
 - `monitoring-compose.yaml` — Prometheus + Grafana + cAdvisor + node-exporter + alertmanager
 - `.env.example` — documented environment variable template
+
+<!-- tested: pass -->

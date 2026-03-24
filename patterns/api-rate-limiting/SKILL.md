@@ -493,3 +493,5 @@ def request_with_retry(client, method, path, max_retries=5, **kw):
 **Scripts:** `scripts/redis-rate-limit.sh` (load Lua scripts, test token bucket/sliding window/race conditions) · `scripts/benchmark-algorithms.sh` (benchmark accuracy vs speed vs memory) · `scripts/check-headers.sh` (audit RateLimit-*/Retry-After headers)
 
 **Assets:** `assets/token-bucket.lua` · `assets/sliding-window.lua` (production Redis Lua scripts) · `assets/express-middleware.ts` (Express + Redis + tiered limits + fail-open) · `assets/nginx-rate-limit.conf` (per-IP/per-key zones, burst, 429 page) · `assets/kong-rate-limit.yaml` (per-consumer tiers, per-route, Redis backend)
+
+<!-- tested: pass -->
