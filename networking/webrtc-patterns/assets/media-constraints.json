@@ -1,0 +1,246 @@
+{
+  "presets": {
+    "hd-video-call": {
+      "description": "720p HD video call — balanced quality and bandwidth",
+      "audio": {
+        "echoCancellation": true,
+        "noiseSuppression": true,
+        "autoGainControl": true,
+        "channelCount": 1,
+        "sampleRate": 48000
+      },
+      "video": {
+        "width": { "ideal": 1280, "min": 640, "max": 1920 },
+        "height": { "ideal": 720, "min": 360, "max": 1080 },
+        "frameRate": { "ideal": 30, "max": 30 },
+        "facingMode": "user"
+      }
+    },
+
+    "full-hd-video-call": {
+      "description": "1080p Full HD — high bandwidth, best quality",
+      "audio": {
+        "echoCancellation": true,
+        "noiseSuppression": true,
+        "autoGainControl": true,
+        "channelCount": 1,
+        "sampleRate": 48000
+      },
+      "video": {
+        "width": { "ideal": 1920, "min": 1280, "max": 1920 },
+        "height": { "ideal": 1080, "min": 720, "max": 1080 },
+        "frameRate": { "ideal": 30, "max": 60 },
+        "facingMode": "user"
+      }
+    },
+
+    "sd-video-call": {
+      "description": "480p SD video call — low bandwidth, mobile-friendly",
+      "audio": {
+        "echoCancellation": true,
+        "noiseSuppression": true,
+        "autoGainControl": true,
+        "channelCount": 1,
+        "sampleRate": 48000
+      },
+      "video": {
+        "width": { "ideal": 640, "min": 320, "max": 854 },
+        "height": { "ideal": 480, "min": 240, "max": 480 },
+        "frameRate": { "ideal": 24, "max": 30 },
+        "facingMode": "user"
+      }
+    },
+
+    "low-bandwidth": {
+      "description": "Minimal video for very poor connections (EDGE/2G)",
+      "audio": {
+        "echoCancellation": true,
+        "noiseSuppression": true,
+        "autoGainControl": true,
+        "channelCount": 1,
+        "sampleRate": 16000
+      },
+      "video": {
+        "width": { "ideal": 320, "max": 640 },
+        "height": { "ideal": 240, "max": 480 },
+        "frameRate": { "ideal": 15, "max": 15 }
+      }
+    },
+
+    "audio-only": {
+      "description": "Audio-only call — no video captured",
+      "audio": {
+        "echoCancellation": true,
+        "noiseSuppression": true,
+        "autoGainControl": true,
+        "channelCount": 1,
+        "sampleRate": 48000
+      },
+      "video": false
+    },
+
+    "high-quality-audio": {
+      "description": "High-fidelity stereo audio — music/podcast use",
+      "audio": {
+        "echoCancellation": false,
+        "noiseSuppression": false,
+        "autoGainControl": false,
+        "channelCount": 2,
+        "sampleRate": 48000,
+        "latency": { "ideal": 0.01 }
+      },
+      "video": false
+    },
+
+    "screen-share": {
+      "description": "Screen sharing — high resolution, lower framerate",
+      "video": {
+        "cursor": "always",
+        "displaySurface": "monitor",
+        "width": { "ideal": 1920, "max": 3840 },
+        "height": { "ideal": 1080, "max": 2160 },
+        "frameRate": { "ideal": 15, "max": 30 }
+      },
+      "audio": false,
+      "selfBrowserSurface": "exclude",
+      "systemAudio": "exclude"
+    },
+
+    "screen-share-with-audio": {
+      "description": "Screen sharing with system audio (Chrome only)",
+      "video": {
+        "cursor": "always",
+        "displaySurface": "monitor",
+        "width": { "ideal": 1920, "max": 3840 },
+        "height": { "ideal": 1080, "max": 2160 },
+        "frameRate": { "ideal": 15, "max": 30 }
+      },
+      "audio": true,
+      "selfBrowserSurface": "exclude",
+      "systemAudio": "include"
+    },
+
+    "screen-share-presentation": {
+      "description": "Screen share optimized for slides/documents",
+      "video": {
+        "cursor": "always",
+        "displaySurface": "monitor",
+        "width": { "ideal": 1920, "max": 1920 },
+        "height": { "ideal": 1080, "max": 1080 },
+        "frameRate": { "ideal": 5, "max": 10 }
+      },
+      "audio": false,
+      "selfBrowserSurface": "exclude"
+    },
+
+    "rear-camera": {
+      "description": "Rear-facing camera — mobile document/environment capture",
+      "audio": {
+        "echoCancellation": true,
+        "noiseSuppression": true,
+        "autoGainControl": true
+      },
+      "video": {
+        "width": { "ideal": 1280, "max": 1920 },
+        "height": { "ideal": 720, "max": 1080 },
+        "frameRate": { "ideal": 30 },
+        "facingMode": { "exact": "environment" }
+      }
+    },
+
+    "group-call-participant": {
+      "description": "Optimized for group calls with many participants (SFU)",
+      "audio": {
+        "echoCancellation": true,
+        "noiseSuppression": true,
+        "autoGainControl": true,
+        "channelCount": 1,
+        "sampleRate": 48000
+      },
+      "video": {
+        "width": { "ideal": 640, "max": 1280 },
+        "height": { "ideal": 360, "max": 720 },
+        "frameRate": { "ideal": 24, "max": 30 },
+        "facingMode": "user"
+      }
+    }
+  },
+
+  "encoding_presets": {
+    "simulcast-standard": {
+      "description": "Standard 3-layer simulcast for SFU deployments",
+      "encodings": [
+        { "rid": "q", "maxBitrate": 150000, "scaleResolutionDownBy": 4, "maxFramerate": 15 },
+        { "rid": "h", "maxBitrate": 500000, "scaleResolutionDownBy": 2, "maxFramerate": 30 },
+        { "rid": "f", "maxBitrate": 2500000, "scaleResolutionDownBy": 1, "maxFramerate": 30 }
+      ]
+    },
+
+    "simulcast-low-bandwidth": {
+      "description": "2-layer simulcast for constrained networks",
+      "encodings": [
+        { "rid": "low", "maxBitrate": 100000, "scaleResolutionDownBy": 4, "maxFramerate": 15 },
+        { "rid": "high", "maxBitrate": 700000, "scaleResolutionDownBy": 1, "maxFramerate": 30 }
+      ]
+    },
+
+    "screen-share-encoding": {
+      "description": "Encoding for screen sharing — high resolution, low framerate",
+      "encodings": [
+        { "maxBitrate": 3000000, "maxFramerate": 15 }
+      ]
+    },
+
+    "svc-vp9": {
+      "description": "VP9 SVC with 3 spatial and 3 temporal layers",
+      "encodings": [
+        { "scalabilityMode": "L3T3", "maxBitrate": 2500000 }
+      ]
+    }
+  },
+
+  "codec_preferences": {
+    "prefer-vp9": ["video/VP9", "video/VP8", "video/H264"],
+    "prefer-h264": ["video/H264", "video/VP9", "video/VP8"],
+    "prefer-av1": ["video/AV1", "video/VP9", "video/H264", "video/VP8"],
+    "prefer-opus": ["audio/opus"]
+  },
+
+  "ice_server_presets": {
+    "google-stun-only": {
+      "description": "Google public STUN servers (free, no relay)",
+      "iceServers": [
+        { "urls": "stun:stun.l.google.com:19302" },
+        { "urls": "stun:stun1.l.google.com:19302" }
+      ]
+    },
+
+    "with-turn-template": {
+      "description": "Template with TURN server — replace credentials",
+      "iceServers": [
+        { "urls": "stun:stun.l.google.com:19302" },
+        {
+          "urls": [
+            "turn:turn.example.com:3478?transport=udp",
+            "turn:turn.example.com:3478?transport=tcp",
+            "turns:turn.example.com:443?transport=tcp"
+          ],
+          "username": "REPLACE_WITH_USERNAME",
+          "credential": "REPLACE_WITH_CREDENTIAL"
+        }
+      ]
+    },
+
+    "relay-only": {
+      "description": "Force TURN relay — for testing or restrictive firewalls",
+      "iceServers": [
+        {
+          "urls": "turn:turn.example.com:3478",
+          "username": "REPLACE_WITH_USERNAME",
+          "credential": "REPLACE_WITH_CREDENTIAL"
+        }
+      ],
+      "iceTransportPolicy": "relay"
+    }
+  }
+}

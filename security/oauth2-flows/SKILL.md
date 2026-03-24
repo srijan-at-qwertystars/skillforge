@@ -1,13 +1,22 @@
 ---
 name: oauth2-flows
 description: >
-  Guide for implementing OAuth 2.0/2.1 and OpenID Connect flows. Use when user mentions
-  "OAuth 2.0", "OAuth 2.1", "OIDC", "OpenID Connect", "authorization code flow", "PKCE",
-  "client credentials", "refresh token", "JWT bearer", "token exchange", "device code flow",
-  "DPoP", "PAR", "pushed authorization", "OIDC discovery", "userinfo endpoint",
-  "scope design", "token rotation", "authorization server", or asks about integrating
-  Google/GitHub/Auth0/Keycloak OAuth. NOT for basic auth, API key auth, session-based auth
-  without OAuth, SAML, LDAP, Kerberos, or general password hashing.
+  Comprehensive guide for implementing OAuth 2.0/2.1 and OpenID Connect flows, including
+  advanced patterns (token exchange, DPoP, PAR, RAR, JAR, mTLS, GNAP), provider integration
+  (Google, GitHub, Microsoft Entra ID, Auth0, Keycloak, Okta), troubleshooting, and secure
+  token storage. Includes ready-to-use scripts and code templates.
+
+  Use when user mentions "OAuth 2.0", "OAuth 2.1", "OIDC", "OpenID Connect",
+  "authorization code flow", "PKCE", "client credentials", "refresh token", "JWT bearer",
+  "token exchange", "device code flow", "DPoP", "PAR", "pushed authorization",
+  "OIDC discovery", "userinfo endpoint", "scope design", "token rotation",
+  "authorization server", "step-up authentication", "token introspection", "GNAP",
+  "mTLS client auth", "rich authorization requests", "FAPI", or asks about integrating
+  Google/GitHub/Auth0/Keycloak/Okta/Microsoft Entra OAuth. Also use for OAuth debugging,
+  token storage best practices, or OIDC provider configuration.
+
+  NOT for basic auth, API key auth, session-based auth without OAuth, SAML, LDAP,
+  Kerberos, or general password hashing.
 ---
 
 # OAuth 2.0 / 2.1 & OpenID Connect Flows
@@ -296,6 +305,68 @@ Response: `{ "request_uri": "urn:ietf:params:oauth:request_uri:abc123", "expires
 Then redirect: `GET /authorize?client_id=CLIENT_ID&request_uri=urn:ietf:params:oauth:request_uri:abc123`
 
 **Benefits:** Prevents parameter tampering, avoids URL length limits, keeps sensitive params off the front-channel.
+
+## Reference Guides
+
+Detailed deep-dive documents in `references/`:
+
+### `references/advanced-patterns.md`
+Advanced OAuth 2.0/OIDC specifications and patterns:
+- **Token Exchange (RFC 8693)** — Delegation, impersonation, cross-service token exchange
+- **DPoP (RFC 9449)** — Sender-constrained tokens with proof-of-possession
+- **PAR (RFC 9126)** — Pushed Authorization Requests for tamper-proof auth params
+- **RAR (RFC 9396)** — Rich Authorization Requests with structured JSON (Open Banking)
+- **GNAP (RFC 9635)** — Next-generation authorization protocol overview
+- **mTLS Client Auth (RFC 8705)** — Certificate-based client authentication
+- **JAR (RFC 9101)** — JWT-Secured Authorization Requests
+- **Step-Up Authentication (RFC 9470)** — Dynamic authentication level escalation
+- **Token Introspection (RFC 7662)** — Opaque token validation
+- **Token Revocation (RFC 7009)** — Token invalidation and cascading
+- **FAPI 2.0 / Healthcare / IoT** — Combined pattern profiles
+
+### `references/troubleshooting.md`
+Debugging guide for common OAuth/OIDC failures:
+- Error codes deep-dive (`invalid_grant`, `invalid_client`, redirect URI mismatch)
+- CORS issues with token endpoints and the BFF solution
+- Token expiry races and refresh deduplication patterns
+- JWT debugging techniques and JWKS caching strategies
+- **Provider-specific quirks**: Google refresh token limits, GitHub non-OIDC behavior, Auth0 audience requirement, Microsoft AADSTS errors, Keycloak config, Okta authorization servers
+- **Security vulnerabilities**: Authorization code injection, token leakage vectors, open redirectors, PKCE downgrade, token replay
+
+### `references/provider-integration.md`
+Step-by-step integration guides for 6 providers:
+- **Google** — OAuth consent screen, refresh token caveats, incremental auth
+- **GitHub** — OAuth Apps vs GitHub Apps, non-OIDC workarounds, scope format
+- **Microsoft Entra ID** — Tenant types, Graph API scopes, Conditional Access
+- **Auth0** — Audience parameter, Actions, custom domains, Organizations
+- **Keycloak** — Realm config, role mappers, identity brokering, admin API
+- **Okta** — Org vs Custom authorization servers, inline hooks, access policies
+- **Cross-provider patterns** — User normalization, account linking, multi-provider config
+
+## Scripts
+
+Executable utilities in `scripts/`:
+
+### `scripts/generate-pkce.sh`
+Generate PKCE `code_verifier` and `code_challenge` (S256). Supports `--json` and `--env` output formats.
+
+### `scripts/decode-jwt.sh`
+Decode and pretty-print JWT tokens. Supports `--header`, `--payload`, `--verify` modes with expiry checking.
+
+### `scripts/oauth2-test-flow.py`
+Interactive Python script to test OAuth2 Authorization Code + PKCE flows locally. Starts a temporary HTTP server, opens the browser, handles the callback, and displays tokens. No external dependencies.
+
+## Assets
+
+Reusable code templates and configurations in `assets/`:
+
+| File | Description |
+|------|-------------|
+| `express-oauth2-middleware.js` | Express.js middleware with Passport for Google, GitHub, generic OIDC |
+| `fastapi-oauth2.py` | FastAPI dependency injection for JWT validation, scope/role enforcement |
+| `oidc-discovery-template.json` | Example `.well-known/openid-configuration` with all standard fields |
+| `token-storage-patterns.md` | Secure token storage: web (HttpOnly/BFF), mobile (Keychain/Keystore), SPA (in-memory) |
+| `nginx-oauth2-proxy.conf` | Nginx reverse proxy with oauth2-proxy auth_request integration |
 
 ## Examples
 

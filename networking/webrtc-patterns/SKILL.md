@@ -4,13 +4,18 @@ description: >
   Expert guidance for building WebRTC applications including RTCPeerConnection setup,
   signaling server patterns, ICE/STUN/TURN configuration, SDP offer/answer negotiation,
   media track constraints, data channels, screen sharing, recording with MediaRecorder,
-  and architecture selection (SFU vs mesh vs MCU). Covers adapter.js compatibility,
-  error handling, reconnection strategies, and performance optimization.
+  architecture selection (SFU vs mesh vs MCU), and advanced patterns like simulcast,
+  SVC, bandwidth estimation, congestion control, insertable streams, and end-to-end
+  encryption. Includes production-ready signaling server implementations, TURN server
+  deployment, troubleshooting guides, and SFU integration (Janus, mediasoup, Pion).
   Triggers: WebRTC, peer connection, RTCPeerConnection, getUserMedia, ICE candidate,
   STUN/TURN, SDP offer/answer, media streaming peer-to-peer, data channel, screen sharing,
   getDisplayMedia, MediaRecorder WebRTC, signaling server, peer-to-peer video call,
   RTCDataChannel, RTCSessionDescription, addTrack, ontrack, icecandidate event,
-  SRTP, DTLS, simulcast, SFU architecture, mesh topology WebRTC.
+  SRTP, DTLS, simulcast, SFU architecture, mesh topology WebRTC, coturn, mediasoup,
+  Janus, Pion, ICE restart, bandwidth estimation, congestion control, E2EE WebRTC,
+  insertable streams, encoded transform, WebRTC getStats, WebRTC troubleshooting,
+  TURN server setup, WebRTC certificate, WebRTC nginx, scalable video coding, SVC.
   NOT for: HLS/DASH streaming, server-side video processing, FFmpeg encoding,
   WebSocket-only communication, general HTTP streaming, media server transcoding
   without WebRTC, or plain video element playback.
@@ -377,3 +382,35 @@ pc.ondatachannel = (e) => {
   };
 };
 ```
+
+## References
+
+In-depth guides in `references/`:
+
+| File | Topics |
+|------|--------|
+| [`advanced-patterns.md`](references/advanced-patterns.md) | Simulcast, SVC, bandwidth estimation, congestion control, insertable streams (Encoded Transform), E2EE, Janus/mediasoup/Pion integration, codec negotiation, cascaded SFU topology |
+| [`troubleshooting.md`](references/troubleshooting.md) | ICE failures, STUN/TURN diagnostics, firewall traversal, NAT types, certificate errors, getStats() analysis, OTEL instrumentation, Safari/Firefox/Chrome quirks, common failure patterns |
+| [`signaling-servers.md`](references/signaling-servers.md) | WebSocket signaling, Socket.IO patterns, HTTP polling fallback, room management, SFU signaling protocols (mediasoup/Janus/LiveKit), scaling with Redis, Kubernetes deployment, security |
+
+## Scripts
+
+Automation scripts in `scripts/` (all executable):
+
+| Script | Purpose |
+|--------|---------|
+| [`setup-coturn.sh`](scripts/setup-coturn.sh) | Install and configure coturn TURN server with TLS, firewall rules, and ephemeral credentials |
+| [`webrtc-stats-monitor.js`](scripts/webrtc-stats-monitor.js) | Node.js tool to parse and display WebRTC getStats() — file mode or live HTTP receiver |
+| [`generate-certificates.sh`](scripts/generate-certificates.sh) | Generate self-signed TLS certificates for local WebRTC development (optional local CA) |
+
+## Assets
+
+Production-ready templates in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [`signaling-server.js`](assets/signaling-server.js) | Complete WebSocket signaling server with room management, heartbeat, and optional JWT auth |
+| [`peer-connection-template.js`](assets/peer-connection-template.js) | Copy-paste `PeerConnectionManager` class with ICE restart, candidate queueing, stats |
+| [`media-constraints.json`](assets/media-constraints.json) | Presets for HD/SD/audio-only/screen-share constraints, simulcast encodings, codec prefs, ICE configs |
+| [`coturn-config.conf`](assets/coturn-config.conf) | Production coturn configuration template with security hardening and documentation |
+| [`nginx-webrtc.conf`](assets/nginx-webrtc.conf) | Nginx config for HTTPS + WebSocket proxy, sticky sessions, security headers, TURN TLS proxy |

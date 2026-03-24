@@ -1,14 +1,19 @@
 ---
 name: terraform-modules
 description: >
-  Guide for authoring, composing, versioning, testing, and publishing reusable
-  Terraform modules using HCL. Triggers on: "terraform module", "tf module
-  composition", "terraform registry", "module versioning", "terraform
-  workspaces", "terraform state management", "terratest", "terraform test",
-  "module inputs outputs", "terraform remote module", "terraform CI/CD",
-  "terraform provider configuration", "HCL module pattern".
-  NOT for Pulumi, CloudFormation, CDK, Ansible, or general cloud provider
-  questions unrelated to Terraform module design.
+  Comprehensive guide for authoring, composing, versioning, testing, and
+  publishing reusable Terraform modules using HCL. Covers module structure,
+  variable design, composition patterns, provider aliasing, state management,
+  CI/CD pipelines, and registry publishing. Includes scripts for scaffolding,
+  validation, and publishing, plus references for advanced patterns,
+  troubleshooting, and testing.
+  Triggers on: "terraform module", "tf module composition", "terraform
+  registry", "module versioning", "terraform workspaces", "terraform state
+  management", "terratest", "terraform test", "module inputs outputs",
+  "terraform remote module", "terraform CI/CD", "terraform provider
+  configuration", "HCL module pattern", "terraform troubleshooting",
+  "terraform import", "terraform moved block", "tflint", "tfsec", "checkov".
+  NOT for Pulumi, CloudFormation, CDK, Ansible, or general cloud questions.
 ---
 
 # Terraform Modules — Authoring & Operations Guide
@@ -384,6 +389,8 @@ terraform fmt -check -recursive && terraform validate && tflint --recursive
 
 ## CI/CD Pipeline for Modules
 
+See [`assets/github-actions-ci.yml`](assets/github-actions-ci.yml) for a complete workflow. Minimal example:
+
 ```yaml
 # .github/workflows/module-ci.yml
 name: Module CI
@@ -396,18 +403,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
-        with: { terraform_version: "1.9.0" }
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
       - run: terraform test
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: echo "Tag pushed — registry auto-publishes from GitHub release"
 ```
 
 Tag releases: `git tag -a v1.2.0 -m "Add logging" && git push origin v1.2.0`
@@ -420,19 +419,9 @@ Tag releases: `git tag -a v1.2.0 -m "Add logging" && git push origin v1.2.0`
 
 ## Examples
 
-### Input: "Create a reusable VPC module"
+### "Create a reusable VPC module"
 
 ```hcl
-# modules/vpc/variables.tf
-variable "cidr" {
-  type        = string
-  description = "VPC CIDR block."
-}
-variable "azs" {
-  type        = list(string)
-  description = "Availability zones."
-}
-
 # modules/vpc/main.tf
 resource "aws_vpc" "this" {
   cidr_block           = var.cidr
@@ -446,26 +435,17 @@ resource "aws_subnet" "private" {
   vpc_id            = aws_vpc.this.id
   cidr_block        = cidrsubnet(var.cidr, 8, count.index)
   availability_zone = var.azs[count.index]
-  tags = { Name = "private-${var.azs[count.index]}" }
 }
 
-# modules/vpc/outputs.tf
-output "vpc_id" {
-  value = aws_vpc.this.id
-}
-output "private_subnet_ids" {
-  value = aws_subnet.private[*].id
-}
+output "vpc_id" { value = aws_vpc.this.id }
+output "private_subnet_ids" { value = aws_subnet.private[*].id }
 ```
 
-### Input: "How do I test this module?"
+### "Test this module"
 
 ```hcl
 # tests/vpc.tftest.hcl
-variables {
-  cidr = "10.0.0.0/16"
-  azs  = ["us-east-1a", "us-east-1b"]
-}
+variables { cidr = "10.0.0.0/16"; azs = ["us-east-1a", "us-east-1b"] }
 
 run "plan_vpc" {
   command = plan
@@ -473,25 +453,48 @@ run "plan_vpc" {
     condition     = aws_vpc.this.cidr_block == "10.0.0.0/16"
     error_message = "CIDR mismatch."
   }
-  assert {
-    condition     = length(aws_subnet.private) == 2
-    error_message = "Expected 2 private subnets."
-  }
 }
 ```
 
-### Input: "Set up multi-region with provider aliases"
+### "Multi-region with provider aliases"
 
 ```hcl
 provider "aws" { region = "us-east-1" }
 provider "aws" { alias = "eu"; region = "eu-west-1" }
 
-module "us" {
-  source    = "./modules/regional"
-  providers = { aws = aws }
-}
-module "eu" {
-  source    = "./modules/regional"
-  providers = { aws = aws.eu }
-}
+module "us" { source = "./modules/regional"; providers = { aws = aws } }
+module "eu" { source = "./modules/regional"; providers = { aws = aws.eu } }
 ```
+
+---
+
+## References
+
+Deep-dive guides for advanced usage:
+
+| Reference | Description |
+|-----------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Module composition (root/child, facade, factory), dynamic backends, complex variable validation, provider aliasing, moved blocks, import blocks, state migration strategies |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Common errors (provider inheritance, circular deps, count/for_each limitations, state locking), debugging with TF_LOG, state surgery (mv/rm/import), performance tuning |
+| [`references/testing-guide.md`](references/testing-guide.md) | Terraform test framework (HCL-based), Terratest patterns in Go, tflint custom rules, Checkov/tfsec security scanning, CI/CD integration for module testing |
+
+## Scripts
+
+Ready-to-use automation scripts (all `chmod +x`):
+
+| Script | Description |
+|--------|-------------|
+| [`scripts/scaffold-module.sh`](scripts/scaffold-module.sh) | Generate a new module directory with main.tf, variables.tf, outputs.tf, versions.tf, README.md, examples/, and tests/. Usage: `./scaffold-module.sh <name> [provider]` |
+| [`scripts/validate-module.sh`](scripts/validate-module.sh) | Run terraform fmt, validate, tflint, and tfsec/checkov on a module directory. Usage: `./validate-module.sh [module-dir]` |
+| [`scripts/publish-module.sh`](scripts/publish-module.sh) | Tag a module release (semver) and publish to a private registry. Usage: `./publish-module.sh <version> [--dry-run]` |
+
+## Assets
+
+Templates and configuration files for bootstrapping module infrastructure:
+
+| Asset | Description |
+|-------|-------------|
+| [`assets/module-template/`](assets/module-template/) | Complete module boilerplate: main.tf, variables.tf, outputs.tf, versions.tf, README.md |
+| [`assets/github-actions-ci.yml`](assets/github-actions-ci.yml) | GitHub Actions CI workflow: format, validate, lint, security scan, plan tests, integration tests, release |
+| [`assets/terrafile.hcl`](assets/terrafile.hcl) | Example terraform test file demonstrating plan tests, validation tests, and apply tests |
+| [`assets/.tflint.hcl`](assets/.tflint.hcl) | TFLint configuration template with terraform, AWS, GCP, and Azure plugin sections |
