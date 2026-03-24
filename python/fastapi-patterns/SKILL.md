@@ -499,3 +499,5 @@ Run with `bash scripts/<script>` or `./scripts/<script>` (all `chmod +x`).
 | `assets/pyproject.toml` | Project deps + pytest/ruff/mypy/coverage config |
 | `assets/conftest.py` | Async test client, isolated DB sessions, JWT auth fixtures |
 | `assets/settings.py` | pydantic-settings with env validation, per-environment config |
+
+<!-- tested: pass -->

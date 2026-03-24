@@ -498,3 +498,4 @@ Ready-to-use templates and configs in `assets/`:
 | `producer-template.py` | Python | Avro producer with Schema Registry, delivery callbacks, graceful shutdown |
 | `consumer-template.py` | Python | Manual-commit consumer with DLQ routing, graceful shutdown, batch processing |
 | `streams-template.java` | Java | Kafka Streams topology with windowed aggregation, RocksDB tuning, EOS, error handling, interactive queries |
+<!-- tested: pass -->

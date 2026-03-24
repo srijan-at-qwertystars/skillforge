@@ -422,3 +422,5 @@ molecule init scenario --driver-name docker
           - "'nginx' in services"
           - "services['nginx'].state == 'running'"
 ```
+
+<!-- tested: pass -->
