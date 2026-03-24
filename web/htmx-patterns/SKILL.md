@@ -478,3 +478,4 @@ Production-ready templates and starter code:
 8. **Ignoring error responses** — htmx does not swap on error status codes (4xx/5xx) by default. Use `htmx:responseError` event or `htmx.config.responseHandling` to customize.
 9. **DELETE body params** — htmx 2.x sends DELETE params as query strings, not body. Update server-side parsing accordingly.
 10. **Not using hx-confirm for destructive actions** — always add `hx-confirm="Are you sure?"` on delete/destroy operations.
+<!-- tested: pass -->

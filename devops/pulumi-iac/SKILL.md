@@ -498,3 +498,4 @@ Starter templates in `assets/`:
 - **[index.ts](assets/index.ts)** — TypeScript starter: VPC, security groups, ECS Fargate + ALB, RDS PostgreSQL.
 - **[github-actions-pulumi.yml](assets/github-actions-pulumi.yml)** — CI/CD: preview on PR, deploy on merge, OIDC auth, drift checks.
 - **[component-template.ts](assets/component-template.ts)** — Reusable ComponentResource template (WebService) with full lifecycle.
+<!-- tested: pass -->

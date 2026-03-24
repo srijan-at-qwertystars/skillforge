@@ -498,3 +498,4 @@ Migration: use the official Zod 4 codemod for automated updates from Zod 3.
 | Error messages | Customizable | Customizable | Customizable | Basic | Basic |
 
 **Choose Zod** when: you need the largest ecosystem, best docs, first-class TypeScript inference, and integration with tRPC/React Hook Form/Next.js. **Consider Valibot** for bundle-critical apps. **Avoid Yup/Joi** in new TypeScript projects — they lack proper type inference.
+<!-- tested: pass -->
