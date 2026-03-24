@@ -409,3 +409,40 @@ SSH signing is simpler than GPG. Use for teams already using SSH authentication.
 | Wrong branch commit | `git stash` → checkout correct → `git stash pop` |
 | Pushed secrets | `git filter-repo --invert-paths --path file` + rotate creds |
 | Lost stash | `git fsck --unreachable \| grep commit` → `git show <sha>` |
+
+---
+
+## References
+
+In-depth guides in `references/` for deep dives beyond this quick-reference:
+
+| File | Topics |
+|---|---|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Interactive rebase workflows (fixup chains, autosquash, splitting commits, exec steps), merge strategies (octopus, ours/theirs, subtree, rerere), cherry-pick ranges and tracking, filter-repo cookbook (remove files, rewrite emails, extract/combine repos) |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Detached HEAD recovery, force-push recovery, rebase conflict resolution, corrupted repo repair, lost commits via reflog, merge vs rebase decision tree, submodule sync issues, common errors reference |
+| [`references/hooks-reference.md`](references/hooks-reference.md) | All Git hook types (client and server-side), practical examples for each hook, hook managers (Husky, Lefthook, pre-commit framework), comparison table, best practices |
+
+---
+
+## Scripts
+
+Executable utilities in `scripts/` — run directly or add to your PATH:
+
+| Script | Purpose | Usage |
+|---|---|---|
+| [`scripts/git-cleanup.sh`](scripts/git-cleanup.sh) | Prune stale remote branches, remove merged local branches, gc/prune, report space savings | `./git-cleanup.sh [-n] [-a]` |
+| [`scripts/git-bisect-helper.sh`](scripts/git-bisect-helper.sh) | Automated bisect runner — provide a test command, find the first bad commit automatically | `./git-bisect-helper.sh -g v1.0 "npm test"` |
+| [`scripts/git-stats.sh`](scripts/git-stats.sh) | Repository statistics — contributors, file churn, commit frequency, largest files, branch age | `./git-stats.sh [-s section]` |
+
+---
+
+## Assets
+
+Copy-paste ready templates in `assets/`:
+
+| File | Description |
+|---|---|
+| [`assets/gitconfig-advanced.ini`](assets/gitconfig-advanced.ini) | Advanced `.gitconfig` with aliases, diff tools, merge tools, rebase settings, performance tweaks. Include via `[include] path = ...` |
+| [`assets/hooks/pre-commit`](assets/hooks/pre-commit) | Production pre-commit hook: lint staged files, format check, secrets detection, large file check, debug statement detection |
+| [`assets/hooks/commit-msg`](assets/hooks/commit-msg) | Conventional Commits enforcement hook: validates type(scope): description format, subject length, blank line separator |
+| [`assets/gitattributes-template`](assets/gitattributes-template) | `.gitattributes` template with LFS patterns, custom diff drivers, merge strategies for lock files, export-ignore, linguist overrides |

@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# =============================================================================
+# pre-commit — Production Pre-Commit Hook Template
+# =============================================================================
+#
+# Runs on: git commit (before commit is created)
+# Bypass:  git commit --no-verify
+#
+# Checks:
+#   1. Lint staged files (JS/TS, Python, Go)
+#   2. Format check (Prettier, Black)
+#   3. Secrets detection (API keys, private keys, passwords)
+#   4. File size check (block large files)
+#   5. Debug statement detection
+#   6. Merge conflict marker detection
+#
+# Install:
+#   cp pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+#   # Or: git config core.hooksPath .githooks
+#
+# =============================================================================
+
+set -euo pipefail
+
+# Configuration
+MAX_FILE_SIZE=$((5 * 1024 * 1024))  # 5 MB
+ERRORS=0
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_pass() { echo -e "  ${GREEN}✓${NC} $*"; }
+log_fail() { echo -e "  ${RED}✗${NC} $*"; ERRORS=$((ERRORS + 1)); }
+log_warn() { echo -e "  ${YELLOW}!${NC} $*"; }
+log_skip() { echo -e "  ${YELLOW}-${NC} $* (skipped)"; }
+
+echo "🔍 Running pre-commit checks..."
+echo ""
+
+# Get staged files
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+if [ -z "$STAGED" ]; then
+    echo "No staged files. Skipping checks."
+    exit 0
+fi
+
+# ─── Check 1: Merge Conflict Markers ─────────────────────────────────────────
+
+if echo "$STAGED" | xargs grep -lE '^(<{7}|={7}|>{7})' 2>/dev/null; then
+    log_fail "Merge conflict markers found in staged files"
+else
+    log_pass "No merge conflict markers"
+fi
+
+# ─── Check 2: Secrets Detection ──────────────────────────────────────────────
+
+SECRETS_FOUND=false
+SECRET_PATTERNS=(
+    'AKIA[0-9A-Z]{16}'                         # AWS Access Key ID
+    'ASIA[0-9A-Z]{16}'                         # AWS Temp Access Key
+    '-----BEGIN (RSA |EC |DSA )?PRIVATE KEY'   # Private keys
+    'sk-[a-zA-Z0-9]{20,}'                      # OpenAI/Stripe secret key
+    'ghp_[a-zA-Z0-9]{36}'                      # GitHub PAT
+    'gho_[a-zA-Z0-9]{36}'                      # GitHub OAuth token
+    'glpat-[a-zA-Z0-9\-]{20}'                  # GitLab PAT
+    'xox[bporas]-[a-zA-Z0-9\-]+'              # Slack token
+)
+
+for pattern in "${SECRET_PATTERNS[@]}"; do
+    MATCHES=$(echo "$STAGED" | xargs git diff --cached -- 2>/dev/null | grep -cE "$pattern" 2>/dev/null || echo "0")
+    if [ "$MATCHES" -gt 0 ]; then
+        SECRETS_FOUND=true
+    fi
+done
+
+if $SECRETS_FOUND; then
+    log_fail "Potential secrets detected in staged changes"
+    echo "       Run: git diff --cached | grep -nE 'AKIA|PRIVATE KEY|sk-|ghp_'"
+    echo "       If intentional, use: git commit --no-verify"
+else
+    log_pass "No secrets detected"
+fi
+
+# ─── Check 3: Large File Detection ──────────────────────────────────────────
+
+LARGE_FILES=false
+for file in $STAGED; do
+    if [ -f "$file" ]; then
+        FILE_SIZE=$(wc -c < "$file" 2>/dev/null || echo "0")
+        if [ "$FILE_SIZE" -gt "$MAX_FILE_SIZE" ]; then
+            SIZE_HR=$(numfmt --to=iec "$FILE_SIZE" 2>/dev/null || echo "${FILE_SIZE} bytes")
+            log_fail "Large file: $file ($SIZE_HR) — consider Git LFS"
+            LARGE_FILES=true
+        fi
+    fi
+done
+if ! $LARGE_FILES; then
+    log_pass "No oversized files (max $(numfmt --to=iec $MAX_FILE_SIZE 2>/dev/null || echo '5MB'))"
+fi
+
+# ─── Check 4: Debug Statements ──────────────────────────────────────────────
+
+DEBUG_PATTERNS='console\.log\b|debugger\b|binding\.pry|import pdb|pdb\.set_trace|print\(\s*f"|TODO:.*HACK|FIXME:.*HACK'
+DEBUG_FILES=$(echo "$STAGED" | xargs grep -lE "$DEBUG_PATTERNS" 2>/dev/null || true)
+
+if [ -n "$DEBUG_FILES" ]; then
+    log_warn "Debug statements found (review before committing):"
+    echo "$DEBUG_FILES" | while read -r f; do
+        echo "       $f"
+    done
+else
+    log_pass "No debug statements"
+fi
+
+# ─── Check 5: JavaScript/TypeScript Linting ──────────────────────────────────
+
+JS_FILES=$(echo "$STAGED" | grep -E '\.(js|jsx|ts|tsx)$' || true)
+if [ -n "$JS_FILES" ]; then
+    if command -v npx &>/dev/null && [ -f "node_modules/.bin/eslint" ]; then
+        if echo "$JS_FILES" | xargs npx eslint --max-warnings=0 --quiet 2>/dev/null; then
+            log_pass "ESLint passed"
+        else
+            log_fail "ESLint found errors"
+        fi
+    else
+        log_skip "ESLint (not installed)"
+    fi
+
+    # Prettier format check
+    if command -v npx &>/dev/null && [ -f "node_modules/.bin/prettier" ]; then
+        if echo "$JS_FILES" | xargs npx prettier --check 2>/dev/null; then
+            log_pass "Prettier format OK"
+        else
+            log_fail "Prettier formatting issues — run: npx prettier --write <files>"
+        fi
+    fi
+fi
+
+# ─── Check 6: Python Linting ────────────────────────────────────────────────
+
+PY_FILES=$(echo "$STAGED" | grep -E '\.py$' || true)
+if [ -n "$PY_FILES" ]; then
+    if command -v flake8 &>/dev/null; then
+        if echo "$PY_FILES" | xargs flake8 --max-line-length=120 2>/dev/null; then
+            log_pass "flake8 passed"
+        else
+            log_fail "flake8 found errors"
+        fi
+    elif command -v ruff &>/dev/null; then
+        if echo "$PY_FILES" | xargs ruff check 2>/dev/null; then
+            log_pass "Ruff passed"
+        else
+            log_fail "Ruff found errors"
+        fi
+    else
+        log_skip "Python linter (flake8/ruff not installed)"
+    fi
+fi
+
+# ─── Check 7: Go Linting ────────────────────────────────────────────────────
+
+GO_FILES=$(echo "$STAGED" | grep -E '\.go$' || true)
+if [ -n "$GO_FILES" ]; then
+    if command -v gofmt &>/dev/null; then
+        UNFORMATTED=$(echo "$GO_FILES" | xargs gofmt -l 2>/dev/null || true)
+        if [ -z "$UNFORMATTED" ]; then
+            log_pass "gofmt passed"
+        else
+            log_fail "gofmt: unformatted files — run: gofmt -w <files>"
+        fi
+    fi
+fi
+
+# ─── Summary ─────────────────────────────────────────────────────────────────
+
+echo ""
+if [ $ERRORS -gt 0 ]; then
+    echo -e "${RED}❌ Pre-commit failed with $ERRORS error(s)${NC}"
+    echo "   Fix issues and try again, or bypass with: git commit --no-verify"
+    exit 1
+else
+    echo -e "${GREEN}✅ All pre-commit checks passed${NC}"
+    exit 0
+fi

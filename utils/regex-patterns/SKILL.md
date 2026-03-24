@@ -423,3 +423,68 @@ const checks = [
 ];
 const errors = checks.filter(([re]) => !re.test(pw)).map(([,msg]) => msg);
 ```
+
+## Supplemental Resources
+
+### references/
+
+In-depth reference documents for advanced topics:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Recursive patterns,
+  conditional patterns, atomic groups, possessive quantifiers, subroutine calls,
+  branch reset groups, advanced backreferences, PCRE vs RE2 feature comparison,
+  and engine support matrix.
+
+- **[troubleshooting.md](references/troubleshooting.md)** — Catastrophic backtracking
+  deep dive with step-by-step traces, ReDoS attack patterns and real-world incidents,
+  common mistakes (greedy vs lazy, escaping, anchoring), debugging strategies,
+  performance profiling, encoding/Unicode issues, and engine-specific gotchas.
+
+- **[language-reference.md](references/language-reference.md)** — Side-by-side regex
+  API comparison for JavaScript (RegExp, matchAll, named groups), Python (re module,
+  compile, finditer, sub), Go (regexp package, RE2 differences), Rust (regex crate),
+  and Java (Pattern/Matcher). Includes cross-language examples and migration guide.
+
+### scripts/
+
+Executable utility scripts (`chmod +x`):
+
+- **[regex-tester.sh](scripts/regex-tester.sh)** — Bash script that tests a regex
+  against input strings. Shows matches, capture groups, and timing. Supports
+  `-i` (case-insensitive), `-g` (global), `-t` (timing), `-f` (file input).
+  ```
+  ./scripts/regex-tester.sh '\d{4}-\d{2}-\d{2}' '2024-01-15' 'not-a-date'
+  ```
+
+- **[redos-checker.py](scripts/redos-checker.py)** — Python script that analyzes
+  regex patterns for ReDoS vulnerabilities. Static analysis detects nested quantifiers,
+  overlapping alternation, and other dangerous constructs. Optional `--test` flag
+  runs dynamic timing analysis.
+  ```
+  ./scripts/redos-checker.py '(a+)+b' --test
+  ```
+
+- **[pattern-generator.py](scripts/pattern-generator.py)** — Python script that
+  generates common regex patterns (email, URL, phone, date, IP, etc.) formatted
+  for JavaScript, Python, Go, Rust, or Java.
+  ```
+  ./scripts/pattern-generator.py email --lang javascript
+  ./scripts/pattern-generator.py --all --lang go
+  ```
+
+### assets/
+
+Copy-paste-ready reference files:
+
+- **[common-patterns.json](assets/common-patterns.json)** — JSON file with 34
+  validated regex patterns (email, URL, IPv4, IPv6, dates, phones, credit cards,
+  SSN, ZIP codes, UUID, hex colors, semver, MAC address, JWT, etc.) with test strings.
+
+- **[cheatsheet.md](assets/cheatsheet.md)** — Quick reference: metacharacters,
+  quantifiers (greedy/lazy/possessive), character classes, assertions, lookarounds,
+  groups, backreferences, flags, escape sequences, and common recipes.
+
+- **[regex-flags-matrix.md](assets/regex-flags-matrix.md)** — Comparison matrix of
+  regex flags across JavaScript, Python, Go, Rust, Java, PCRE, Ruby, and .NET.
+  Covers inline flag syntax, flag combinations, global mode per language,
+  verbose mode comparison, and Unicode flag details.

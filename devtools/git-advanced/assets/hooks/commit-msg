@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# =============================================================================
+# commit-msg — Conventional Commits Enforcement Hook
+# =============================================================================
+#
+# Runs on: git commit (after message is written, before commit is finalized)
+# Bypass:  git commit --no-verify
+#
+# Enforces:
+#   - Conventional Commits format: type(scope): description
+#   - Valid types: feat, fix, docs, style, refactor, test, chore, ci, perf,
+#                  build, revert
+#   - Subject line max 100 characters
+#   - Blank line between subject and body
+#   - Breaking changes: type(scope)!: description
+#
+# Install:
+#   cp commit-msg .git/hooks/commit-msg && chmod +x .git/hooks/commit-msg
+#
+# Examples of valid messages:
+#   feat: add user authentication
+#   fix(auth): resolve token expiration bug
+#   docs(readme): update installation instructions
+#   feat(api)!: change response format (BREAKING CHANGE)
+#   revert: revert "feat: add user auth"
+#
+# =============================================================================
+
+set -euo pipefail
+
+MSG_FILE="$1"
+MSG=$(cat "$MSG_FILE")
+SUBJECT=$(head -1 "$MSG_FILE")
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+# ─── Skip automated commit messages ─────────────────────────────────────────
+
+# Skip merge commits
+if echo "$SUBJECT" | grep -qE '^Merge (branch|pull request|remote-tracking)'; then
+    exit 0
+fi
+
+# Skip revert commits (auto-generated)
+if echo "$SUBJECT" | grep -qE '^Revert "'; then
+    exit 0
+fi
+
+# Skip fixup/squash commits (handled by rebase)
+if echo "$SUBJECT" | grep -qE '^(fixup|squash)! '; then
+    exit 0
+fi
+
+# Skip amend with identical message
+if echo "$SUBJECT" | grep -qE '^amend! '; then
+    exit 0
+fi
+
+# ─── Validate Conventional Commits format ────────────────────────────────────
+
+VALID_TYPES="feat|fix|docs|style|refactor|test|chore|ci|perf|build|revert"
+PATTERN="^($VALID_TYPES)(\([a-zA-Z0-9._-]+\))?!?: .+"
+
+if ! echo "$SUBJECT" | grep -qE "$PATTERN"; then
+    echo ""
+    echo -e "${RED}❌ Invalid commit message format${NC}"
+    echo ""
+    echo -e "  Your message:  ${YELLOW}${SUBJECT}${NC}"
+    echo ""
+    echo -e "  Expected format: ${CYAN}type(scope): description${NC}"
+    echo ""
+    echo -e "  Valid types:"
+    echo -e "    ${GREEN}feat${NC}      A new feature"
+    echo -e "    ${GREEN}fix${NC}       A bug fix"
+    echo -e "    ${GREEN}docs${NC}      Documentation changes"
+    echo -e "    ${GREEN}style${NC}     Code style (formatting, semicolons)"
+    echo -e "    ${GREEN}refactor${NC}  Code refactoring (no feature/fix)"
+    echo -e "    ${GREEN}test${NC}      Adding or updating tests"
+    echo -e "    ${GREEN}chore${NC}     Maintenance tasks"
+    echo -e "    ${GREEN}ci${NC}        CI/CD configuration"
+    echo -e "    ${GREEN}perf${NC}      Performance improvements"
+    echo -e "    ${GREEN}build${NC}     Build system or dependencies"
+    echo -e "    ${GREEN}revert${NC}    Reverting a previous commit"
+    echo ""
+    echo -e "  Examples:"
+    echo -e "    feat: add user authentication"
+    echo -e "    fix(auth): resolve token refresh bug"
+    echo -e "    docs(api): update endpoint documentation"
+    echo -e "    feat(api)!: change response format"
+    echo ""
+    echo -e "  Bypass with: ${YELLOW}git commit --no-verify${NC}"
+    exit 1
+fi
+
+# ─── Validate subject line length ────────────────────────────────────────────
+
+SUBJECT_LEN=${#SUBJECT}
+MAX_LEN=100
+
+if [ "$SUBJECT_LEN" -gt "$MAX_LEN" ]; then
+    echo ""
+    echo -e "${RED}❌ Subject line too long${NC}"
+    echo ""
+    echo -e "  Length:  ${YELLOW}${SUBJECT_LEN}${NC} characters (max ${MAX_LEN})"
+    echo -e "  Subject: ${SUBJECT}"
+    echo ""
+    echo "  Tip: Move details to the commit body (after a blank line)"
+    exit 1
+fi
+
+# ─── Validate blank line between subject and body ────────────────────────────
+
+LINE_COUNT=$(wc -l < "$MSG_FILE")
+if [ "$LINE_COUNT" -gt 1 ]; then
+    SECOND_LINE=$(sed -n '2p' "$MSG_FILE")
+    # Ignore comment lines (starting with #)
+    if [ -n "$SECOND_LINE" ] && ! echo "$SECOND_LINE" | grep -q '^#'; then
+        echo ""
+        echo -e "${RED}❌ Missing blank line between subject and body${NC}"
+        echo ""
+        echo "  Line 1 (subject): $SUBJECT"
+        echo "  Line 2 (should be blank): $SECOND_LINE"
+        echo ""
+        echo "  Add a blank line after the subject before the body text."
+        exit 1
+    fi
+fi
+
+# ─── Validate no trailing period ─────────────────────────────────────────────
+
+if echo "$SUBJECT" | grep -qE '\.$'; then
+    echo ""
+    echo -e "${YELLOW}⚠️  Subject line ends with a period${NC}"
+    echo "  Convention: Do not end the subject line with a period."
+    # Warning only, don't block
+fi
+
+# ─── Validate description starts with lowercase ─────────────────────────────
+
+DESC=$(echo "$SUBJECT" | sed -E "s/^($VALID_TYPES)(\([^)]+\))?!?: //")
+if echo "$DESC" | grep -qE '^[A-Z]'; then
+    echo -e "${YELLOW}⚠️  Description starts with uppercase: '$DESC'${NC}"
+    echo "  Convention: Start the description with a lowercase letter."
+    # Warning only, don't block
+fi
+
+# ─── Success ─────────────────────────────────────────────────────────────────
+
+echo -e "${GREEN}✅ Commit message OK${NC}: $SUBJECT"

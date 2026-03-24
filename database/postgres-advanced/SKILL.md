@@ -477,3 +477,22 @@ CREATE TABLE items (
 
 Install pattern: `CREATE EXTENSION IF NOT EXISTS extension_name;`
 Check available: `SELECT * FROM pg_available_extensions WHERE name LIKE 'pg_%';`
+
+## References
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — LATERAL joins, GROUPING SETS/CUBE/ROLLUP, recursive CTEs for graph traversal, generate_series tricks, partial/expression/covering indexes, index-only scans, partition pruning, attach/detach, sub-partitioning, pg_partman.
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Slow query diagnosis (pg_stat_statements, auto_explain), bloat detection (pgstattuple, pg_repack), lock contention (pg_locks, dependency trees), connection exhaustion, OOM debugging, WAL growth, vacuum/XID wraparound, replication lag.
+- **[references/performance-tuning.md](references/performance-tuning.md)** — Memory sizing (shared_buffers, work_mem, effective_cache_size) with reference table by server RAM, PgBouncer setup, autovacuum tuning, checkpoint tuning, planner settings, WAL config, OS tuning (huge pages, vm.overcommit, I/O, network).
+
+## Scripts
+
+- **[scripts/pg-health-check.sh](scripts/pg-health-check.sh)** — Database sizes, table bloat, index usage, cache hit ratio, long-running queries, replication status, XID wraparound, checkpoint stats. Usage: `./pg-health-check.sh [-h HOST] [-p PORT] [-d DB] [-U USER]`
+- **[scripts/pg-index-advisor.py](scripts/pg-index-advisor.py)** — Identifies high seq-scan tables, unused/duplicate indexes, suggests missing indexes. Requires psycopg2. Usage: `./pg-index-advisor.py [-H HOST] [-d DB] [--seq-threshold PCT]`
+- **[scripts/pg-slow-query-report.sh](scripts/pg-slow-query-report.sh)** — Report from pg_stat_statements: top queries by time, cache ratio, temp I/O, row volume, with recommendations. Usage: `./pg-slow-query-report.sh [-h HOST] [-d DB] [-n TOP_N]`
+
+## Assets
+
+- **[assets/postgresql-tuning.conf](assets/postgresql-tuning.conf)** — Optimized postgresql.conf template for Small/Medium/Large servers with commented rationale for every parameter.
+- **[assets/pgbouncer.ini](assets/pgbouncer.ini)** — PgBouncer template with transaction pooling, pool sizing formulas, auth, TLS, and admin console.
+- **[assets/monitoring-queries.sql](assets/monitoring-queries.sql)** — 10-section diagnostic SQL: cache ratio, bloat, locks, replication, sizes, sessions, vacuum, checkpoints, WAL, config.
+- **[assets/partitioning-template.sql](assets/partitioning-template.sql)** — Range/list/hash/sub-partitioning templates with auto-creation functions, monitoring, and pg_cron scheduling.
