@@ -410,3 +410,29 @@ npm install electron-builder electron-updater --save-dev
 CSC_LINK=cert.p12 CSC_KEY_PASSWORD=pass npx electron-builder -mwl --publish always
 ```
 Add `autoUpdater.checkForUpdates()` in main process for runtime updates.
+
+## Reference Guides
+
+In-depth guides for advanced topics are in `references/`:
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Multi-window management, shared state between windows, WebContentsView (BrowserView replacement), offscreen rendering, web workers vs utility processes, sandboxing internals, custom protocols with streaming, deep linking with URL routing, session/cookie management, Electron Fiddle for prototyping.
+- **[Troubleshooting](references/troubleshooting.md)** — Native module rebuild failures, node-gyp prerequisites by platform, Webpack/Vite build errors, main/renderer debugging techniques, DevTools extensions setup, memory leak detection (detached DOM, IPC listener leaks), ASAR extraction issues, white screen diagnosis, auto-updater debugging, and platform-specific bugs (macOS notarization, Windows SmartScreen, Linux sandbox).
+- **[Security Guide](references/security-guide.md)** — Complete security checklist, contextIsolation deep dive with prototype pollution examples, sandbox enforcement levels, CSP configuration for dev/prod, webview tag hardening, remote module migration, secure IPC patterns with input validation and sender verification, Electron Fuses configuration, ASAR integrity validation, permission handling, navigation restrictions, and supply chain security.
+
+## Scripts
+
+Automation scripts in `scripts/` (all `chmod +x`):
+
+- **[electron-security-audit.sh](scripts/electron-security-audit.sh)** — Audits an Electron project for security misconfigurations: checks nodeIntegration, contextIsolation, sandbox, webSecurity, raw ipcRenderer exposure, remote module usage, CSP presence, hardcoded secrets, permission handlers, and Electron version. Usage: `./electron-security-audit.sh [project-dir]`
+- **[setup-electron-forge.sh](scripts/setup-electron-forge.sh)** — Scaffolds a new Electron Forge project with plugins (auto-unpack-natives, fuses), macOS entitlements, GitHub Actions CI, and git init. Supports vite-typescript, vite, webpack-typescript, webpack templates. Usage: `./setup-electron-forge.sh <name> [--template=vite-typescript]`
+- **[build-and-sign.sh](scripts/build-and-sign.sh)** — Cross-platform build and code signing. Auto-detects Forge vs electron-builder. Handles macOS notarization, Windows Authenticode, platform/arch selection, and publishing. Usage: `./build-and-sign.sh [--platform=mac|win|linux|all] [--publish] [--skip-sign]`
+
+## Asset Templates
+
+Production-ready templates in `assets/`:
+
+- **[main-process-template.ts](assets/main-process-template.ts)** — TypeScript main process with window state persistence, CSP setup, permission handling, navigation restrictions, typed IPC handlers with input validation, single-instance lock, and graceful error handling.
+- **[preload-template.ts](assets/preload-template.ts)** — Secure preload script with contextBridge patterns, typed API surface, cleanup functions for event listeners, and TypeScript type exports for renderer consumption.
+- **[electron-forge-config.ts](assets/electron-forge-config.ts)** — Complete Forge config with Vite plugin, auto-unpack-natives, Electron Fuses, makers for all platforms (DMG, Squirrel, deb, rpm), macOS notarization, and GitHub Releases publisher.
+- **[github-actions-electron.yml](assets/github-actions-electron.yml)** — CI/CD workflow building on macOS (x64+arm64), Windows, and Linux. Lint/test stage, code signing with secrets, artifact upload, and draft GitHub Release creation on version tags.
+- **[electron-builder-config.yml](assets/electron-builder-config.yml)** — Comprehensive electron-builder YAML config with ASAR settings, platform targets (dmg, nsis, portable, AppImage, deb, rpm), code signing, auto-update publishing, custom protocols, and extra resources.

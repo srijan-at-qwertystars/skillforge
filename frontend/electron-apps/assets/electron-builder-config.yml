@@ -1,0 +1,179 @@
+# electron-builder Configuration Template
+#
+# Place this file as `electron-builder.yml` in your project root,
+# or embed the configuration under the "build" key in package.json.
+#
+# Documentation: https://www.electron.build/configuration
+#
+# Required environment variables for signing:
+#   macOS:   CSC_LINK, CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
+#   Windows: WIN_CSC_LINK, WIN_CSC_KEY_PASSWORD
+
+# ─── App Metadata ───────────────────────────────────────────────────────────
+appId: com.example.my-electron-app
+productName: My Electron App
+copyright: Copyright © 2024 Your Company
+
+# ─── Directories ─────────────────────────────────────────────────────────────
+directories:
+  output: dist
+  buildResources: build   # Icons, entitlements, installer assets
+
+# ─── Files ───────────────────────────────────────────────────────────────────
+files:
+  - "!**/.vscode"
+  - "!**/.github"
+  - "!**/src"
+  - "!**/*.ts"
+  - "!**/*.map"
+  - "!**/tsconfig*.json"
+  - "!**/.eslintrc*"
+  - "!**/README.md"
+
+# ─── ASAR ────────────────────────────────────────────────────────────────────
+asar: true
+asarUnpack:
+  - "**/*.node"           # Native modules must be unpacked
+  - "**/node_modules/sharp/**"
+  - "**/node_modules/better-sqlite3/**"
+
+# ─── Compression ─────────────────────────────────────────────────────────────
+compression: maximum      # normal | maximum | store
+
+# ─── Publishing ──────────────────────────────────────────────────────────────
+publish:
+  - provider: github
+    owner: your-org
+    repo: your-app
+    releaseType: release
+
+# Uncomment for generic update server:
+# publish:
+#   - provider: generic
+#     url: https://updates.example.com/releases
+#     channel: latest
+
+# ─── macOS ───────────────────────────────────────────────────────────────────
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  category: public.app-category.developer-tools
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  icon: build/icon.icns
+  # Notarization (requires APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID env vars)
+  notarize: true
+
+dmg:
+  sign: false
+  contents:
+    - x: 130
+      y: 220
+      type: file
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+# ─── Windows ─────────────────────────────────────────────────────────────────
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.ico
+  signingHashAlgorithms:
+    - sha256
+  rfc3161TimeStampServer: http://timestamp.digicert.com
+  # publisherName must match the CN of your code signing certificate
+  # publisherName: "Your Company Name"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: My Electron App
+  # installerIcon: build/icon.ico
+  # uninstallerIcon: build/icon.ico
+  # include: build/installer.nsh  # Custom NSIS script
+
+portable:
+  artifactName: "${productName}-${version}-portable.${ext}"
+
+# ─── Linux ───────────────────────────────────────────────────────────────────
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+  category: Utility
+  icon: build/icons       # Directory containing 16x16, 32x32, ..., 512x512 PNGs
+  synopsis: A short description
+  description: A longer description of what the app does
+  desktop:
+    MimeType: x-scheme-handler/my-electron-app
+    StartupWMClass: my-electron-app
+
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libasound2
+  priority: optional
+  section: utils
+
+appImage:
+  artifactName: "${productName}-${version}-${arch}.${ext}"
+
+snap:
+  grade: stable
+  confinement: strict
+
+# ─── Auto-Update ─────────────────────────────────────────────────────────────
+# electron-updater reads the publish config above to check for updates.
+# The update manifests (latest.yml, latest-mac.yml, latest-linux.yml)
+# are generated automatically during the build process.
+
+# ─── Protocols ───────────────────────────────────────────────────────────────
+protocols:
+  - name: My Electron App
+    schemes:
+      - my-electron-app
+
+# ─── Extra Resources ────────────────────────────────────────────────────────
+# Files placed outside the ASAR archive, accessible via process.resourcesPath
+# extraResources:
+#   - from: "resources/"
+#     to: "."
+#     filter:
+#       - "**/*"
+
+# ─── Extra Files ─────────────────────────────────────────────────────────────
+# Files placed next to the app executable
+# extraFiles:
+#   - from: "bin/"
+#     to: "."
+#     filter:
+#       - "*.exe"
+
+# ─── Hooks ───────────────────────────────────────────────────────────────────
+# afterSign: scripts/notarize.js  # Custom notarization script
+# afterPack: scripts/after-pack.js

@@ -276,6 +276,40 @@ Behaviors: `release` (default, frees locks on session invalidation), `delete` (r
 
 ---
 
+## Reference Guides
+
+In-depth references for advanced Consul topics:
+
+| Guide | Path | Topics |
+|-------|------|--------|
+| Advanced Patterns | `references/advanced-patterns.md` | Connect deep dive (Envoy sidecar, L7 traffic management, L7 intentions), Consul Dataplane, API Gateway, cluster peering vs WAN federation, admin partitions, network segments, DNS forwarding, watches & blocking queries, snapshot agent |
+| Troubleshooting | `references/troubleshooting.md` | Gossip issues (node flapping, split brain), Raft leadership problems, ACL troubleshooting (token/policy/role resolution), DNS resolution failures, Connect proxy issues, anti-entropy sync delays, performance tuning (stale reads, consistency modes), certificate rotation |
+| Kubernetes Integration | `references/kubernetes-integration.md` | Helm chart architecture & values, service sync (K8s↔Consul), Connect inject & pod annotations, API Gateway on K8s, transparent proxy, mesh gateway multi-cluster, CRDs (ServiceDefaults, ServiceIntentions, ProxyDefaults, etc.), Vault integration for TLS |
+
+## Scripts
+
+Ready-to-use operational scripts in `scripts/`:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `setup-consul-dev.sh` | Starts a dev agent with sample services, KV data, and optional ACLs | `./setup-consul-dev.sh [--acl] [--cleanup]` |
+| `consul-backup.sh` | Snapshot backup with local rotation and optional S3 upload | `./consul-backup.sh -d /backups -r 14 -s s3://bucket/consul/` |
+| `service-register.sh` | Registers a service with health check from CLI arguments | `./service-register.sh -n web -p 8080 -c http -g primary,v2` |
+
+## Assets & Templates
+
+Production-ready configuration templates in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| `consul-helm-values.yaml` | Production Helm chart values with TLS, ACLs, metrics, anti-affinity |
+| `consul-template-examples/` | consul-template templates: nginx upstream, env file, HAProxy backend |
+| `docker-compose-consul.yml` | 3-node Consul cluster + sample services via Docker Compose |
+| `acl-policy-templates/` | ACL policies: agent, service, KV, operator |
+| `service-definition.hcl` | Fully annotated service definition with Connect sidecar proxy |
+
+---
+
 ## Examples
 
 ### Example 1: Register and discover a service

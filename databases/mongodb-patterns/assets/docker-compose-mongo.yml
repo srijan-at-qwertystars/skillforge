@@ -1,0 +1,171 @@
+# ============================================================================
+# docker-compose-mongo.yml — MongoDB Replica Set + Mongo Express
+# ============================================================================
+# Starts a 3-node MongoDB replica set with Mongo Express web UI for local
+# development and testing.
+#
+# Usage:
+#   docker compose -f docker-compose-mongo.yml up -d
+#   # Initialize replica set (first time only):
+#   docker exec mongo1 mongosh --eval "rs.initiate({
+#     _id: 'rs0',
+#     members: [
+#       { _id: 0, host: 'mongo1:27017', priority: 3 },
+#       { _id: 1, host: 'mongo2:27017', priority: 2 },
+#       { _id: 2, host: 'mongo3:27017', priority: 1 }
+#     ]
+#   })"
+#
+# Connection string: mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0
+# Mongo Express UI: http://localhost:8081
+#
+# Stop:  docker compose -f docker-compose-mongo.yml down
+# Reset: docker compose -f docker-compose-mongo.yml down -v
+# ============================================================================
+
+services:
+  # --- Primary Node ---
+  mongo1:
+    image: mongo:7
+    container_name: mongo1
+    hostname: mongo1
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+      - mongo1_config:/data/configdb
+    environment:
+      MONGO_INITDB_DATABASE: app
+    command: >
+      mongod
+        --replSet rs0
+        --bind_ip_all
+        --port 27017
+        --oplogSize 128
+        --wiredTigerCacheSizeGB 0.5
+    networks:
+      - mongo-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # --- Secondary Node 1 ---
+  mongo2:
+    image: mongo:7
+    container_name: mongo2
+    hostname: mongo2
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo2_data:/data/db
+      - mongo2_config:/data/configdb
+    command: >
+      mongod
+        --replSet rs0
+        --bind_ip_all
+        --port 27017
+        --oplogSize 128
+        --wiredTigerCacheSizeGB 0.5
+    networks:
+      - mongo-net
+    depends_on:
+      mongo1:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Secondary Node 2 ---
+  mongo3:
+    image: mongo:7
+    container_name: mongo3
+    hostname: mongo3
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo3_data:/data/db
+      - mongo3_config:/data/configdb
+    command: >
+      mongod
+        --replSet rs0
+        --bind_ip_all
+        --port 27017
+        --oplogSize 128
+        --wiredTigerCacheSizeGB 0.5
+    networks:
+      - mongo-net
+    depends_on:
+      mongo1:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Replica Set Initializer ---
+  mongo-init:
+    image: mongo:7
+    container_name: mongo-init
+    depends_on:
+      mongo1:
+        condition: service_healthy
+      mongo2:
+        condition: service_started
+      mongo3:
+        condition: service_started
+    networks:
+      - mongo-net
+    restart: "no"
+    entrypoint: >
+      bash -c '
+        sleep 5
+        mongosh --host mongo1:27017 --eval "
+          try {
+            rs.status();
+            print(\"Replica set already initialized\");
+          } catch(e) {
+            rs.initiate({
+              _id: \"rs0\",
+              members: [
+                { _id: 0, host: \"mongo1:27017\", priority: 3 },
+                { _id: 1, host: \"mongo2:27017\", priority: 2 },
+                { _id: 2, host: \"mongo3:27017\", priority: 1 }
+              ]
+            });
+            print(\"Replica set initialized\");
+          }
+        "
+      '
+
+  # --- Mongo Express (Web UI) ---
+  mongo-express:
+    image: mongo-express:1-20
+    container_name: mongo-express
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_URL: "mongodb://mongo1:27017,mongo2:27017,mongo3:27017/?replicaSet=rs0"
+      ME_CONFIG_BASICAUTH: "false"
+    networks:
+      - mongo-net
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  mongo1_data:
+    driver: local
+  mongo1_config:
+    driver: local
+  mongo2_data:
+    driver: local
+  mongo2_config:
+    driver: local
+  mongo3_data:
+    driver: local
+  mongo3_config:
+    driver: local
+
+networks:
+  mongo-net:
+    driver: bridge

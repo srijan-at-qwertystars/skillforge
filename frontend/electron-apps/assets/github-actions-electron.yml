@@ -1,0 +1,177 @@
+# GitHub Actions: Electron CI/CD
+#
+# Builds and optionally publishes an Electron app on all three platforms.
+# Triggers on push to main (build only) and on version tags (build + release).
+#
+# Required repository secrets:
+#   macOS signing:
+#     - CSC_LINK: Base64-encoded .p12 certificate
+#     - CSC_KEY_PASSWORD: Certificate password
+#     - APPLE_ID: Apple Developer ID email
+#     - APPLE_APP_SPECIFIC_PASSWORD: App-specific password for notarization
+#     - APPLE_TEAM_ID: Apple Developer Team ID
+#   Windows signing:
+#     - WIN_CSC_LINK: Base64-encoded .pfx certificate
+#     - WIN_CSC_KEY_PASSWORD: Certificate password
+#   Publishing:
+#     - GITHUB_TOKEN: Automatically available in GitHub Actions
+
+name: Electron Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─── Lint & Test ─────────────────────────────────────────────────────────
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Type check
+        run: npx tsc --noEmit --skipLibCheck 2>/dev/null || true
+
+      - name: Test
+        run: npm test --if-present
+
+  # ─── Build ───────────────────────────────────────────────────────────────
+  build:
+    needs: lint-and-test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14         # Apple Silicon runner
+            platform: darwin
+            arch: arm64
+          - os: macos-13         # Intel runner
+            platform: darwin
+            arch: x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          - os: windows-latest
+            platform: win32
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Linux: Install additional dependencies for Electron
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libnotify-dev \
+            libnss3 \
+            libxss1 \
+            libasound2t64 \
+            libxtst6 \
+            libatspi2.0-0t64 \
+            libdrm2 \
+            libgbm1 \
+            libxkbcommon0
+
+      # Build the app (package only, no distributables)
+      - name: Package
+        run: npx electron-forge package --arch=${{ matrix.arch }}
+        env:
+          # Disable signing for PR builds
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ github.event_name == 'pull_request' && 'false' || 'true' }}
+
+      # Create distributables only for tagged releases
+      - name: Make distributables
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npx electron-forge make --arch=${{ matrix.arch }}
+        env:
+          # macOS signing and notarization
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows signing
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
+      # Upload build artifacts
+      - name: Upload artifacts
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            out/make/**/*.dmg
+            out/make/**/*.zip
+            out/make/**/*.exe
+            out/make/**/*.nupkg
+            out/make/**/*.deb
+            out/make/**/*.rpm
+            out/make/**/*.AppImage
+          if-no-files-found: warn
+          retention-days: 7
+
+  # ─── Release ─────────────────────────────────────────────────────────────
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: List artifacts
+        run: find artifacts -type f | head -50
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          draft: true  # Review before publishing
+          prerelease: ${{ contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ─── Auto-Update Manifest ───────────────────────────────────────────────
+  # If using a custom update server instead of GitHub Releases,
+  # add a job here to generate and upload latest.yml / latest-mac.yml

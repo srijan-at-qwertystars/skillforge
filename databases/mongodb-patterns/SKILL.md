@@ -113,35 +113,7 @@ db.sales.aggregate([
 ]);
 ```
 
-### Advanced: $merge for Materialized Views
-```javascript
-// Write aggregation results to a collection (upsert mode)
-db.sales.aggregate([
-  { $group: { _id: "$region", total: { $sum: "$amount" } } },
-  { $merge: {
-      into: "regional_summaries",
-      on: "_id",
-      whenMatched: "replace",
-      whenNotMatched: "insert"
-  }}
-]);
-```
-
-### Window Functions (MongoDB 5.0+)
-```javascript
-db.scores.aggregate([
-  { $setWindowFields: {
-      partitionBy: "$department",
-      sortBy: { score: -1 },
-      output: {
-        rank: { $denseRank: {} },
-        avgDeptScore: { $avg: "$score", window: { documents: ["unbounded", "unbounded"] } }
-      }
-  }}
-]);
-// Input:  { dept: "eng", user: "A", score: 95 }, { dept: "eng", user: "B", score: 90 }
-// Output: { dept: "eng", user: "A", score: 95, rank: 1, avgDeptScore: 92.5 }, ...
-```
+See [advanced-patterns.md](references/advanced-patterns.md) for `$facet`, `$bucket`, `$graphLookup`, `$merge`, `$out`, `$setWindowFields`, and pipeline optimization.
 
 ---
 
@@ -419,20 +391,13 @@ db.setProfilingLevel(1, { slowms: 100 });
 db.system.profile.find({ millis: { $gt: 100 } }).sort({ ts: -1 }).limit(5);
 ```
 
-### $queryStats (MongoDB 7.0+, Atlas M10+)
-```javascript
-db.adminCommand({
-  aggregate: 1,
-  pipeline: [{ $queryStats: {} }, { $sort: { "metrics.lastExecutionMicros": -1 } }],
-  cursor: {}
-});
-```
-
 ### Common Fixes
 - **COLLSCAN → IXSCAN**: Add index matching query predicates (ESR rule)
 - **High docsExamined/nReturned ratio**: Refine index or add covered query projection
 - **Sort in memory**: Add sort fields to index; avoid in-memory sorts >100MB
 - **$lookup slow**: Index the foreign field; consider embedding if read-heavy
+
+See [troubleshooting.md](references/troubleshooting.md) for comprehensive diagnosis and fixes.
 
 ---
 
@@ -494,3 +459,41 @@ db.currentOp()                    // running operations
 db.killOp(opId)                   // kill an operation
 sh.status()                       // sharding status
 ```
+
+---
+
+## Reference Guides
+
+Deep-dive documentation in `references/`:
+
+| Guide | Topics |
+|-------|--------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Aggregation deep dive ($facet, $bucket, $graphLookup, $merge, $out, $setWindowFields), Atlas Search (Lucene analyzers, autocomplete, compound queries, facets), Atlas Vector Search (hybrid search, embeddings), Queryable Encryption (equality + range), time series collections, schema versioning, capped collections |
+| [troubleshooting.md](references/troubleshooting.md) | Slow queries (explain analysis, covered queries), WiredTiger cache tuning, connection pool exhaustion, replication lag, sharding hotspots, index selection problems, write concern errors, lock contention, RDBMS migration pitfalls |
+| [mongoose-guide.md](references/mongoose-guide.md) | Schemas (types, validation, nested), virtuals, methods/statics/query helpers, middleware (document, query, aggregate, error), population, discriminators, lean queries, transactions, plugins, connection management, migration strategies, full TypeScript integration |
+
+---
+
+## Scripts
+
+Operational scripts in `scripts/` (all `chmod +x`):
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [mongo-health-check.sh](scripts/mongo-health-check.sh) | Checks replica set status, connections, oplog window, disk/cache usage, slow ops | `./mongo-health-check.sh --uri "mongodb+srv://..."` |
+| [index-analyzer.js](scripts/index-analyzer.js) | Finds unused, redundant, and missing indexes across collections | `node index-analyzer.js --db myapp --unused-days 7` |
+| [backup-restore.sh](scripts/backup-restore.sh) | mongodump/mongorestore wrapper with compression, Atlas support, retention | `./backup-restore.sh backup --db myapp --gzip` |
+
+---
+
+## Assets
+
+Templates and configurations in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [aggregation-templates.js](assets/aggregation-templates.js) | Ready-to-use pipelines: daily revenue, top products, cohort analysis, funnel, moving averages, sessionization, ETL with $merge, data quality |
+| [mongoose-model-template.ts](assets/mongoose-model-template.ts) | Full TypeScript Mongoose model with typed methods, statics, virtuals, query helpers, middleware, indexes, and plugins |
+| [docker-compose-mongo.yml](assets/docker-compose-mongo.yml) | Docker Compose for 3-node replica set with auto-init and Mongo Express UI |
+| [mongosh-snippets.js](assets/mongosh-snippets.js) | Helper functions for mongosh: collection stats, schema shape, index usage, slow queries, replica lag, field distribution, large docs |
+| [atlas-terraform.tf](assets/atlas-terraform.tf) | Terraform config for Atlas: project, cluster, users, network access, search index, alerts |

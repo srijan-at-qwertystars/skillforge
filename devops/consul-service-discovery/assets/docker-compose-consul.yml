@@ -1,0 +1,221 @@
+# Docker Compose: 3-Node Consul Cluster with Sample Services
+#
+# Usage:
+#   docker compose -f docker-compose-consul.yml up -d
+#   docker compose -f docker-compose-consul.yml down -v
+#
+# Access:
+#   Consul UI:  http://localhost:8500/ui
+#   Consul DNS: dig @127.0.0.1 -p 8600 web.service.consul
+#   Web app:    http://localhost:9080
+#   API:        http://localhost:9090
+
+services:
+  # ============================================================
+  # Consul Server Cluster (3 nodes)
+  # ============================================================
+  consul-server-1:
+    image: hashicorp/consul:1.17
+    container_name: consul-server-1
+    command: >
+      consul agent -server
+        -bootstrap-expect=3
+        -node=server-1
+        -bind=0.0.0.0
+        -client=0.0.0.0
+        -datacenter=dc1
+        -data-dir=/consul/data
+        -ui
+        -retry-join=consul-server-2
+        -retry-join=consul-server-3
+        -encrypt=${CONSUL_GOSSIP_KEY:-}
+    ports:
+      - "8500:8500"     # HTTP API + UI
+      - "8600:8600/udp" # DNS
+      - "8600:8600/tcp" # DNS
+    volumes:
+      - consul-data-1:/consul/data
+    networks:
+      - consul-net
+    restart: unless-stopped
+
+  consul-server-2:
+    image: hashicorp/consul:1.17
+    container_name: consul-server-2
+    command: >
+      consul agent -server
+        -bootstrap-expect=3
+        -node=server-2
+        -bind=0.0.0.0
+        -client=0.0.0.0
+        -datacenter=dc1
+        -data-dir=/consul/data
+        -retry-join=consul-server-1
+        -retry-join=consul-server-3
+        -encrypt=${CONSUL_GOSSIP_KEY:-}
+    volumes:
+      - consul-data-2:/consul/data
+    networks:
+      - consul-net
+    restart: unless-stopped
+
+  consul-server-3:
+    image: hashicorp/consul:1.17
+    container_name: consul-server-3
+    command: >
+      consul agent -server
+        -bootstrap-expect=3
+        -node=server-3
+        -bind=0.0.0.0
+        -client=0.0.0.0
+        -datacenter=dc1
+        -data-dir=/consul/data
+        -retry-join=consul-server-1
+        -retry-join=consul-server-2
+        -encrypt=${CONSUL_GOSSIP_KEY:-}
+    volumes:
+      - consul-data-3:/consul/data
+    networks:
+      - consul-net
+    restart: unless-stopped
+
+  # ============================================================
+  # Consul Client (runs on "application nodes")
+  # ============================================================
+  consul-client:
+    image: hashicorp/consul:1.17
+    container_name: consul-client
+    command: >
+      consul agent
+        -node=client-1
+        -bind=0.0.0.0
+        -client=0.0.0.0
+        -datacenter=dc1
+        -data-dir=/consul/data
+        -retry-join=consul-server-1
+        -retry-join=consul-server-2
+        -retry-join=consul-server-3
+        -encrypt=${CONSUL_GOSSIP_KEY:-}
+    networks:
+      - consul-net
+    depends_on:
+      - consul-server-1
+      - consul-server-2
+      - consul-server-3
+    restart: unless-stopped
+
+  # ============================================================
+  # Sample Services
+  # ============================================================
+
+  # Web frontend service (registered with Consul)
+  web:
+    image: nginx:alpine
+    container_name: web-service
+    ports:
+      - "9080:80"
+    networks:
+      - consul-net
+    depends_on:
+      - consul-client
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # API backend service (registered with Consul)
+  api:
+    image: hashicorp/http-echo
+    container_name: api-service
+    command: -listen=:9090 -text="Hello from API service"
+    ports:
+      - "9090:9090"
+    networks:
+      - consul-net
+    depends_on:
+      - consul-client
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ============================================================
+  # Service Registrator
+  # Registers the sample services with Consul on startup
+  # ============================================================
+  registrator:
+    image: hashicorp/consul:1.17
+    container_name: registrator
+    entrypoint: /bin/sh
+    command: >
+      -c '
+        echo "Waiting for Consul cluster to be ready..."
+        until curl -sf http://consul-server-1:8500/v1/status/leader | grep -q .; do
+          sleep 2
+        done
+        echo "Consul is ready. Registering services..."
+
+        # Register web service
+        curl -X PUT http://consul-client:8500/v1/agent/service/register -d "{
+          \"ID\": \"web-1\",
+          \"Name\": \"web\",
+          \"Tags\": [\"primary\", \"nginx\"],
+          \"Port\": 80,
+          \"Address\": \"web\",
+          \"Meta\": {\"version\": \"1.0\"},
+          \"Check\": {
+            \"HTTP\": \"http://web:80\",
+            \"Interval\": \"10s\",
+            \"Timeout\": \"3s\"
+          }
+        }"
+
+        # Register API service
+        curl -X PUT http://consul-client:8500/v1/agent/service/register -d "{
+          \"ID\": \"api-1\",
+          \"Name\": \"api\",
+          \"Tags\": [\"v1\", \"rest\"],
+          \"Port\": 9090,
+          \"Address\": \"api\",
+          \"Meta\": {\"version\": \"1.0\"},
+          \"Check\": {
+            \"HTTP\": \"http://api:9090\",
+            \"Interval\": \"10s\",
+            \"Timeout\": \"3s\"
+          }
+        }"
+
+        # Populate KV data
+        curl -X PUT http://consul-client:8500/v1/kv/config/global/environment -d "docker"
+        curl -X PUT http://consul-client:8500/v1/kv/config/database/host -d "postgres"
+        curl -X PUT http://consul-client:8500/v1/kv/config/database/port -d "5432"
+
+        echo ""
+        echo "Services registered. KV data populated."
+        echo "Consul UI: http://localhost:8500/ui"
+      '
+    networks:
+      - consul-net
+    depends_on:
+      - consul-server-1
+      - consul-server-2
+      - consul-server-3
+      - consul-client
+      - web
+      - api
+
+# ============================================================
+# Volumes and Networks
+# ============================================================
+volumes:
+  consul-data-1:
+  consul-data-2:
+  consul-data-3:
+
+networks:
+  consul-net:
+    driver: bridge

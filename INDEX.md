@@ -188,6 +188,6 @@
 | java | [spring-boot-patterns](java/spring-boot-patterns/) | Spring Boot 3.x — REST controllers, Spring Data JPA, Security, testing, Actuator, GraalVM native | tested |
 | javascript | [deno-runtime](javascript/deno-runtime/) | Deno 2.x runtime — permissions, Deno.serve, KV, Deploy, Fresh, JSR, npm compat, compile | tested |
 | devops | [nginx-advanced](devops/nginx-advanced/) | Nginx advanced — reverse proxy, load balancing, SSL/TLS, caching, rate limiting, HTTP/2-3, stream | tested |
-| databases | [mongodb-patterns](databases/mongodb-patterns/) | MongoDB — aggregation pipelines, indexing, schema design, replica sets, sharding, change streams, Atlas | created |
-| frontend | [electron-apps](frontend/electron-apps/) | Electron desktop apps — IPC, preload scripts, security, packaging, auto-updater, Forge/builder | created |
-| devops | [consul-service-discovery](devops/consul-service-discovery/) | Consul — service discovery, health checks, KV, Connect mesh, ACLs, multi-DC, consul-template | created |
+| databases | [mongodb-patterns](databases/mongodb-patterns/) | MongoDB — aggregation pipelines, indexing, schema design, replica sets, sharding, change streams, Atlas | enriched |
+| frontend | [electron-apps](frontend/electron-apps/) | Electron desktop apps — IPC, preload scripts, security, packaging, auto-updater, Forge/builder | enriched |
+| devops | [consul-service-discovery](devops/consul-service-discovery/) | Consul — service discovery, health checks, KV, Connect mesh, ACLs, multi-DC, consul-template | enriched |
