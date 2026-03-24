@@ -440,3 +440,4 @@ Copy-paste ready unit files in the `assets/templates/` directory:
 - **`assets/templates/worker.service`** — Background worker template with restart policies, graceful shutdown, and security hardening.
 - **`assets/templates/timer.timer`** + **`assets/templates/timer.service`** — Timer unit pair for cron replacement with persistent scheduling, jitter, and low-priority execution.
 - **`assets/templates/socket.socket`** + **`assets/templates/socket.service`** — Socket activation pair with named fd support, backlog configuration, and connection limits.
+<!-- tested: pass -->

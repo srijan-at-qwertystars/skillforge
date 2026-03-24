@@ -494,3 +494,5 @@ Copy-paste ready configuration templates:
 - **[certbot-hooks/](assets/certbot-hooks/)** — Post-renewal deploy hooks for Nginx, Apache, and HAProxy. Each tests config before reloading and logs results.
 
 - **[cipher-suites.md](assets/cipher-suites.md)** — Recommended cipher suite configurations for Modern (TLS 1.3 only), Intermediate (TLS 1.2+1.3, recommended), and Old (legacy) compatibility profiles, with complete configs for Nginx, Apache, HAProxy, and Caddy.
+
+<!-- tested: pass -->

@@ -497,3 +497,4 @@ autossh -M 0 -N -L 5432:db:5432 user@bastion -o ExitOnForwardFailure=yes
 | [`assets/sshd-hardened.conf`](assets/sshd-hardened.conf) | Hardened `sshd_config` template with modern crypto, strict auth, access control, and per-group overrides |
 | [`assets/autossh.service`](assets/autossh.service) | Systemd service template for persistent SSH tunnels via autossh with security hardening |
 | [`assets/ssh-ca-setup.md`](assets/ssh-ca-setup.md) | Step-by-step SSH Certificate Authority setup: CA generation, user/host signing, client trust, revocation, Vault integration |
+<!-- tested: pass -->
