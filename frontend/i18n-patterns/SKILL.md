@@ -485,3 +485,5 @@ Production-ready code in `assets/`:
 - **[translation-schema.json](assets/translation-schema.json)** — JSON Schema for validating translation file structure. Enforces required keys, correct types, and namespace organization. Use with `ajv` or IDE validation.
 - **[locale-switcher.tsx](assets/locale-switcher.tsx)** — Accessible locale switcher dropdown component with native locale names, flag emoji, keyboard navigation, current locale indicator. Works with next-intl and react-i18next.
 - **[date-formatter.ts](assets/date-formatter.ts)** — Zero-dependency utility module wrapping Intl API: date/time formatting, relative time, smart format (relative vs absolute), date ranges, calendar systems, timezone utilities, duration formatting.
+
+<!-- tested: pass -->

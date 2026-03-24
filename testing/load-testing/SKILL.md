@@ -481,3 +481,5 @@ Production-ready templates in `assets/`:
 | **[locustfile.py](assets/locustfile.py)** | Locust template: task sets with weights, user classes, custom load shapes (step/spike), event hooks, distributed setup |
 | **[docker-compose-monitoring.yml](assets/docker-compose-monitoring.yml)** | Docker Compose for InfluxDB + Grafana with auto-provisioned datasource and dashboard |
 | **[github-actions.yml](assets/github-actions.yml)** | CI/CD workflow: smoke on PRs, nightly load tests, baseline comparison, PR comments, Slack alerts |
+
+<!-- tested: pass -->

@@ -497,3 +497,5 @@ Production-ready templates in `assets/`:
 | [socket-io-server.ts](assets/socket-io-server.ts) | Socket.IO server: namespaces (/chat, /notifications), rooms, JWT middleware, Redis adapter, typed events, rate limiting, graceful shutdown |
 | [nginx-websocket.conf](assets/nginx-websocket.conf) | Nginx config: WebSocket upgrade headers, 24h timeouts, sticky sessions (ip_hash), SSL/TLS, rate limiting, Socket.IO path, health checks |
 | [k6-ws-test.js](assets/k6-ws-test.js) | k6 load test: staged VU ramp-up, connection lifecycle, message latency measurement, room operations, custom metrics, pass/fail thresholds |
+
+<!-- tested: pass -->
