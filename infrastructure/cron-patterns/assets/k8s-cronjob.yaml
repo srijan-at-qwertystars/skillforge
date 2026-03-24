@@ -1,0 +1,201 @@
+# Kubernetes CronJob Template — Production Best Practices
+#
+# Usage:
+#   1. Copy this template and customize for your workload
+#   2. Replace placeholder values (marked with <CHANGE-ME>)
+#   3. Apply: kubectl apply -f k8s-cronjob.yaml
+#   4. Verify: kubectl get cronjobs && kubectl get jobs
+#
+# Key decisions documented inline with trade-off explanations.
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: <CHANGE-ME>                    # e.g., db-backup, cache-cleanup
+  namespace: default                    # <CHANGE-ME>
+  labels:
+    app: <CHANGE-ME>
+    component: cronjob
+    managed-by: kubectl
+  annotations:
+    description: "<CHANGE-ME: what this job does>"
+spec:
+  # ── Schedule ──────────────────────────────────────────────
+  schedule: "0 2 * * *"                 # <CHANGE-ME> Standard 5-field cron
+  timeZone: "UTC"                       # IANA timezone (requires K8s 1.27+)
+                                        # Use UTC for consistency across clusters
+
+  # ── Concurrency Control ──────────────────────────────────
+  # Allow:   Multiple instances can run simultaneously (default, risky)
+  # Forbid:  Skip new run if previous still running (safest for most jobs)
+  # Replace: Kill running job and start new one (use for cache/status updates)
+  concurrencyPolicy: Forbid
+
+  # ── Missed Schedule Handling ─────────────────────────────
+  # How many seconds late a job can start. If the controller was down and
+  # missed the schedule by more than this, the run is skipped.
+  # Must be ≥10 (controller checks every 10s). 0 = no deadline.
+  # ⚠ If unset and >100 schedules missed, CronJob stops scheduling entirely.
+  startingDeadlineSeconds: 300          # 5 minutes
+
+  # ── History ──────────────────────────────────────────────
+  # How many completed/failed Job objects to keep. Higher = easier debugging,
+  # lower = less cluster resource usage.
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
+
+  # ── Suspend ──────────────────────────────────────────────
+  # Set to true to pause scheduling (e.g., during maintenance)
+  suspend: false
+
+  # ── Job Template ─────────────────────────────────────────
+  jobTemplate:
+    metadata:
+      labels:
+        app: <CHANGE-ME>
+        component: cronjob
+    spec:
+      # Kill the job if it runs longer than this (seconds)
+      # Prevents runaway jobs from consuming resources indefinitely
+      activeDeadlineSeconds: 3600       # 1 hour — <CHANGE-ME>
+
+      # Number of retries before marking the Job as failed
+      backoffLimit: 2                   # 2 retries (3 total attempts)
+
+      # Automatically clean up finished Jobs after N seconds
+      # Requires K8s 1.23+ with TTLAfterFinished feature gate
+      ttlSecondsAfterFinished: 86400    # 24 hours
+
+      template:
+        metadata:
+          labels:
+            app: <CHANGE-ME>
+            component: cronjob
+          annotations:
+            # Prevent Istio/Linkerd sidecar from keeping pod alive after job completes
+            sidecar.istio.io/inject: "false"
+        spec:
+          # ── Service Account ────────────────────────────
+          # Use a dedicated SA with minimal RBAC permissions
+          serviceAccountName: <CHANGE-ME>    # e.g., backup-sa
+
+          # ── Restart Policy ─────────────────────────────
+          # Never:     Don't restart failed containers (rely on backoffLimit)
+          # OnFailure: Restart container in-place on failure
+          restartPolicy: OnFailure
+
+          # ── Security Context ───────────────────────────
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+
+          # ── Container ──────────────────────────────────
+          containers:
+          - name: job
+            image: <CHANGE-ME>:latest        # Use specific tag, never :latest in prod
+            imagePullPolicy: IfNotPresent
+
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -euo pipefail
+              echo "Job started at $(date -Iseconds)"
+              # <CHANGE-ME: your actual command>
+              /app/run-job.sh
+              echo "Job completed at $(date -Iseconds)"
+
+            # ── Environment Variables ────────────────────
+            env:
+            - name: TZ
+              value: "UTC"
+            - name: JOB_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['app']
+            # Secrets from K8s Secret objects
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: <CHANGE-ME>-secrets
+                  key: db-password
+            # Config from ConfigMap
+            - name: CONFIG_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: <CHANGE-ME>-config
+                  key: config-path
+
+            # ── Resources ───────────────────────────────
+            # Always set requests AND limits for batch jobs
+            resources:
+              requests:
+                cpu: 100m                # <CHANGE-ME>
+                memory: 128Mi            # <CHANGE-ME>
+              limits:
+                cpu: 500m                # <CHANGE-ME>
+                memory: 512Mi            # <CHANGE-ME>
+                # ephemeral-storage: 1Gi # Uncomment if writing temp files
+
+            # ── Volume Mounts ───────────────────────────
+            volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+
+          # ── Volumes ────────────────────────────────────
+          volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: <CHANGE-ME>-pvc   # For persistent output
+          - name: tmp
+            emptyDir:
+              sizeLimit: 500Mi             # Limit temp disk usage
+
+          # ── Node Selection (optional) ──────────────────
+          # nodeSelector:
+          #   workload-type: batch
+          # tolerations:
+          # - key: "batch-only"
+          #   operator: "Equal"
+          #   value: "true"
+          #   effect: "NoSchedule"
+
+          # ── DNS & Networking ───────────────────────────
+          # Faster pod shutdown for jobs that don't need cluster DNS
+          # dnsPolicy: Default
+
+---
+# Optional: RBAC for the CronJob's ServiceAccount
+# apiVersion: v1
+# kind: ServiceAccount
+# metadata:
+#   name: <CHANGE-ME>
+#   namespace: default
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: Role
+# metadata:
+#   name: <CHANGE-ME>-role
+#   namespace: default
+# rules:
+# - apiGroups: [""]
+#   resources: ["secrets"]
+#   verbs: ["get"]
+# ---
+# apiVersion: rbac.authorization.k8s.io/v1
+# kind: RoleBinding
+# metadata:
+#   name: <CHANGE-ME>-binding
+#   namespace: default
+# subjects:
+# - kind: ServiceAccount
+#   name: <CHANGE-ME>
+# roleRef:
+#   kind: Role
+#   name: <CHANGE-ME>-role
+#   apiGroup: rbac.authorization.k8s.io

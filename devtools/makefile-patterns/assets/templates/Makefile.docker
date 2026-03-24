@@ -1,0 +1,254 @@
+# ============================================================================
+# Docker Workflow Makefile
+# ============================================================================
+# Copy-paste ready Makefile for Docker-based workflows.
+# Targets: build, push, run, compose, multi-platform, and more.
+# Usage: make help
+# ============================================================================
+
+.DEFAULT_GOAL := help
+.DELETE_ON_ERROR:
+.SUFFIXES:
+
+# ─── Project Configuration ──────────────────────────────────
+IMAGE      := $(shell basename $(CURDIR))
+REGISTRY   ?= ghcr.io/myorg
+VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+DOCKER_TAG := $(VERSION)
+
+# Docker Compose
+COMPOSE       := docker compose
+COMPOSE_FILE  ?= docker-compose.yml
+COMPOSE_ENV   ?= .env
+
+# Build configuration
+DOCKERFILE    ?= Dockerfile
+BUILD_CONTEXT ?= .
+PLATFORMS     ?= linux/amd64,linux/arm64
+BUILDX_BUILDER := multiplatform
+
+DOCKER_BUILD_ARGS := \
+    --build-arg VERSION=$(VERSION) \
+    --build-arg COMMIT=$(COMMIT) \
+    --build-arg BUILD_TIME=$(BUILD_TIME)
+
+# Container runtime settings
+CONTAINER_NAME := $(IMAGE)
+EXPOSE_PORT    ?= 8080
+CONTAINER_PORT ?= 8080
+
+# ─── Build Targets ──────────────────────────────────────────
+.PHONY: build build-no-cache build-target tag
+
+build: ## Build Docker image
+	docker build $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) \
+		-t $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) \
+		-t $(REGISTRY)/$(IMAGE):latest \
+		$(BUILD_CONTEXT)
+	@echo ""
+	@echo "Built: $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)"
+	@docker images $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) --format "Size: {{.Size}}"
+
+build-no-cache: ## Build without layer cache
+	docker build --no-cache $(DOCKER_BUILD_ARGS) \
+		-f $(DOCKERFILE) \
+		-t $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) \
+		$(BUILD_CONTEXT)
+
+build-target: ## Build specific stage (usage: make build-target STAGE=builder)
+	docker build $(DOCKER_BUILD_ARGS) \
+		--target $(STAGE) \
+		-f $(DOCKERFILE) \
+		-t $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)-$(STAGE) \
+		$(BUILD_CONTEXT)
+
+tag: ## Tag with custom tag (usage: make tag TAG=v1.2.3)
+ifndef TAG
+	$(error TAG is required. Usage: make tag TAG=v1.2.3)
+endif
+	docker tag $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) $(REGISTRY)/$(IMAGE):$(TAG)
+	@echo "Tagged: $(REGISTRY)/$(IMAGE):$(TAG)"
+
+# ─── Registry Targets ──────────────────────────────────────
+.PHONY: push pull login
+
+push: build ## Push image to registry
+	docker push $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+	docker push $(REGISTRY)/$(IMAGE):latest
+	@echo "Pushed: $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)"
+
+pull: ## Pull latest image from registry
+	docker pull $(REGISTRY)/$(IMAGE):latest
+
+login: ## Login to container registry
+	@echo "Logging into $(REGISTRY)..."
+	docker login $(shell echo $(REGISTRY) | cut -d/ -f1)
+
+# ─── Run Targets ────────────────────────────────────────────
+.PHONY: run run-detach run-interactive stop restart logs shell exec
+
+run: ## Run container (foreground)
+	docker run --rm \
+		--name $(CONTAINER_NAME) \
+		-p $(EXPOSE_PORT):$(CONTAINER_PORT) \
+		$(if $(wildcard $(COMPOSE_ENV)),--env-file $(COMPOSE_ENV)) \
+		$(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+
+run-detach: ## Run container (background)
+	docker run -d \
+		--name $(CONTAINER_NAME) \
+		-p $(EXPOSE_PORT):$(CONTAINER_PORT) \
+		$(if $(wildcard $(COMPOSE_ENV)),--env-file $(COMPOSE_ENV)) \
+		--restart unless-stopped \
+		$(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+	@echo "Container running: $(CONTAINER_NAME)"
+	@echo "Access: http://localhost:$(EXPOSE_PORT)"
+
+run-interactive: ## Run container with interactive shell
+	docker run --rm -it \
+		--name $(CONTAINER_NAME)-debug \
+		-p $(EXPOSE_PORT):$(CONTAINER_PORT) \
+		$(if $(wildcard $(COMPOSE_ENV)),--env-file $(COMPOSE_ENV)) \
+		$(REGISTRY)/$(IMAGE):$(DOCKER_TAG) /bin/sh
+
+stop: ## Stop running container
+	docker stop $(CONTAINER_NAME) 2>/dev/null || true
+	docker rm $(CONTAINER_NAME) 2>/dev/null || true
+
+restart: stop run-detach ## Restart container
+
+logs: ## Tail container logs
+	docker logs -f --tail 100 $(CONTAINER_NAME)
+
+shell: ## Open shell in running container
+	docker exec -it $(CONTAINER_NAME) /bin/sh
+
+exec: ## Execute command in container (usage: make exec CMD="ls -la")
+ifndef CMD
+	$(error CMD is required. Usage: make exec CMD="ls -la")
+endif
+	docker exec -it $(CONTAINER_NAME) $(CMD)
+
+# ─── Compose Targets ────────────────────────────────────────
+.PHONY: compose-up compose-down compose-restart compose-logs compose-ps \
+        compose-build compose-pull compose-exec compose-top
+
+compose-up: ## Start all services (detached)
+	$(COMPOSE) -f $(COMPOSE_FILE) up -d
+	@echo ""
+	$(COMPOSE) -f $(COMPOSE_FILE) ps
+
+compose-down: ## Stop and remove all services
+	$(COMPOSE) -f $(COMPOSE_FILE) down
+
+compose-restart: ## Restart all services
+	$(COMPOSE) -f $(COMPOSE_FILE) restart
+
+compose-logs: ## Follow logs for all services
+	$(COMPOSE) -f $(COMPOSE_FILE) logs -f --tail 50
+
+compose-ps: ## Show status of all services
+	$(COMPOSE) -f $(COMPOSE_FILE) ps
+
+compose-build: ## Build all service images
+	$(COMPOSE) -f $(COMPOSE_FILE) build $(DOCKER_BUILD_ARGS)
+
+compose-pull: ## Pull latest images for all services
+	$(COMPOSE) -f $(COMPOSE_FILE) pull
+
+compose-exec: ## Execute command in a service (usage: make compose-exec SVC=app CMD="sh")
+ifndef SVC
+	$(error SVC is required. Usage: make compose-exec SVC=app CMD="sh")
+endif
+	$(COMPOSE) -f $(COMPOSE_FILE) exec $(SVC) $(CMD)
+
+compose-top: ## Show running processes in services
+	$(COMPOSE) -f $(COMPOSE_FILE) top
+
+# ─── Multi-Platform Targets ─────────────────────────────────
+.PHONY: buildx-setup buildx buildx-inspect
+
+buildx-setup: ## Set up Docker BuildKit for multi-platform builds
+	@docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2>&1 || \
+		docker buildx create --name $(BUILDX_BUILDER) --driver docker-container
+	docker buildx use $(BUILDX_BUILDER)
+	docker buildx inspect --bootstrap
+	@echo ""
+	@echo "Builder '$(BUILDX_BUILDER)' ready for platforms: $(PLATFORMS)"
+
+buildx: buildx-setup ## Build and push multi-platform image
+	docker buildx build $(DOCKER_BUILD_ARGS) \
+		--platform $(PLATFORMS) \
+		-f $(DOCKERFILE) \
+		-t $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) \
+		-t $(REGISTRY)/$(IMAGE):latest \
+		--push \
+		$(BUILD_CONTEXT)
+	@echo "Multi-platform image pushed: $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)"
+
+buildx-inspect: ## Inspect multi-platform image manifest
+	docker buildx imagetools inspect $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+
+# ─── Health & Inspection ────────────────────────────────────
+.PHONY: health inspect size history scan
+
+health: ## Check container health
+	@docker inspect --format='{{.State.Health.Status}}' $(CONTAINER_NAME) 2>/dev/null || \
+		echo "Container $(CONTAINER_NAME) not running or no healthcheck defined"
+
+inspect: ## Show image details
+	docker inspect $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) | head -80
+
+size: ## Show image size breakdown
+	docker history $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) --human --format "{{.Size}}\t{{.CreatedBy}}"
+
+history: ## Show image layer history
+	docker history $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+
+scan: ## Scan image for vulnerabilities
+	docker scout cves $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) 2>/dev/null || \
+		docker scan $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) 2>/dev/null || \
+		echo "Install Docker Scout or Snyk for vulnerability scanning"
+
+# ─── Cleanup Targets ────────────────────────────────────────
+.PHONY: clean clean-images clean-volumes prune
+
+clean: stop ## Stop container and remove project images
+	docker rmi $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) 2>/dev/null || true
+	docker rmi $(REGISTRY)/$(IMAGE):latest 2>/dev/null || true
+
+clean-images: ## Remove all dangling images
+	docker image prune -f
+
+clean-volumes: ## Remove unused volumes (CAUTION: data loss!)
+	@echo "This will remove unused Docker volumes. Press Ctrl+C to cancel."
+	@read -p "Are you sure? [y/N] " ans && [ "$$ans" = "y" ]
+	docker volume prune -f
+
+prune: ## Full Docker cleanup (images, containers, volumes, networks)
+	@echo "This will remove ALL unused Docker resources."
+	@read -p "Are you sure? [y/N] " ans && [ "$$ans" = "y" ]
+	docker system prune -af --volumes
+
+# ─── Utility Targets ────────────────────────────────────────
+.PHONY: info print-% help
+
+info: ## Print project and Docker information
+	@echo "Project:   $(IMAGE)"
+	@echo "Version:   $(VERSION)"
+	@echo "Commit:    $(COMMIT)"
+	@echo "Registry:  $(REGISTRY)"
+	@echo "Image:     $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)"
+	@echo "Platforms: $(PLATFORMS)"
+	@echo "Docker:    $$(docker --version)"
+	@echo "Compose:   $$($(COMPOSE) version 2>/dev/null || echo 'not installed')"
+
+print-%: ## Print any variable (usage: make print-REGISTRY)
+	@echo '$* = $($*)'
+
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}'

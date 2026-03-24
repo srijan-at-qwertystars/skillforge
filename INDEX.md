@@ -233,6 +233,6 @@
 | devops | log-management | Log management — structured logging, ELK/Loki, log rotation, aggregation, correlation IDs | tested |
 | devops | backup-strategies | Backup strategies — 3-2-1 rule, rsync/restic/borg, database backups, snapshots, disaster recovery | tested |
 | infrastructure | dns-patterns | DNS patterns — record types, DNSSEC, email auth, debugging, GeoDNS, service discovery | tested |
-| infrastructure | cron-patterns | Cron patterns — crontab syntax, scheduled tasks, debugging, flock, containers, monitoring | created |
-| devtools | makefile-patterns | Makefile patterns — GNU Make syntax, automatic variables, functions, modern project templates | created |
-| devtools | jq-patterns | jq patterns — JSON processing, filters, transformations, API responses, shell scripting | created |
+| infrastructure | cron-patterns | Cron patterns — crontab syntax, scheduled tasks, debugging, flock, containers, monitoring | enriched |
+| devtools | makefile-patterns | Makefile patterns — GNU Make syntax, automatic variables, functions, modern project templates | enriched |
+| devtools | jq-patterns | jq patterns — JSON processing, filters, transformations, API responses, shell scripting | enriched |

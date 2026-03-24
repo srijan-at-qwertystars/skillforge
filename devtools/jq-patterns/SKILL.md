@@ -347,11 +347,6 @@ curl -s -X POST https://api.example.com/data \
   -H "Content-Type: application/json" \
   -d "$(jq -n --arg name "$NAME" '{name: $name}')"
 
-# Paginate and collect API results
-for page in $(seq 1 5); do
-  curl -s "https://api.example.com/items?page=$page" | jq '.items[]'
-done | jq -s 'unique_by(.id)'
-
 # Chain API calls
 ID=$(curl -s https://api.example.com/user | jq -r '.id')
 curl -s "https://api.example.com/user/$ID/details" | jq '.profile'
@@ -377,12 +372,7 @@ fi
 jq -n --arg host "$HOSTNAME" --argjson port 8080 \
   '{host: $host, port: $port}'
 
-# Read JSON into bash associative array
-while IFS='=' read -r key value; do
-  config[$key]=$value
-done < <(jq -r 'to_entries[] | "\(.key)=\(.value)"' config.json)
-
-# Modify JSON file in-place (sponge from moreutils, or temp file)
+# Modify JSON file in-place (temp file pattern)
 jq '.version = "2.0"' package.json > tmp.json && mv tmp.json package.json
 ```
 
@@ -396,24 +386,15 @@ echo '[{"id":"a","val":1},{"id":"b","val":2}]' | \
 
 # Reverse: object → array of objects
 echo '{"a":1,"b":2}' | jq 'to_entries | map({id: .key, val: .value})'
-# [{"id":"a","val":1},{"id":"b","val":2}]
 
 # Merge array of objects
 echo '[{"a":1},{"b":2},{"a":3,"c":4}]' | jq 'reduce .[] as $o ({}; . * $o)'
-# {"a":3,"b":2,"c":4}
-
-# Pivot/transpose rows to columns
-jq 'group_by(.date) | map({date: .[0].date} + (map({(.metric): .value}) | add))'
 
 # Flatten nested object to dot-notation keys
 jq '[paths(scalars) as $p | {([$p[] | tostring] | join(".")): getpath($p)}] | add'
 
-# Add/update field conditionally
-jq 'map(if .status == "pending" then .status = "processed" else . end)'
-
 # Remove null fields
-jq 'del(.[] | nulls)'                          # from array
-jq 'with_entries(select(.value != null))'       # from object
+jq 'with_entries(select(.value != null))'
 
 # Deep merge two objects
 jq -s '.[0] * .[1]' a.json b.json
@@ -439,9 +420,7 @@ keys, values, has("key"), in(obj), contains, inside, length
 ltrimstr/rtrimstr, split/join, ascii_downcase/ascii_upcase
 startswith/endswith, test("regex"), match("regex"), capture("(?<name>regex)")
 limit(n; expr), first(expr), last(expr), range(n), range(a;b)
-env.VAR_NAME                          # access environment variables
-now | todate                          # current time as ISO8601
-add, any, all, empty, debug           # debug prints to stderr
+env.VAR_NAME, now | todate, add, any, all, empty, debug
 ```
 
 ## jq vs Alternatives
@@ -464,34 +443,41 @@ add, any, all, empty, debug           # debug prints to stderr
 ## Common One-Liners
 
 ```bash
-# Validate JSON
-jq empty < file.json
-
-# Count array elements
-jq 'length' items.json
-
-# Get unique values of a field
-jq '[.[].category] | unique' items.json
-
-# Sum a numeric field
-jq '[.[].amount] | add' transactions.json
-
-# Find duplicates
-jq 'group_by(.email) | map(select(length > 1)) | flatten'
-
-# Top N by field
-jq 'sort_by(-.score) | limit(10; .[])' scores.json
-
-# Convert object to env file
-jq -r 'to_entries[] | "\(.key)=\(.value)"' config.json > .env
-
-# Diff two JSON files (keys only)
-diff <(jq -S 'keys' a.json) <(jq -S 'keys' b.json)
-
-# Extract nested array, deduplicate, sort
-jq '[.results[].tags[]] | unique | sort' api.json
-
-# Create lookup table / Join two files on key
-jq 'INDEX(.id)' users.json
-jq -s 'INDEX(.[0][]; .id) as $lookup | .[1][] | . + $lookup[.user_id]' users.json orders.json
+jq empty < file.json                                                    # validate
+jq 'length' items.json                                                  # count elements
+jq '[.[].category] | unique' items.json                                 # unique values
+jq '[.[].amount] | add' transactions.json                               # sum field
+jq 'group_by(.email) | map(select(length > 1)) | flatten'              # find duplicates
+jq 'sort_by(-.score) | limit(10; .[])' scores.json                     # top N
+jq -r 'to_entries[] | "\(.key)=\(.value)"' config.json > .env          # JSON → .env
+diff <(jq -S 'keys' a.json) <(jq -S 'keys' b.json)                    # diff keys
+jq 'INDEX(.id)' users.json                                              # lookup table
 ```
+
+---
+
+## Additional Resources
+
+### References
+
+| File | Topics |
+|------|--------|
+| [references/advanced-patterns.md](references/advanced-patterns.md) | Streaming (`--stream`/`tostream`/`fromstream`), `INDEX`/`IN` joins, modules, `label-break`/`limit`/`first`/`last`/`until`, `env`/`$ENV`, recursive descent, data reshaping, builtins, CI/CD |
+| [references/troubleshooting.md](references/troubleshooting.md) | Null iteration errors, type errors, `debug`/`stderr`, jq execution model (generators), shell quoting, large file handling, Unicode, performance |
+| [references/cookbook.md](references/cookbook.md) | 70+ recipes: API responses, config files, log parsing, data migration, reporting, K8s, Terraform, GitHub API, AWS CLI, Docker |
+
+### Scripts (chmod +x)
+
+| Script | Description |
+|--------|-------------|
+| [scripts/jq-playground.sh](scripts/jq-playground.sh) | Interactive jq REPL with colored output and `:help`/`:load`/`:save` commands |
+| [scripts/json-transform.sh](scripts/json-transform.sh) | `flatten`/`unflatten`/`merge`/`diff`/`validate`/`minify`/`to-csv`/`from-csv`/`strip-nulls` |
+| [scripts/api-explorer.sh](scripts/api-explorer.sh) | curl+jq API explorer with auto-formatting, timing, pagination, `API_BASE_URL`/`API_TOKEN` |
+
+### Assets (copy-paste ready)
+
+| File | Description |
+|------|-------------|
+| [assets/one-liners.md](assets/one-liners.md) | 107 jq one-liners by task (access, filter, aggregate, reshape, DevOps) |
+| [assets/jq-cheatsheet.md](assets/jq-cheatsheet.md) | Quick reference: CLI flags, operators, builtins, format strings, control flow |
+| [assets/shell-integration.md](assets/shell-integration.md) | Bash scripts, Makefiles, CI/CD pipelines, shell function library, gotchas |

@@ -1,0 +1,186 @@
+# ============================================================================
+# Python Project Makefile
+# ============================================================================
+# Copy-paste ready Makefile for Python projects.
+# Targets: venv, install, test, lint, format, docker, and more.
+# Usage: make help
+# ============================================================================
+
+.DEFAULT_GOAL := help
+.DELETE_ON_ERROR:
+.SUFFIXES:
+
+# ─── Project Configuration ──────────────────────────────────
+PROJECT    := $(shell basename $(CURDIR))
+VERSION    := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+PYTHON     := python3
+MIN_PYTHON := 3.9
+
+# Virtual environment
+VENV       := .venv
+BIN        := $(VENV)/bin
+PIP        := $(BIN)/pip
+PYTHON_BIN := $(BIN)/python
+
+# Source directories
+SRC_DIR    := src
+TEST_DIR   := tests
+
+# Tool binaries (inside venv)
+PYTEST     := $(BIN)/pytest
+RUFF       := $(BIN)/ruff
+MYPY       := $(BIN)/mypy
+BLACK      := $(BIN)/black
+ISORT      := $(BIN)/isort
+
+# Docker settings
+IMAGE      := $(PROJECT)
+REGISTRY   ?= ghcr.io/myorg
+DOCKER_TAG := $(VERSION)
+
+# ─── Environment Setup ─────────────────────────────────────
+.PHONY: venv install install-dev install-prod deps-check deps-lock
+
+$(VENV)/bin/activate: requirements.txt
+	@echo "Creating virtual environment..."
+	$(PYTHON) -m venv $(VENV)
+	$(PIP) install --upgrade pip setuptools wheel
+	$(PIP) install -r requirements.txt
+	@touch $@
+
+venv: $(VENV)/bin/activate ## Create virtual environment
+
+install: $(VENV)/bin/activate ## Install project in development mode
+	$(PIP) install -e ".[dev]" 2>/dev/null || $(PIP) install -r requirements.txt
+	@echo "Installing dev dependencies..."
+	$(PIP) install -r requirements-dev.txt 2>/dev/null || true
+
+install-dev: install ## Alias for install
+
+install-prod: ## Install production dependencies only
+	$(PYTHON) -m venv $(VENV)
+	$(PIP) install --upgrade pip
+	$(PIP) install -r requirements.txt
+
+deps-check: $(VENV)/bin/activate ## Check for outdated packages
+	$(PIP) list --outdated
+
+deps-lock: $(VENV)/bin/activate ## Lock current dependency versions
+	$(PIP) freeze > requirements.lock
+	@echo "Locked dependencies → requirements.lock"
+
+# ─── Build Targets ──────────────────────────────────────────
+.PHONY: all build dist clean distclean
+
+all: lint typecheck test ## Lint, type-check, and test
+
+build: $(VENV)/bin/activate ## Build the package
+	$(PYTHON_BIN) -m build 2>/dev/null || \
+		($(PIP) install build && $(PYTHON_BIN) -m build)
+
+dist: build ## Create distribution artifacts
+	@echo "Distribution files → dist/"
+
+# ─── Test Targets ───────────────────────────────────────────
+.PHONY: test test-watch test-coverage test-fast test-markers
+
+test: $(VENV)/bin/activate ## Run tests
+	$(PYTEST) $(TEST_DIR)/ -v
+
+test-watch: $(VENV)/bin/activate ## Run tests in watch mode
+	$(PYTEST) $(TEST_DIR)/ -v --watch 2>/dev/null || \
+		($(PIP) install pytest-watch && $(BIN)/ptw -- $(TEST_DIR)/ -v)
+
+test-coverage: $(VENV)/bin/activate ## Run tests with coverage report
+	$(PYTEST) $(TEST_DIR)/ -v \
+		--cov=$(SRC_DIR) \
+		--cov-report=term-missing \
+		--cov-report=html \
+		--cov-fail-under=80
+	@echo "Coverage report → htmlcov/index.html"
+
+test-fast: $(VENV)/bin/activate ## Run tests excluding slow markers
+	$(PYTEST) $(TEST_DIR)/ -v -m "not slow"
+
+test-markers: $(VENV)/bin/activate ## Show available test markers
+	$(PYTEST) --markers
+
+# ─── Code Quality ──────────────────────────────────────────
+.PHONY: lint lint-fix fmt typecheck check
+
+lint: $(VENV)/bin/activate ## Run linters (ruff + mypy)
+	$(RUFF) check $(SRC_DIR)/ $(TEST_DIR)/
+
+lint-fix: $(VENV)/bin/activate ## Run linter with auto-fix
+	$(RUFF) check --fix $(SRC_DIR)/ $(TEST_DIR)/
+
+fmt: $(VENV)/bin/activate ## Format code (ruff format)
+	$(RUFF) format $(SRC_DIR)/ $(TEST_DIR)/
+
+typecheck: $(VENV)/bin/activate ## Run type checker
+	$(MYPY) $(SRC_DIR)/ --ignore-missing-imports
+
+check: fmt lint typecheck ## Run all code quality checks
+	@echo "All checks passed!"
+
+# ─── Docker Targets ─────────────────────────────────────────
+.PHONY: docker docker-push docker-run
+
+docker: ## Build Docker image
+	docker build \
+		--build-arg PYTHON_VERSION=$(MIN_PYTHON) \
+		--build-arg VERSION=$(VERSION) \
+		-t $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) \
+		-t $(REGISTRY)/$(IMAGE):latest .
+
+docker-push: docker ## Push Docker image to registry
+	docker push $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+	docker push $(REGISTRY)/$(IMAGE):latest
+
+docker-run: ## Run Docker container locally
+	docker run --rm -it \
+		-p 8000:8000 \
+		-e ENVIRONMENT=production \
+		$(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+
+# ─── Documentation ──────────────────────────────────────────
+.PHONY: docs docs-serve
+
+docs: $(VENV)/bin/activate ## Build documentation
+	$(BIN)/sphinx-build -b html docs/ docs/_build 2>/dev/null || \
+		$(BIN)/mkdocs build 2>/dev/null || \
+		echo "Install sphinx or mkdocs for documentation building"
+
+docs-serve: $(VENV)/bin/activate ## Serve documentation locally
+	$(BIN)/sphinx-autobuild docs/ docs/_build 2>/dev/null || \
+		$(BIN)/mkdocs serve 2>/dev/null || \
+		echo "Install sphinx-autobuild or mkdocs for live documentation"
+
+# ─── Utility Targets ────────────────────────────────────────
+.PHONY: clean distclean version repl print-% help
+
+clean: ## Remove build artifacts and caches
+	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name '*.egg-info' -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name '*.pyc' -delete 2>/dev/null || true
+	rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/ htmlcov/
+	rm -rf dist/ build/ .coverage coverage.xml
+
+distclean: clean ## Remove everything including virtual environment
+	rm -rf $(VENV)
+
+version: ## Print version information
+	@echo "Project: $(PROJECT)"
+	@echo "Version: $(VERSION)"
+	@echo "Python:  $$($(PYTHON) --version 2>&1)"
+	@test -f $(PYTHON_BIN) && echo "Venv:    $$($(PYTHON_BIN) --version 2>&1)" || echo "Venv:    not created"
+
+repl: $(VENV)/bin/activate ## Start Python REPL with project on path
+	PYTHONPATH=$(SRC_DIR) $(PYTHON_BIN)
+
+print-%: ## Print any variable (usage: make print-VERSION)
+	@echo '$* = $($*)'
+
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'

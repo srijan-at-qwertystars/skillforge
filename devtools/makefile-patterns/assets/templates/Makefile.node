@@ -1,0 +1,154 @@
+# ============================================================================
+# Node.js Project Makefile
+# ============================================================================
+# Copy-paste ready Makefile for Node.js/TypeScript projects.
+# Targets: install, build, test, lint, docker, and more.
+# Usage: make help
+# ============================================================================
+
+.DEFAULT_GOAL := help
+.DELETE_ON_ERROR:
+.SUFFIXES:
+
+# ─── Project Configuration ──────────────────────────────────
+APP_NAME   := $(shell node -p "require('./package.json').name" 2>/dev/null || basename $(CURDIR))
+VERSION    := $(shell node -p "require('./package.json').version" 2>/dev/null || echo 0.0.0)
+NODE_ENV   ?= development
+
+# Sentinel file for dependency tracking
+NODE_MODULES := node_modules/.package-lock.json
+
+# Docker settings
+IMAGE      := $(APP_NAME)
+REGISTRY   ?= ghcr.io/myorg
+DOCKER_TAG := $(VERSION)
+
+# Node/npm configuration
+NPM        := npm
+NPX        := npx
+
+# ─── Dependency Management ──────────────────────────────────
+$(NODE_MODULES): package.json package-lock.json
+	$(NPM) ci --loglevel=warn
+	@touch $@
+
+.PHONY: install install-prod deps-check deps-update deps-audit
+
+install: $(NODE_MODULES) ## Install dependencies
+
+install-prod: ## Install production dependencies only
+	$(NPM) ci --omit=dev --loglevel=warn
+
+deps-check: $(NODE_MODULES) ## Check for outdated dependencies
+	$(NPM) outdated || true
+
+deps-update: ## Update dependencies interactively
+	$(NPX) npm-check-updates -i
+
+deps-audit: $(NODE_MODULES) ## Run security audit
+	$(NPM) audit --production
+	@echo "For auto-fix: npm audit fix"
+
+# ─── Build Targets ──────────────────────────────────────────
+.PHONY: all build build-watch dev preview clean distclean
+
+all: lint typecheck test build ## Lint, type-check, test, and build
+
+build: $(NODE_MODULES) ## Build for production
+	NODE_ENV=production $(NPM) run build
+
+build-watch: $(NODE_MODULES) ## Build in watch mode
+	$(NPM) run build -- --watch
+
+dev: $(NODE_MODULES) ## Start development server
+	$(NPM) run dev
+
+preview: build ## Preview production build locally
+	$(NPM) run preview 2>/dev/null || $(NPX) serve dist/
+
+# ─── Test Targets ───────────────────────────────────────────
+.PHONY: test test-watch test-coverage test-ci test-e2e
+
+test: $(NODE_MODULES) ## Run test suite
+	$(NPM) test
+
+test-watch: $(NODE_MODULES) ## Run tests in watch mode
+	$(NPM) test -- --watch
+
+test-coverage: $(NODE_MODULES) ## Run tests with coverage
+	$(NPM) test -- --coverage
+	@echo "Coverage report → coverage/lcov-report/index.html"
+
+test-ci: $(NODE_MODULES) ## Run tests in CI mode (no watch, with coverage)
+	CI=true $(NPM) test -- --coverage --watchAll=false
+
+test-e2e: $(NODE_MODULES) ## Run end-to-end tests
+	$(NPM) run test:e2e 2>/dev/null || $(NPX) playwright test
+
+# ─── Code Quality ──────────────────────────────────────────
+.PHONY: lint lint-fix fmt typecheck check
+
+lint: $(NODE_MODULES) ## Run linter
+	$(NPM) run lint
+
+lint-fix: $(NODE_MODULES) ## Run linter with auto-fix
+	$(NPM) run lint -- --fix
+
+fmt: $(NODE_MODULES) ## Format code with Prettier
+	$(NPX) prettier --write "src/**/*.{js,ts,jsx,tsx,json,css,scss,md}"
+
+typecheck: $(NODE_MODULES) ## Run TypeScript type checker
+	$(NPX) tsc --noEmit
+
+check: lint typecheck ## Run all static checks
+
+# ─── Docker Targets ─────────────────────────────────────────
+.PHONY: docker docker-push docker-run docker-dev
+
+docker: ## Build Docker image
+	docker build \
+		--build-arg NODE_ENV=production \
+		--build-arg APP_VERSION=$(VERSION) \
+		-t $(REGISTRY)/$(IMAGE):$(DOCKER_TAG) \
+		-t $(REGISTRY)/$(IMAGE):latest .
+
+docker-push: docker ## Push Docker image to registry
+	docker push $(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+	docker push $(REGISTRY)/$(IMAGE):latest
+
+docker-run: ## Run Docker container locally
+	docker run --rm -it \
+		-p 3000:3000 \
+		-e NODE_ENV=production \
+		$(REGISTRY)/$(IMAGE):$(DOCKER_TAG)
+
+docker-dev: ## Run development container with volume mount
+	docker run --rm -it \
+		-p 3000:3000 \
+		-v $(CURDIR)/src:/app/src \
+		-e NODE_ENV=development \
+		$(REGISTRY)/$(IMAGE):$(DOCKER_TAG) \
+		npm run dev
+
+# ─── Utility Targets ────────────────────────────────────────
+.PHONY: clean distclean version print-% help
+
+clean: ## Remove build artifacts
+	rm -rf dist/ build/ .next/ .cache/ .parcel-cache/ coverage/ .turbo/
+	rm -rf .nyc_output/ storybook-static/ playwright-report/
+
+distclean: clean ## Remove everything including node_modules
+	rm -rf node_modules/
+
+version: ## Print version information
+	@echo "App:     $(APP_NAME)"
+	@echo "Version: $(VERSION)"
+	@echo "Node:    $$(node --version)"
+	@echo "npm:     $$(npm --version)"
+
+print-%: ## Print any variable (usage: make print-VERSION)
+	@echo '$* = $($*)'
+
+help: ## Show this help message
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'

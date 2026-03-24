@@ -487,3 +487,13 @@ Use Make when: file-based dependency tracking matters, POSIX compatibility is re
 - Don't put side effects in variable assignments via `$(shell ...)` at parse time.
 - Escape `$` in shell commands as `$$` (e.g., `$$HOME`, `$$variable`).
 - Always quote `$(MAKEFILE_LIST)` in grep-based help targets.
+
+## Reference Documentation
+
+In-depth guides in `references/`:
+
+- **`references/advanced-patterns.md`** — Non-recursive Make (Peter Miller), generated dependencies, order-only prerequisites, secondary expansion, target-specific variables, multi-line recipes, `eval`/`call` metaprogramming, Makefile includes for modularity, parallel builds, `.ONESHELL`, `.DELETE_ON_ERROR`, `.INTERMEDIATE`/`.PRECIOUS`. Includes table of contents.
+- **`references/troubleshooting.md`** — Common errors (missing separator, no rule to make target, circular dependency), debugging with `--debug=v`, `-n`, `-p`, `$(info)`/`$(warning)`/`$(error)`, recipe execution environment, shell compatibility, tab vs spaces, Windows compatibility. Includes table of contents and decision tree.
+
+## Scripts
+

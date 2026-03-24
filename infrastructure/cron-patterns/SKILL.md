@@ -171,8 +171,7 @@ Default cron environment is extremely limited (`PATH=/usr/bin:/bin`). Always:
 ```bash
 # Add temporarily to crontab to see what cron provides
 * * * * * env > /tmp/cron-env.txt 2>&1
-# Compare with: env > /tmp/shell-env.txt
-diff /tmp/cron-env.txt /tmp/shell-env.txt
+# Compare with: diff /tmp/cron-env.txt <(env)
 ```
 
 ## Output Handling
@@ -237,13 +236,12 @@ env -i $(cat /tmp/cron-env.txt | xargs) /path/to/script.sh
 ### Common failure checklist
 
 1. **Cron daemon running?** — `systemctl status cron`
-2. **Syntax valid?** — Paste into crontab.guru to verify
+2. **Syntax valid?** — Paste into crontab.guru
 3. **Script executable?** — `chmod +x /path/to/script.sh`
 4. **Absolute paths used?** — For commands AND file references
 5. **Correct user?** — `crontab -l` vs `sudo crontab -u www-data -l`
-6. **Permissions on log files?** — Script user must have write access
-7. **Dependencies available?** — Test with `env -i`
-8. **Shebang line present?** — `#!/bin/bash` at top of script
+6. **Dependencies available?** — Test with `env -i`
+7. **Shebang line present?** — `#!/bin/bash` at top of script
 
 ## Cron vs systemd Timers
 
@@ -254,13 +252,12 @@ env -i $(cat /tmp/cron-env.txt | xargs) /path/to/script.sh
 | Missed job catchup | No (use anacron) | `Persistent=true` |
 | Dependencies | None | Full systemd dependency graph |
 | Granularity | 1 minute minimum | Sub-second capable |
-| Calendar syntax | `* * * * *` | `OnCalendar=Mon..Fri *-*-* 09:00` |
 | Monitoring | External tools | `systemctl list-timers` |
 | Resource control | None | cgroups, CPU/memory limits |
 | Randomized delay | No | `RandomizedDelaySec=` |
 | Availability | Universal | systemd-based Linux only |
 
-Use cron for simple scheduled tasks. Use systemd timers when you need logging, dependency management, resource limits, or missed-job recovery.
+Use cron for simple scheduled tasks. Use systemd timers for logging, dependencies, resource limits, or missed-job recovery.
 
 ## Anacron for Missed Jobs
 
@@ -276,8 +273,7 @@ Anacron ensures periodic jobs run even if the system was off at the scheduled ti
 
 - `period`: days between runs
 - `delay`: minutes to wait after anacron starts before running
-- Anacron is typically invoked by cron itself (via `/etc/cron.d/anacron`)
-- Not suitable for sub-daily schedules
+- Anacron is typically invoked by cron itself (via `/etc/cron.d/anacron`); not suitable for sub-daily schedules
 
 ## Cron Security
 
@@ -292,10 +288,7 @@ echo "appuser" >> /etc/cron.allow
 echo "guest" >> /etc/cron.deny
 ```
 
-Precedence rules:
-1. `cron.allow` exists → only listed users can use cron
-2. `cron.allow` absent, `cron.deny` exists → all except listed users
-3. Neither exists → only root (on many systems; varies by distro)
+Precedence: (1) `cron.allow` exists → only listed users. (2) `cron.allow` absent, `cron.deny` exists → all except listed. (3) Neither → only root (varies by distro).
 
 ### Security best practices
 
@@ -363,34 +356,14 @@ FROM alpine:3.19
 RUN apk add --no-cache supercronic
 COPY crontab /etc/crontab
 CMD ["supercronic", "/etc/crontab"]
-```
-
-Benefits: inherits Docker env vars, logs to stdout/stderr, handles SIGTERM gracefully.
-
-### Ofelia (Docker-native scheduler)
-
-```yaml
-# docker-compose.yml
-services:
-  ofelia:
-    image: mcuadros/ofelia:latest
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    labels:
-      ofelia.enabled: "true"
-  app:
-    image: myapp
-    labels:
-      ofelia.job-exec.backup.schedule: "0 */6 * * *"
-      ofelia.job-exec.backup.command: "/app/backup.sh"
+# Benefits: inherits Docker env vars, logs to stdout/stderr, handles SIGTERM
 ```
 
 ### Host cron + docker exec
 
 ```bash
-# On the host crontab — run command inside existing container
+# Run command inside existing container
 */5 * * * * docker exec myapp_container /app/cleanup.sh >> /var/log/cleanup.log 2>&1
-
 # Or spin up a new container each time
 0 * * * * docker run --rm myapp:latest /app/hourly-task.sh
 ```
@@ -418,17 +391,11 @@ spec:
 
 ## Monitoring Cron Jobs
 
-### healthchecks.io (free tier available)
+### healthchecks.io
 
 ```bash
-# Ping on success
-0 2 * * * /path/to/backup.sh && curl -fsS --retry 3 https://hc-ping.com/YOUR-UUID > /dev/null
-
 # Ping start and finish (measures duration)
-0 2 * * * curl -fsS https://hc-ping.com/YOUR-UUID/start > /dev/null; /path/to/backup.sh; curl -fsS https://hc-ping.com/YOUR-UUID/$? > /dev/null
-
-# Ping failure only
-0 2 * * * /path/to/backup.sh || curl -fsS https://hc-ping.com/YOUR-UUID/fail > /dev/null
+0 2 * * * curl -fsS https://hc-ping.com/UUID/start > /dev/null; /path/to/backup.sh; curl -fsS https://hc-ping.com/UUID/$? > /dev/null
 ```
 
 ### Cronitor
@@ -443,13 +410,12 @@ spec:
 ```bash
 #!/bin/bash
 set -euo pipefail
-LOGFILE="/var/log/myjob.log"
 START=$(date +%s)
-if /path/to/actual-work.sh >> "$LOGFILE" 2>&1; then
-    echo "[$(date)] Succeeded in $(( $(date +%s) - START ))s" >> "$LOGFILE"
+if /path/to/actual-work.sh >> /var/log/myjob.log 2>&1; then
+    echo "[$(date)] Succeeded in $(( $(date +%s) - START ))s" >> /var/log/myjob.log
     curl -fsS "https://hc-ping.com/UUID" > /dev/null 2>&1 || true
 else
-    echo "[$(date)] FAILED (exit $?)" >> "$LOGFILE"
+    echo "[$(date)] FAILED (exit $?)" >> /var/log/myjob.log
     curl -fsS "https://hc-ping.com/UUID/fail" > /dev/null 2>&1 || true
     exit 1
 fi
@@ -474,10 +440,8 @@ fi
 
 ```bash
 # Cron does NOT source .bashrc, .profile, or .bash_profile
-# WRONG: assumes interactive shell environment
-* * * * * my-ruby-app process
-
-# CORRECT: use absolute path or source environment
+# WRONG: * * * * * my-ruby-app process
+# CORRECT:
 * * * * * /usr/local/bin/ruby /home/deploy/app/process.rb
 * * * * * bash -lc '/home/deploy/app/process.rb'
 ```
@@ -496,4 +460,39 @@ fi
 
 - Ensure crontab ends with a newline — some implementations silently ignore the last line without one.
 - User crontabs (`crontab -e`): 5 fields + command. System crontabs (`/etc/cron.d/*`): 5 fields + **user** + command. Mixing formats causes silent failures.
+
+---
+
+## Additional Resources
+
+This skill includes supplementary references, scripts, and assets for deeper coverage.
+
+### References
+
+In-depth guides in `references/`:
+
+| File | Description |
+|------|-------------|
+| [`advanced-patterns.md`](references/advanced-patterns.md) | Complex scheduling (Nth weekday, last day of month, business days), cron in distributed systems (leader election, jitter), Kubernetes CronJobs, AWS EventBridge rules, GCP Cloud Scheduler, cross-platform syntax comparison |
+| [`troubleshooting.md`](references/troubleshooting.md) | Diagnostic flowchart, why cron jobs don't run (environment, PATH, permissions, shell), checking logs (syslog, journalctl), testing expressions, email delivery, timezone/DST issues, cron vs anacron, debugging in containers |
+
+### Scripts
+
+Executable utilities in `scripts/` (all `chmod +x`, with usage comments):
+
+| Script | Description |
+|--------|-------------|
+| [`cron-validator.sh`](scripts/cron-validator.sh) | Validates cron expressions, shows next N run times, detects common mistakes (unescaped `%`, OR logic, wrong field count). Supports `--check-crontab` and `--check-file` modes |
+| [`cron-wrapper.sh`](scripts/cron-wrapper.sh) | Generic cron job wrapper: logging with rotation, flock-based locking, execution time tracking, healthchecks.io integration, configurable timeout, failure notification hooks |
+| [`cron-monitor.sh`](scripts/cron-monitor.sh) | Monitors cron job health: register jobs, send heartbeats, check if jobs ran on schedule, generate JSON/text reports, healthchecks.io ping integration |
+
+### Assets
+
+Copy-paste ready templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [`crontab-templates.md`](assets/crontab-templates.md) | Production crontab entries for backups (PostgreSQL, MySQL, MongoDB, S3), log rotation, system maintenance, health checks, reports, queue processing, security scans |
+| [`cron-expression-cheatsheet.md`](assets/cron-expression-cheatsheet.md) | Visual quick reference: field layout, special characters, predefined schedules, ASCII timeline diagrams, frequency table, platform differences |
+| [`k8s-cronjob.yaml`](assets/k8s-cronjob.yaml) | Production-ready Kubernetes CronJob template with security context, resource limits, history retention, concurrency policy, RBAC scaffolding, and inline decision documentation |
 
