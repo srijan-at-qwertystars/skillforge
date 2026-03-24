@@ -475,3 +475,5 @@ def good(items: list[int] | None = None) -> None:
 | `type` statement (PEP 695) | 3.12+ | N/A (syntax) |
 | `TypeIs` | 3.13+ | 3.7+ |
 | `dataclass_transform` | 3.12+ | 3.7+ |
+
+<!-- tested: pass -->

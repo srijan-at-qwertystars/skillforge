@@ -489,3 +489,4 @@ chaos-validation:
     - echo "PASS: System recovered. Promoting to production."
   allow_failure: false
 ```
+<!-- tested: pass -->

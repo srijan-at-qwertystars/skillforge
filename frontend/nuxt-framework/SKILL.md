@@ -494,3 +494,4 @@ export default defineNuxtConfig({
 | [composable-template.ts](assets/composable-template.ts) | 5 composable patterns: SSR-safe state, data fetching, client-only (media query), auth with cookies, form with validation |
 | [middleware-template.ts](assets/middleware-template.ts) | Auth guard, role-based access, guest-only, global auth init, route validation, server middleware (Nitro JWT) |
 | [error-page.vue](assets/error-page.vue) | Custom error.vue with status-aware messages, dark mode, error stack display, styled actions |
+<!-- tested: pass -->
