@@ -404,33 +404,11 @@ Adapters: `@prisma/adapter-neon`, `@prisma/adapter-planetscale`, `@prisma/adapte
 
 ## Multi-File Schema
 
-```prisma
-generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["prismaSchemaFolder"]
-}
-```
+Organize as `prisma/schema/{base,user,post,enums}.prisma` with `previewFeatures = ["prismaSchemaFolder"]` in the generator block.
 
-Organize as `prisma/schema/{base,user,post,enums}.prisma`.
+## Testing
 
-## Testing — Unit (Mock Client)
-
-```typescript
-import { mockDeep } from 'jest-mock-extended';
-import { PrismaClient } from '@prisma/client';
-const prismaMock = mockDeep<PrismaClient>();
-prismaMock.user.findMany.mockResolvedValue([{ id: 1, email: "a@b.com" }]);
-```
-
-### Integration Tests — Isolated Database```typescript
-const prisma = new PrismaClient(); // uses TEST_DATABASE_URL
-beforeEach(async () => {
-  await prisma.$transaction([prisma.post.deleteMany(), prisma.user.deleteMany()]);
-});
-afterAll(() => prisma.$disconnect());
-```
-
-Run `prisma migrate deploy` before suite. Use separate `DATABASE_URL`.
+Unit tests: use `jest-mock-extended` to deep-mock PrismaClient. Integration tests: connect to a separate test database, clean up in `beforeEach`. See `assets/jest-setup.ts` for a complete setup with mock client, cleanup utilities, transaction isolation, and test factories.
 
 ## Common Gotchas
 
@@ -450,22 +428,7 @@ Enable query logging to detect N+1 patterns.
 
 ### BigInt Serialization
 
-`JSON.stringify` throws on BigInt fields. Fix with a client extension:
-
-```typescript
-const prisma = new PrismaClient().$extends({
-  result: {
-    $allModels: {
-      toJSON: {
-        compute(data) {
-          return () => JSON.parse(JSON.stringify(data, (_, v) =>
-            typeof v === 'bigint' ? v.toString() : v));
-        },
-      },
-    },
-  },
-});
-```
+`JSON.stringify` throws on BigInt. Fix: `(_, v) => typeof v === 'bigint' ? v.toString() : v` as replacer, or use a client extension on `$allModels`.
 
 ### Relation Loading
 
@@ -497,3 +460,35 @@ try {
 ```
 
 Common codes: `P2002` (unique), `P2003` (FK), `P2025` (not found), `P2024` (pool timeout).
+
+## References
+
+In-depth guides in `references/`:
+
+| Guide | File | Covers |
+|-------|------|--------|
+| Advanced Patterns | `references/advanced-patterns.md` | Client extensions, multi-tenancy (RLS, schema-per-tenant), soft deletes, audit logging, GraphQL (Pothos/Nexus), optimistic concurrency, composite unique constraints, custom result types, raw SQL integration |
+| Troubleshooting | `references/troubleshooting.md` | Migration drift, shadow database errors, connection pool exhaustion, P2002/P2025/P2003/P2024 error codes, Docker deployment, CI/CD generation, binary targets (Lambda/Docker), query engine memory, schema validation, `@map`/`@@map` |
+| Performance | `references/performance-guide.md` | Query logging & EXPLAIN, N+1 detection & fixes, batch operations, transaction strategies, connection pool tuning, Prisma Accelerate caching, Redis/DataLoader patterns, index recommendations |
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+| Script | Usage | Purpose |
+|--------|-------|---------|
+| `init-project.sh` | `./scripts/init-project.sh my-app postgresql` | Scaffold a complete Prisma project: npm init, deps, schema with User/Post, TypeScript config, singleton client, seed file, initial migration |
+| `generate-crud.sh` | `./scripts/generate-crud.sh User ./src/services` | Generate a typed CRUD service file for any model: paginated findMany, findUnique, create, update, delete, count, upsert |
+| `migration-helper.sh` | `./scripts/migration-helper.sh [command]` | Interactive migration workflow: status, create, apply, deploy, reset, history, diff, baseline. Supports both menu and CLI modes |
+
+## Assets (Copy-Paste Templates)
+
+Ready-to-use files in `assets/`:
+
+| File | Description |
+|------|-------------|
+| `schema-starter.prisma` | Production-ready schema with User, Account, Session, Post, Tag models. Includes UUIDs, enums, proper indexes, `@map`/`@@map` naming, cascading deletes |
+| `prisma-service.ts` | Singleton PrismaClient service class with environment-aware logging, graceful shutdown hooks, health check endpoint, slow query warnings |
+| `seed.ts` | Database seeder with `@faker-js/faker` integration: idempotent upserts, relation seeding, configurable counts, reproducible via seed value |
+| `docker-compose.yml` | PostgreSQL 16 setup for local development with health checks, persistent volumes, and optional PgBouncer/Redis/Adminer services |
+| `jest-setup.ts` | Jest test setup: deep-mocked PrismaClient for unit tests, test DB client for integration tests, cleanup utilities, transaction-based isolation, test factories |

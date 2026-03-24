@@ -410,17 +410,6 @@ scheduler.run(({ cold, expectObservable }) => {
 });
 ```
 
-### Example: Testing Subscriptions
-
-```typescript
-scheduler.run(({ cold, expectSubscriptions }) => {
-  const source = cold('--a--b--c--|');
-  const subs   =      '^----!';        // subscribe at 0, unsub at frame 5
-  const result = source.pipe(take(2));
-  expectSubscriptions(source.subscriptions).toBe(subs);
-});
-```
-
 ## RxJS 7+ Migration Guide
 
 ### Deprecated → Replacement
@@ -442,14 +431,8 @@ scheduler.run(({ cold, expectSubscriptions }) => {
 
 ```typescript
 import { firstValueFrom, lastValueFrom } from 'rxjs';
-
-// Get first emitted value as Promise
 const user = await firstValueFrom(user$);
-
-// Get last emitted value as Promise (waits for complete)
 const final = await lastValueFrom(counter$);
-
-// With default value (no EmptyError if observable is empty)
 const val = await firstValueFrom(source$, { defaultValue: null });
 ```
 
@@ -457,33 +440,54 @@ const val = await firstValueFrom(source$, { defaultValue: null });
 
 - Prefer `switchMap` over `mergeMap` when only the latest result matters — cancels stale work.
 - Use `shareReplay({ bufferSize: 1, refCount: true })` — `refCount: true` prevents stale subscriptions.
-- Avoid nested subscribes. Flatten with higher-order operators.
-- Use `distinctUntilChanged()` before expensive operations to skip redundant work.
-- Avoid creating observables inside `*ngFor`; compute once and cache in the component.
-- Use `trackBy` with `*ngFor` for observable-driven lists.
-- Prefer `async` pipe over manual subscription for automatic lifecycle management.
-- Limit `mergeMap` concurrency: `mergeMap(fn, 5)` — second arg caps parallel inner subs.
+- Avoid nested subscribes — flatten with higher-order operators.
+- Use `distinctUntilChanged()` before expensive operations.
+- Prefer `async` pipe over manual subscription. Use `trackBy` with `*ngFor`.
+- Limit `mergeMap` concurrency: `mergeMap(fn, 5)` caps parallel inner subs.
 
 ### Anti-Patterns
 
 ```typescript
-// BAD: nested subscribe
-outer$.subscribe(a => {
-  inner$.subscribe(b => { /* ... */ });  // memory leak, no cancellation
-});
+// BAD: nested subscribe — memory leak, no cancellation
+outer$.subscribe(a => { inner$.subscribe(b => { }); });
+// GOOD: outer$.pipe(switchMap(a => inner$)).subscribe();
 
-// GOOD: flatten with operator
-outer$.pipe(switchMap(a => inner$)).subscribe(b => { /* ... */ });
-
-// BAD: manual subscribe in Angular template logic
-this.data$.subscribe(d => this.data = d);
-
-// GOOD: use async pipe
-// template: {{ data$ | async }}
-
-// BAD: shareReplay without refCount
-source$.pipe(shareReplay(1)); // subscription never released
-
+// BAD: shareReplay without refCount — subscription never released
+source$.pipe(shareReplay(1));
 // GOOD:
 source$.pipe(shareReplay({ bufferSize: 1, refCount: true }));
 ```
+
+## Additional Resources
+
+### Reference Docs (`references/`)
+
+Detailed deep-dive documents for advanced topics:
+
+| Document | Description |
+|----------|-------------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Custom operators (pipeable + legacy), higher-order strategies in depth, backpressure handling, schedulers (queue/async/animationFrame), window/buffer batching, `expand` recursion, multicast comparison |
+| [troubleshooting.md](references/troubleshooting.md) | Memory leaks, cold vs hot confusion, operator ordering mistakes, race conditions, `shareReplay` refCount behavior, marble testing gotchas, Angular-specific pitfalls (ExpressionChanged, zone.js) |
+| [angular-integration.md](references/angular-integration.md) | Reactive forms + valueChanges, route params, HttpClient interceptors, NgRx/ComponentStore, signal interop (toSignal/toObservable), async pipe best practices, OnPush + observables |
+
+### Scripts (`scripts/`)
+
+Executable helpers — run directly from the command line:
+
+| Script | Description |
+|--------|-------------|
+| [init-rxjs-project.sh](scripts/init-rxjs-project.sh) | Scaffold a new RxJS playground with npm, TypeScript, ts-node, and a starter file |
+| [operator-finder.sh](scripts/operator-finder.sh) | Interactive tool: describe what you need, get operator suggestions with examples |
+| [marble-test-generator.sh](scripts/marble-test-generator.sh) | Generate marble test templates for any operator with TestScheduler setup |
+
+### Assets (`assets/`)
+
+Copy-paste-ready TypeScript templates:
+
+| Template | Description |
+|----------|-------------|
+| [custom-operator.ts](assets/custom-operator.ts) | Custom operator patterns — MonoType, type-changing, stateful, with proper generics |
+| [reactive-service.ts](assets/reactive-service.ts) | Angular service with BehaviorSubject state, loading/error states, CRUD operations |
+| [unsubscribe-patterns.ts](assets/unsubscribe-patterns.ts) | All unsubscribe strategies compared: takeUntil, async pipe, Subscription, DestroyRef |
+| [polling-with-backoff.ts](assets/polling-with-backoff.ts) | Production poller with exponential backoff, jitter, pause/resume, error recovery |
+| [typeahead-search.ts](assets/typeahead-search.ts) | Complete typeahead with debounce, switchMap, loading states, keyboard navigation |

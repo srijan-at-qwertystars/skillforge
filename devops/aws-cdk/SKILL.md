@@ -400,40 +400,14 @@ new NodejsFunction(this, 'Fn', {
 });
 ```
 
-### PythonFunction
-```python
-from aws_cdk.aws_lambda_python_alpha import PythonFunction
-
-PythonFunction(self, "Fn",
-    entry="lambda/",       # Directory with handler.py + requirements.txt
-    index="handler.py",
-    handler="main",
-    runtime=_lambda.Runtime.PYTHON_3_12,
-)
-```
-
-### DockerImageFunction
-```typescript
-new lambda.DockerImageFunction(this, 'Fn', {
-  code: lambda.DockerImageCode.fromImageAsset('./docker-lambda'),
-  memorySize: 1024,
-  timeout: cdk.Duration.seconds(30),
-});
-```
-
 ## Best Practices
 
 **IAM**: Use `grant*` methods (`table.grantReadData(fn)`). Never use `*` resource in PolicyStatements.
-
-**Removal Policies**: Set explicitly on stateful resources. `RETAIN` for production, `DESTROY` + `autoDeleteObjects` for dev only.
-
-**Stack Naming**: Let CDK generate names. Avoid `stackName`/physical names—they prevent seamless replacements.
-
-**Structure**: One stack per bounded context. Keep under 500 resources. Use Stages to group per environment.
-
-**Secrets**: Use `SecretValue.secretsManager()` or `ssm.StringParameter.valueForStringParameter()`. Never hardcode secrets.
-
-**Outputs**: Use `CfnOutput` to expose important values (API URLs, ARNs). Mark sensitive outputs.
+**Removal Policies**: `RETAIN` for production, `DESTROY` + `autoDeleteObjects` for dev only.
+**Stack Naming**: Let CDK generate names. Avoid physical names—they prevent replacements.
+**Structure**: One stack per bounded context. Keep under 500 resources. Use Stages per environment.
+**Secrets**: Use `SecretValue.secretsManager()` or SSM parameters. Never hardcode.
+**Outputs**: Use `CfnOutput` for important values (API URLs, ARNs).
 
 ## Common Gotchas
 
@@ -443,8 +417,39 @@ new lambda.DockerImageFunction(this, 'Fn', {
 4. **Cross-stack export locks**: Once an Export exists and another stack imports it, you cannot delete/rename it without first removing the import.
 5. **`cdk deploy '*'`**: Deploys all stacks. Use `--concurrency 3` for parallel independent stacks.
 6. **Construct IDs must be unique** within their scope. Duplicates cause synthesis errors.
-7. **Docker bundling**: Requires Docker daemon. Use `bundling.local` for faster builds when esbuild is available.
-8. **Token resolution**: Tokens resolve at deploy time. Don't use JS string ops on tokens; use `cdk.Fn.join`/`cdk.Fn.select`.
+7. **Token resolution**: Tokens resolve at deploy time. Don't use JS string ops on tokens; use `cdk.Fn.join`/`cdk.Fn.select`.
+
+## Reference Documentation
+
+Detailed reference guides in `references/`:
+
+| Document | Contents |
+|----------|----------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Cross-account deployments, custom resources, CDK Aspects, escape hatches, feature flags, context lookups, stack separation, CDK Migrate, importing resources, CloudFormation compatibility |
+| [troubleshooting.md](references/troubleshooting.md) | Bootstrap mismatches, cyclic dependencies, token resolution, asset bundling, Docker issues, false diffs, permission errors, rollback handling, drift detection, synth vs deploy errors |
+| [construct-library.md](references/construct-library.md) | jsii multi-language support, projen project management, construct testing, API design, versioning, publishing to npm/PyPI/Maven/NuGet, Construct Hub listing |
+
+## Scripts
+
+Executable helpers in `scripts/` (bash, `chmod +x`):
+
+| Script | Purpose |
+|--------|---------|
+| [init-cdk-project.sh](scripts/init-cdk-project.sh) | Initialize a new CDK TypeScript project with VPC, common deps, tsconfig, and tests |
+| [deploy-pipeline.sh](scripts/deploy-pipeline.sh) | Set up CDK Pipeline with dev/staging/prod stages, cross-account bootstrap, approval steps |
+| [cdk-diff-check.sh](scripts/cdk-diff-check.sh) | CI/CD helper: synth + diff, fail on destructive changes (replacements/deletions) |
+
+## Asset Templates
+
+Copy-paste-ready templates in `assets/`:
+
+| Template | Description |
+|----------|-------------|
+| [stack-template.ts](assets/stack-template.ts) | Production-ready stack with tagging, removal policies, outputs, termination protection, cdk-nag |
+| [lambda-api-construct.ts](assets/lambda-api-construct.ts) | Reusable L3 construct: Lambda + API Gateway REST API with CORS, logging, custom domain, alarms |
+| [pipeline-stack.ts](assets/pipeline-stack.ts) | CDK Pipeline with dev/staging/prod stages, manual approval, SNS notifications |
+| [cdk-nag-setup.ts](assets/cdk-nag-setup.ts) | cdk-nag integration: AwsSolutions/HIPAA/NIST packs, common suppressions, test helpers |
+| [Makefile](assets/Makefile) | Common CDK targets: synth, diff, deploy, destroy, test, lint, bootstrap, CI pipeline |
 
 ## Example Input/Output
 
@@ -492,8 +497,3 @@ export class UploadProcessorStack extends Stack {
 const table = new dynamodb.Table(this, 'Metadata', {
   partitionKey: { name: 'objectKey', type: dynamodb.AttributeType.STRING },
   billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-  removalPolicy: RemovalPolicy.RETAIN,
-});
-table.grantWriteData(processor);
-processor.addEnvironment('TABLE_NAME', table.tableName);
-```

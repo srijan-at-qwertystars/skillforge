@@ -1,0 +1,81 @@
+# =============================================================================
+# Docker Compose — PostgreSQL for Local Prisma Development
+#
+# Usage:
+#   docker compose up -d          # Start PostgreSQL
+#   docker compose down           # Stop
+#   docker compose down -v        # Stop + delete data
+#   docker compose logs -f db     # View logs
+#
+# Connection:
+#   DATABASE_URL="postgresql://prisma:prisma@localhost:5432/prisma_dev?schema=public"
+#
+# Copy to your project root and run `docker compose up -d`.
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: prisma-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: prisma
+      POSTGRES_PASSWORD: prisma
+      POSTGRES_DB: prisma_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Optional: mount init scripts
+      # - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prisma -d prisma_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional: PgBouncer connection pooler (uncomment if needed)
+  # pgbouncer:
+  #   image: bitnami/pgbouncer:latest
+  #   container_name: prisma-pgbouncer
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6432:6432"
+  #   environment:
+  #     POSTGRESQL_HOST: db
+  #     POSTGRESQL_PORT: 5432
+  #     POSTGRESQL_USERNAME: prisma
+  #     POSTGRESQL_PASSWORD: prisma
+  #     POSTGRESQL_DATABASE: prisma_dev
+  #     PGBOUNCER_DATABASE: prisma_dev
+  #     PGBOUNCER_POOL_MODE: transaction
+  #     PGBOUNCER_MAX_CLIENT_CONN: 100
+  #     PGBOUNCER_DEFAULT_POOL_SIZE: 20
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+
+  # Optional: Redis for caching (uncomment if needed)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: prisma-redis
+  #   restart: unless-stopped
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+
+  # Optional: Adminer for database GUI (uncomment if needed)
+  # adminer:
+  #   image: adminer:latest
+  #   container_name: prisma-adminer
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:8080"
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+
+volumes:
+  postgres_data:
+  # redis_data:

@@ -1,0 +1,204 @@
+// =============================================================================
+// Production-Ready Prisma Starter Schema
+//
+// Models: User, Account, Session, Post
+// Features: proper indexes, enums, cascading deletes, timestamps, comments
+//
+// Usage: Copy to prisma/schema.prisma and adjust to your needs.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL") // For migrations when using connection pooler
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  DELETED
+
+  @@map("user_status")
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+
+  @@map("post_status")
+}
+
+enum AccountProvider {
+  CREDENTIALS
+  GOOGLE
+  GITHUB
+  DISCORD
+
+  @@map("account_provider")
+}
+
+// =============================================================================
+// User — core user identity
+// =============================================================================
+
+/// Application user account
+model User {
+  id            String      @id @default(uuid()) @db.Uuid
+  email         String      @unique @db.VarChar(255)
+  emailVerified DateTime?   @map("email_verified")
+  name          String?     @db.VarChar(100)
+  avatarUrl     String?     @map("avatar_url") @db.VarChar(500)
+  role          UserRole    @default(USER)
+  status        UserStatus  @default(ACTIVE)
+
+  // Auth
+  passwordHash  String?     @map("password_hash") @db.VarChar(255)
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  posts         Post[]
+
+  // Timestamps
+  lastLoginAt   DateTime?   @map("last_login_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@index([email])
+  @@index([role, status])
+  @@index([createdAt(sort: Desc)])
+  @@map("users")
+}
+
+// =============================================================================
+// Account — OAuth / external provider accounts linked to a user
+// =============================================================================
+
+/// External OAuth provider account (Google, GitHub, etc.)
+model Account {
+  id                String          @id @default(uuid()) @db.Uuid
+  userId            String          @map("user_id") @db.Uuid
+  provider          AccountProvider
+  providerAccountId String          @map("provider_account_id") @db.VarChar(255)
+
+  // OAuth tokens
+  accessToken       String?         @map("access_token") @db.Text
+  refreshToken      String?         @map("refresh_token") @db.Text
+  tokenType         String?         @map("token_type") @db.VarChar(50)
+  scope             String?         @db.VarChar(500)
+  expiresAt         Int?            @map("expires_at")
+  idToken           String?         @map("id_token") @db.Text
+
+  // Relations
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+// =============================================================================
+// Session — user login sessions
+// =============================================================================
+
+/// Active user session for authentication
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  token        String   @unique @db.VarChar(500)
+  expiresAt    DateTime @map("expires_at")
+  ipAddress    String?  @map("ip_address") @db.VarChar(45)
+  userAgent    String?  @map("user_agent") @db.VarChar(500)
+
+  // Relations
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Timestamps
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([token])
+  @@map("sessions")
+}
+
+// =============================================================================
+// Post — content created by users
+// =============================================================================
+
+/// Blog post or content item
+model Post {
+  id          String     @id @default(uuid()) @db.Uuid
+  title       String     @db.VarChar(300)
+  slug        String     @unique @db.VarChar(300)
+  content     String?    @db.Text
+  excerpt     String?    @db.VarChar(500)
+  status      PostStatus @default(DRAFT)
+
+  // SEO / metadata
+  metaTitle   String?    @map("meta_title") @db.VarChar(60)
+  metaDesc    String?    @map("meta_description") @db.VarChar(160)
+
+  // Relations
+  authorId    String     @map("author_id") @db.Uuid
+  author      User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  tags        PostTag[]
+
+  // Timestamps
+  publishedAt DateTime?  @map("published_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  @@index([authorId])
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([slug])
+  @@map("posts")
+}
+
+// =============================================================================
+// Tag — content categorization
+// =============================================================================
+
+model Tag {
+  id    String    @id @default(uuid()) @db.Uuid
+  name  String    @unique @db.VarChar(50)
+  slug  String    @unique @db.VarChar(50)
+  posts PostTag[]
+
+  @@map("tags")
+}
+
+/// Explicit many-to-many join table for Post <-> Tag
+model PostTag {
+  postId     String   @map("post_id") @db.Uuid
+  tagId      String   @map("tag_id") @db.Uuid
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  assignedAt DateTime @default(now()) @map("assigned_at")
+
+  @@id([postId, tagId])
+  @@index([tagId])
+  @@map("post_tags")
+}
