@@ -1,0 +1,287 @@
+{
+  "$schema": "https://docs.aws.amazon.com/fis/latest/userguide/",
+  "_comment": "AWS FIS Experiment Templates — customize targets, actions, and stop conditions",
+
+  "templates": {
+    "ec2-instance-stop": {
+      "description": "Stop a percentage of EC2 instances in a specific AZ",
+      "targets": {
+        "ec2-instances": {
+          "resourceType": "aws:ec2:instance",
+          "selectionMode": "PERCENT(30)",
+          "resourceTags": {
+            "chaos-enabled": "true",
+            "environment": "production"
+          },
+          "filters": [
+            {
+              "path": "Placement.AvailabilityZone",
+              "values": ["us-east-1a"]
+            },
+            {
+              "path": "State.Name",
+              "values": ["running"]
+            }
+          ]
+        }
+      },
+      "actions": {
+        "stop-instances": {
+          "actionId": "aws:ec2:stop-instances",
+          "description": "Stop instances and restart after 5 minutes",
+          "parameters": {
+            "startInstancesAfterDuration": "PT5M"
+          },
+          "targets": {
+            "Instances": "ec2-instances"
+          }
+        }
+      },
+      "stopConditions": [
+        {
+          "source": "aws:cloudwatch:alarm",
+          "value": "arn:aws:cloudwatch:us-east-1:ACCOUNT_ID:alarm:HighErrorRate"
+        }
+      ],
+      "roleArn": "arn:aws:iam::ACCOUNT_ID:role/FISExperimentRole",
+      "tags": {
+        "experiment": "ec2-az-failure",
+        "team": "platform"
+      }
+    },
+
+    "ec2-network-disruption": {
+      "description": "Disrupt network connectivity for tagged EC2 instances using SSM",
+      "targets": {
+        "ec2-instances": {
+          "resourceType": "aws:ec2:instance",
+          "selectionMode": "COUNT(2)",
+          "resourceTags": {
+            "chaos-enabled": "true"
+          }
+        }
+      },
+      "actions": {
+        "network-disruption": {
+          "actionId": "aws:ssm:send-command",
+          "description": "Add 500ms latency and 5% packet loss via tc",
+          "parameters": {
+            "documentArn": "arn:aws:ssm:us-east-1::document/AWSFIS-Run-Network-Latency",
+            "documentParameters": "{\"DurationSeconds\":\"300\",\"DelayMilliseconds\":\"500\",\"JitterMilliseconds\":\"100\",\"Interface\":\"eth0\"}",
+            "duration": "PT5M"
+          },
+          "targets": {
+            "Instances": "ec2-instances"
+          }
+        }
+      },
+      "stopConditions": [
+        {
+          "source": "aws:cloudwatch:alarm",
+          "value": "arn:aws:cloudwatch:us-east-1:ACCOUNT_ID:alarm:HighLatencyP99"
+        }
+      ],
+      "roleArn": "arn:aws:iam::ACCOUNT_ID:role/FISExperimentRole"
+    },
+
+    "ec2-cpu-stress": {
+      "description": "CPU stress test on tagged EC2 instances via SSM",
+      "targets": {
+        "ec2-instances": {
+          "resourceType": "aws:ec2:instance",
+          "selectionMode": "COUNT(1)",
+          "resourceTags": {
+            "chaos-enabled": "true"
+          }
+        }
+      },
+      "actions": {
+        "cpu-stress": {
+          "actionId": "aws:ssm:send-command",
+          "description": "80% CPU stress for 5 minutes",
+          "parameters": {
+            "documentArn": "arn:aws:ssm:us-east-1::document/AWSFIS-Run-CPU-Stress",
+            "documentParameters": "{\"DurationSeconds\":\"300\",\"CPU\":\"0\",\"LoadPercent\":\"80\"}",
+            "duration": "PT6M"
+          },
+          "targets": {
+            "Instances": "ec2-instances"
+          }
+        }
+      },
+      "stopConditions": [
+        {
+          "source": "aws:cloudwatch:alarm",
+          "value": "arn:aws:cloudwatch:us-east-1:ACCOUNT_ID:alarm:ServiceUnavailable"
+        }
+      ],
+      "roleArn": "arn:aws:iam::ACCOUNT_ID:role/FISExperimentRole"
+    },
+
+    "rds-failover": {
+      "description": "Force RDS failover to test database resilience",
+      "targets": {
+        "rds-cluster": {
+          "resourceType": "aws:rds:cluster",
+          "selectionMode": "ALL",
+          "resourceArns": [
+            "arn:aws:rds:us-east-1:ACCOUNT_ID:cluster:production-db-cluster"
+          ]
+        }
+      },
+      "actions": {
+        "failover-cluster": {
+          "actionId": "aws:rds:failover-db-cluster",
+          "description": "Trigger Aurora cluster failover",
+          "targets": {
+            "Clusters": "rds-cluster"
+          }
+        }
+      },
+      "stopConditions": [
+        {
+          "source": "aws:cloudwatch:alarm",
+          "value": "arn:aws:cloudwatch:us-east-1:ACCOUNT_ID:alarm:DatabaseConnectionErrors"
+        }
+      ],
+      "roleArn": "arn:aws:iam::ACCOUNT_ID:role/FISExperimentRole"
+    },
+
+    "ecs-task-stop": {
+      "description": "Stop ECS tasks to test service resilience",
+      "targets": {
+        "ecs-tasks": {
+          "resourceType": "aws:ecs:task",
+          "selectionMode": "PERCENT(50)",
+          "parameters": {
+            "cluster": "production-cluster",
+            "service": "payment-service"
+          }
+        }
+      },
+      "actions": {
+        "stop-tasks": {
+          "actionId": "aws:ecs:stop-task",
+          "description": "Stop 50% of payment service tasks",
+          "targets": {
+            "Tasks": "ecs-tasks"
+          }
+        }
+      },
+      "stopConditions": [
+        {
+          "source": "aws:cloudwatch:alarm",
+          "value": "arn:aws:cloudwatch:us-east-1:ACCOUNT_ID:alarm:PaymentServiceErrors"
+        }
+      ],
+      "roleArn": "arn:aws:iam::ACCOUNT_ID:role/FISExperimentRole"
+    },
+
+    "az-availability-test": {
+      "description": "Multi-action: simulate AZ failure by stopping EC2, disrupting network, failing over RDS",
+      "targets": {
+        "ec2-az-instances": {
+          "resourceType": "aws:ec2:instance",
+          "selectionMode": "ALL",
+          "resourceTags": {
+            "chaos-enabled": "true"
+          },
+          "filters": [
+            {
+              "path": "Placement.AvailabilityZone",
+              "values": ["us-east-1a"]
+            }
+          ]
+        },
+        "rds-cluster": {
+          "resourceType": "aws:rds:cluster",
+          "selectionMode": "ALL",
+          "resourceArns": [
+            "arn:aws:rds:us-east-1:ACCOUNT_ID:cluster:production-db-cluster"
+          ]
+        }
+      },
+      "actions": {
+        "stop-az-instances": {
+          "actionId": "aws:ec2:stop-instances",
+          "parameters": {
+            "startInstancesAfterDuration": "PT10M"
+          },
+          "targets": {
+            "Instances": "ec2-az-instances"
+          }
+        },
+        "failover-database": {
+          "actionId": "aws:rds:failover-db-cluster",
+          "targets": {
+            "Clusters": "rds-cluster"
+          },
+          "startAfter": ["stop-az-instances"]
+        }
+      },
+      "stopConditions": [
+        {
+          "source": "aws:cloudwatch:alarm",
+          "value": "arn:aws:cloudwatch:us-east-1:ACCOUNT_ID:alarm:CriticalServiceDown"
+        },
+        {
+          "source": "aws:cloudwatch:alarm",
+          "value": "arn:aws:cloudwatch:us-east-1:ACCOUNT_ID:alarm:CustomerImpactDetected"
+        }
+      ],
+      "roleArn": "arn:aws:iam::ACCOUNT_ID:role/FISExperimentRole",
+      "tags": {
+        "experiment": "az-failure-simulation",
+        "severity": "high",
+        "team": "platform"
+      }
+    }
+  },
+
+  "iam_policy": {
+    "_comment": "Minimum IAM policy for the FIS experiment role",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "FISActions",
+        "Effect": "Allow",
+        "Action": [
+          "ec2:StopInstances",
+          "ec2:StartInstances",
+          "ec2:RebootInstances",
+          "ec2:DescribeInstances",
+          "ecs:StopTask",
+          "ecs:ListTasks",
+          "ecs:DescribeTasks",
+          "rds:RebootDBInstance",
+          "rds:FailoverDBCluster",
+          "ssm:SendCommand",
+          "ssm:GetCommandInvocation"
+        ],
+        "Resource": "*",
+        "Condition": {
+          "StringEquals": {
+            "aws:ResourceTag/chaos-enabled": "true"
+          }
+        }
+      },
+      {
+        "Sid": "FISCloudWatch",
+        "Effect": "Allow",
+        "Action": [
+          "cloudwatch:DescribeAlarms"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Sid": "FISLogs",
+        "Effect": "Allow",
+        "Action": [
+          "logs:CreateLogDelivery",
+          "logs:PutLogEvents"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+}

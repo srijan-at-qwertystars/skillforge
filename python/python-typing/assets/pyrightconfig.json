@@ -1,0 +1,80 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/pyright/main/packages/vscode-pylance/schemas/pyrightconfig.schema.json",
+
+  "// About": "Pyright/Pylance configuration template. Copy to project root.",
+
+  "include": ["src"],
+  "exclude": [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    "build",
+    "dist",
+    ".venv"
+  ],
+  "ignore": [],
+
+  "pythonVersion": "3.12",
+  "pythonPlatform": "All",
+
+  "typeCheckingMode": "strict",
+
+  "// --- Import Resolution ---": "",
+  "stubPath": "stubs",
+  "venvPath": ".",
+  "venv": ".venv",
+
+  "// --- Type Checking Rules ---": "",
+  "reportMissingImports": "error",
+  "reportMissingTypeStubs": "warning",
+  "reportMissingModuleSource": "warning",
+
+  "// --- Code Quality ---": "",
+  "reportUnusedImport": "warning",
+  "reportUnusedClass": "warning",
+  "reportUnusedFunction": "warning",
+  "reportUnusedVariable": "warning",
+  "reportUnusedExpression": "warning",
+
+  "// --- Type Safety ---": "",
+  "reportGeneralTypeIssues": "error",
+  "reportOptionalMemberAccess": "error",
+  "reportOptionalCall": "error",
+  "reportOptionalIterable": "error",
+  "reportOptionalSubscript": "error",
+  "reportOptionalOperand": "error",
+
+  "// --- Strictness ---": "",
+  "reportPrivateUsage": "warning",
+  "reportPrivateImportUsage": "warning",
+  "reportConstantRedefinition": "error",
+  "reportIncompatibleMethodOverride": "error",
+  "reportIncompatibleVariableOverride": "error",
+  "reportOverlappingOverload": "error",
+
+  "// --- Annotations ---": "",
+  "reportMissingTypeArgument": "warning",
+  "reportUntypedFunctionDecorator": "warning",
+  "reportUntypedBaseClass": "warning",
+
+  "// --- Maintenance ---": "",
+  "reportUnnecessaryTypeIgnoreComment": true,
+  "reportUnnecessaryCast": true,
+  "reportUnnecessaryIsInstance": true,
+  "reportDeprecated": "warning",
+
+  "// --- Execution Environments ---": "",
+  "executionEnvironments": [
+    {
+      "root": "src",
+      "pythonVersion": "3.12",
+      "extraPaths": ["stubs"]
+    },
+    {
+      "root": "tests",
+      "pythonVersion": "3.12",
+      "reportMissingTypeStubs": false,
+      "reportUnusedImport": false
+    }
+  ]
+}

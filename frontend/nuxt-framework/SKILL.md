@@ -383,16 +383,10 @@ export default defineNuxtConfig({
 
 ### Nuxt Content
 
-Query Markdown/YAML/JSON from `content/` directory:
-
 ```vue
 <script setup lang="ts">
 const { data } = await useAsyncData('blog', () =>
-  queryContent('/blog')
-    .where({ published: true })
-    .sort({ date: -1 })
-    .limit(10)
-    .find()
+  queryContent('/blog').where({ published: true }).sort({ date: -1 }).limit(10).find()
 )
 </script>
 <template>
@@ -403,40 +397,23 @@ const { data } = await useAsyncData('blog', () =>
 ### Nuxt Image
 
 ```vue
-<NuxtImg
-  src="/hero.jpg"
-  width="800"
-  height="400"
-  format="webp"
-  loading="lazy"
-  alt="Hero image"
-  sizes="sm:100vw md:50vw lg:800px"
-/>
-
+<NuxtImg src="/hero.jpg" width="800" height="400" format="webp" loading="lazy" alt="Hero" sizes="sm:100vw md:50vw lg:800px" />
 <NuxtPicture src="/hero.jpg" format="avif,webp" />
 ```
 
-Configure providers (Cloudinary, Imgix, etc.) in `nuxt.config.ts` under `image`.
-
 ## Nuxt DevTools
 
-Enabled by default in dev. Provides: component inspector, route visualization, module info, payload viewer, composable state, Nitro routes, and VS Code integration. Toggle with `Shift+Alt+D`.
+Enabled by default in dev. Toggle with `Shift+Alt+D`. Provides: component inspector, route visualization, payload viewer, composable state.
 
 ## Examples
 
 ### Input: "Create a blog with Nuxt Content"
 
 ```
-content/
-  blog/
-    hello-world.md       # frontmatter: title, date, description
-pages/
-  blog/
-    index.vue            # List posts with queryContent('/blog').find()
-    [slug].vue           # Render single post with queryContent(route.path).findOne()
-layouts/
-  default.vue            # Site shell with <NuxtPage />
-nuxt.config.ts           # modules: ['@nuxt/content']
+content/blog/hello-world.md        # frontmatter: title, date, description
+pages/blog/index.vue               # queryContent('/blog').find()
+pages/blog/[slug].vue              # queryContent(route.path).findOne()
+nuxt.config.ts                     # modules: ['@nuxt/content']
 ```
 
 Output: SSR blog at `/blog` with individual post pages, auto-generated routes from Markdown.
@@ -471,28 +448,49 @@ export default defineNuxtConfig({
   nitro: { preset: 'cloudflare-pages' }
 })
 
-// server/api/users.get.ts
+// server/api/users.get.ts — access D1 via hubDatabase()
 export default defineEventHandler(async () => {
-  const db = hubDatabase()
-  return await db.prepare('SELECT * FROM users').all()
+  return await hubDatabase().prepare('SELECT * FROM users').all()
 })
 ```
-
-Output: Full-stack app on Cloudflare Pages with D1 SQLite, server routes at the edge.
 
 ### Input: "Configure hybrid rendering for marketing + app"
 
 ```ts
-// nuxt.config.ts
 export default defineNuxtConfig({
   routeRules: {
-    '/':           { prerender: true },
-    '/pricing':    { prerender: true },
-    '/blog/**':    { isr: 3600 },
-    '/app/**':     { ssr: false },
-    '/api/**':     { cors: true }
+    '/':           { prerender: true },     // SSG
+    '/blog/**':    { isr: 3600 },           // ISR hourly
+    '/app/**':     { ssr: false },           // SPA
+    '/api/**':     { cors: true }            // CORS
   }
 })
 ```
 
-Output: Marketing pages pre-rendered (SSG), blog uses ISR with hourly revalidation, app section is SPA, API has CORS headers.
+## Skill Resources
+
+### references/
+
+| File | Contents |
+|------|----------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Nuxt layers, custom module authoring, Nitro plugins/hooks, runtime config vs app config, server middleware, WebSocket support, caching strategies (routeRules/SWR/prerender/defineCachedEventHandler), Pinia integration patterns |
+| [troubleshooting.md](references/troubleshooting.md) | Hydration mismatches (browser APIs, non-deterministic values, third-party libs), auto-import conflicts, composable SSR gotchas (useState vs ref), build errors, module compatibility, Nitro deployment issues, performance debugging |
+| [api-reference.md](references/api-reference.md) | Complete composable reference: useFetch, useAsyncData, useState, useRoute, useRouter, useCookie, useRuntimeConfig, useHead, useSeoMeta, useNuxtApp, useRequestHeaders. Lifecycle hooks (app + Vue), nuxt.config.ts full options |
+
+### scripts/
+
+| Script | Usage |
+|--------|-------|
+| [setup-nuxt.sh](scripts/setup-nuxt.sh) | `./setup-nuxt.sh <name>` — Scaffold Nuxt 3 project with Pinia, ESLint, testing, starter files, directory structure |
+| [check-hydration.sh](scripts/check-hydration.sh) | `./check-hydration.sh [dir]` — Static analysis for hydration mismatch risks (browser APIs, bare $fetch, non-serializable useState, module-level refs) |
+| [deploy-preset.sh](scripts/deploy-preset.sh) | `./deploy-preset.sh <platform>` — Configure deployment for Vercel, Netlify, Cloudflare Pages, or Node.js (creates config files + Dockerfile) |
+
+### assets/
+
+| Template | Purpose |
+|----------|---------|
+| [nuxt.config.ts](assets/nuxt.config.ts) | Production-ready config with modules, route rules, runtime config, Nitro, image optimization, TypeScript, environment overrides |
+| [server-api-template.ts](assets/server-api-template.ts) | Nitro API route patterns: GET/POST/PUT/DELETE with Zod validation, cached handlers, error handling |
+| [composable-template.ts](assets/composable-template.ts) | 5 composable patterns: SSR-safe state, data fetching, client-only (media query), auth with cookies, form with validation |
+| [middleware-template.ts](assets/middleware-template.ts) | Auth guard, role-based access, guest-only, global auth init, route validation, server middleware (Nitro JWT) |
+| [error-page.vue](assets/error-page.vue) | Custom error.vue with status-aware messages, dark mode, error stack display, styled actions |

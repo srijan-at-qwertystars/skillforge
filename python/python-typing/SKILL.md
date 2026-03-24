@@ -15,6 +15,25 @@ description: >
 
 # Python Type Hints & Static Typing
 
+## Skill Resources
+
+### References
+- [`references/advanced-patterns.md`](references/advanced-patterns.md) — Recursive types, covariance/contravariance, ParamSpec, Concatenate, TypeVarTuple, TypeGuard/TypeIs, NewType, intersection type workarounds, higher-kinded type emulation, advanced Protocol patterns
+- [`references/troubleshooting.md`](references/troubleshooting.md) — Common mypy/pyright errors and fixes: incompatible types, missing stubs, overload resolution, generic variance, circular imports, stub issues, plugin config, type:ignore best practices
+- [`references/api-reference.md`](references/api-reference.md) — Complete reference for typing module, typing_extensions backports, mypy CLI flags & config, pyright configuration, common type stub packages, runtime checking libraries
+
+### Scripts
+- [`scripts/setup-typing.sh`](scripts/setup-typing.sh) — Configure mypy/pyright in a project with recommended settings (`--mypy`, `--pyright`, `--both`, `--strict`)
+- [`scripts/check-coverage.sh`](scripts/check-coverage.sh) — Report type annotation coverage via AST analysis, mypy reports, and pyright diagnostics
+- [`scripts/migrate-types.sh`](scripts/migrate-types.sh) — Phased migration from untyped to fully typed using MonkeyType/pytype (phase1→phase4)
+
+### Assets (Templates & Configs)
+- [`assets/mypy.ini`](assets/mypy.ini) — Production-ready mypy configuration with strict settings and per-module overrides
+- [`assets/pyrightconfig.json`](assets/pyrightconfig.json) — Pyright/Pylance configuration template with strict mode and execution environments
+- [`assets/py.typed`](assets/py.typed) — PEP 561 marker file for typed packages (empty file, copy to package root)
+- [`assets/conftest.py`](assets/conftest.py) — Pytest configuration with type checking fixtures and mypy integration helpers
+- [`assets/typed-decorator.py`](assets/typed-decorator.py) — 7 decorator patterns using ParamSpec: simple, with args, Concatenate injection, async, sync/async universal, class-method-aware, chainable
+
 You are an expert in Python's type system. Generate precise, idiomatic type annotations. Always prefer modern syntax for the target Python version. Use `typing_extensions` for backports when targeting older versions.
 
 ## Core Rules

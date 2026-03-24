@@ -391,6 +391,34 @@ Chaos engineering provides evidence for SOC2 Trust Service Criteria:
 10. **Remediate** — Fix weaknesses. Update runbooks.
 11. **Iterate** — Expand scope progressively. Repeat.
 
+## Supplementary Materials
+
+### References
+
+| File | Contents |
+|------|----------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Multi-region failure, cascading failure injection, serverless chaos, database chaos (split-brain, replication lag), stateful workloads, progressive delivery + chaos, chaos maturity model |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Blast radius escapes, monitoring blind spots, cultural resistance, compliance concerns, rollback failures, false positives/negatives, diagnostic flowchart |
+| [`references/tool-comparison.md`](references/tool-comparison.md) | Chaos Mesh vs LitmusChaos vs Gremlin vs AWS FIS vs Chaos Monkey — features, K8s/cloud support, pricing, ease of use, community, selection guide |
+
+### Scripts (executable helpers)
+
+| File | Purpose |
+|------|---------|
+| [`scripts/network-chaos.sh`](scripts/network-chaos.sh) | Inject latency, packet loss, corruption, network partitions, DNS blocks via `tc`/`iptables` |
+| [`scripts/k8s-pod-chaos.sh`](scripts/k8s-pod-chaos.sh) | Kill pods (random, percentage, continuous), drain/cordon nodes in Kubernetes |
+| [`scripts/stress-test.sh`](scripts/stress-test.sh) | CPU, memory, disk I/O, and disk-fill stress injection via `stress-ng` |
+
+### Assets (templates & configs)
+
+| File | Purpose |
+|------|---------|
+| [`assets/chaos-mesh-experiment.yaml`](assets/chaos-mesh-experiment.yaml) | Chaos Mesh CRD templates: NetworkChaos, PodChaos, StressChaos, IOChaos, DNSChaos, HTTPChaos |
+| [`assets/litmus-experiment.yaml`](assets/litmus-experiment.yaml) | LitmusChaos ChaosEngine templates: pod-delete, network-latency, CPU/memory hog, node-drain, EC2 terminate |
+| [`assets/gameday-template.md`](assets/gameday-template.md) | GameDay planning document template with checklists, communication plan, execution log |
+| [`assets/experiment-report.md`](assets/experiment-report.md) | Post-experiment report template with metrics, findings, action items, compliance sign-off |
+| [`assets/aws-fis-template.json`](assets/aws-fis-template.json) | AWS FIS experiment templates: EC2 stop, network disruption, CPU stress, RDS failover, AZ failure simulation |
+
 ## Examples
 
 ### Example 1: Database failover experiment

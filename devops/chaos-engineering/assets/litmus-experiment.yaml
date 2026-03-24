@@ -1,0 +1,248 @@
+# ============================================================================
+# LitmusChaos Experiment Templates
+# Customize appinfo, env vars, and probes for your environment.
+# Apply: kubectl apply -f litmus-experiment.yaml
+# Monitor: kubectl get chaosengine -n <namespace>
+# ============================================================================
+
+---
+# ChaosEngine: Pod Delete experiment
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: pod-delete-engine
+  namespace: production
+  labels:
+    experiment: pod-delete
+    team: platform
+spec:
+  appinfo:
+    appns: production
+    applabel: app=payment-svc
+    appkind: deployment
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-delete
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: CHAOS_INTERVAL
+              value: "10"
+            - name: FORCE
+              value: "true"
+            - name: PODS_AFFECTED_PERC
+              value: "50"
+        probe:
+          - name: check-frontend-availability
+            type: httpProbe
+            httpProbe/inputs:
+              url: http://frontend.production.svc:8080/health
+              method:
+                get:
+                  criteria: ==
+                  responseCode: "200"
+            mode: Continuous
+            runProperties:
+              probeTimeout: 5s
+              interval: 5s
+              retry: 3
+
+---
+# ChaosEngine: Pod Network Latency
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: pod-network-latency-engine
+  namespace: production
+spec:
+  appinfo:
+    appns: production
+    applabel: app=api-gateway
+    appkind: deployment
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-network-latency
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "120"
+            - name: NETWORK_LATENCY
+              value: "500"
+            - name: JITTER
+              value: "100"
+            - name: CONTAINER_RUNTIME
+              value: containerd
+            - name: SOCKET_PATH
+              value: /run/containerd/containerd.sock
+            - name: DESTINATION_IPS
+              value: ""
+            - name: DESTINATION_HOSTS
+              value: ""
+        probe:
+          - name: check-api-latency
+            type: promProbe
+            promProbe/inputs:
+              endpoint: http://prometheus.monitoring.svc:9090
+              query: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{app="api-gateway"}[1m]))
+              comparator:
+                type: float
+                criteria: "<="
+                value: "5.0"
+            mode: Continuous
+            runProperties:
+              probeTimeout: 5s
+              interval: 10s
+
+---
+# ChaosEngine: Pod Network Loss
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: pod-network-loss-engine
+  namespace: production
+spec:
+  appinfo:
+    appns: production
+    applabel: app=order-svc
+    appkind: deployment
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-network-loss
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: NETWORK_PACKET_LOSS_PERCENTAGE
+              value: "30"
+            - name: CONTAINER_RUNTIME
+              value: containerd
+
+---
+# ChaosEngine: Node Drain
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: node-drain-engine
+  namespace: production
+spec:
+  appinfo:
+    appns: production
+    applabel: app=stateless-svc
+    appkind: deployment
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: node-drain
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "90"
+            - name: TARGET_NODE
+              value: ""
+            - name: APP_NODE
+              value: ""
+
+---
+# ChaosEngine: Pod CPU Hog
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: pod-cpu-hog-engine
+  namespace: staging
+spec:
+  appinfo:
+    appns: staging
+    applabel: app=compute-svc
+    appkind: deployment
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-cpu-hog
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "120"
+            - name: CPU_CORES
+              value: "2"
+            - name: CPU_LOAD
+              value: "80"
+            - name: PODS_AFFECTED_PERC
+              value: "100"
+        probe:
+          - name: check-cpu-threshold
+            type: promProbe
+            promProbe/inputs:
+              endpoint: http://prometheus.monitoring.svc:9090
+              query: avg(rate(container_cpu_usage_seconds_total{pod=~"compute-svc.*",namespace="staging"}[1m]))
+              comparator:
+                type: float
+                criteria: "<="
+                value: "0.9"
+            mode: Edge
+            runProperties:
+              probeTimeout: 5s
+              interval: 15s
+
+---
+# ChaosEngine: Pod Memory Hog
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: pod-memory-hog-engine
+  namespace: staging
+spec:
+  appinfo:
+    appns: staging
+    applabel: app=cache-svc
+    appkind: deployment
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: pod-memory-hog
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: MEMORY_CONSUMPTION
+              value: "500"
+            - name: PODS_AFFECTED_PERC
+              value: "50"
+
+---
+# ChaosEngine: AWS EC2 Terminate (cloud chaos)
+apiVersion: litmuschaos.io/v1alpha1
+kind: ChaosEngine
+metadata:
+  name: ec2-terminate-engine
+  namespace: litmus
+spec:
+  engineState: active
+  chaosServiceAccount: litmus-admin
+  experiments:
+    - name: ec2-terminate-by-tag
+      spec:
+        components:
+          env:
+            - name: TOTAL_CHAOS_DURATION
+              value: "60"
+            - name: CHAOS_INTERVAL
+              value: "30"
+            - name: INSTANCE_TAG
+              value: "chaos-enabled:true"
+            - name: REGION
+              value: us-east-1
+            - name: MANAGED_NODEGROUP
+              value: "enable"
+          secrets:
+            - name: cloud-secret
+              mountPath: /tmp/

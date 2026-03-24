@@ -1,0 +1,219 @@
+# ============================================================================
+# Chaos Mesh CRD Templates
+# Customize selectors, durations, and parameters for your environment.
+# Apply: kubectl apply -f chaos-mesh-experiment.yaml
+# Abort: kubectl delete -f chaos-mesh-experiment.yaml
+# ============================================================================
+
+---
+# NetworkChaos: Inject latency between services
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-example
+  namespace: chaos-testing
+  labels:
+    experiment: network-latency
+    team: platform
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: frontend
+  delay:
+    latency: "300ms"
+    jitter: "50ms"
+    correlation: "50"
+  direction: to
+  target:
+    selector:
+      namespaces:
+        - production
+      labelSelectors:
+        app: backend-api
+  duration: "5m"
+
+---
+# NetworkChaos: Packet loss
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-loss-example
+  namespace: chaos-testing
+spec:
+  action: loss
+  mode: all
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: payment-svc
+  loss:
+    loss: "10"
+    correlation: "25"
+  duration: "3m"
+
+---
+# NetworkChaos: Network partition (blackhole)
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-partition-example
+  namespace: chaos-testing
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: order-svc
+  direction: both
+  target:
+    selector:
+      namespaces:
+        - production
+      labelSelectors:
+        app: inventory-svc
+  duration: "2m"
+
+---
+# PodChaos: Kill pods
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-example
+  namespace: chaos-testing
+spec:
+  action: pod-kill
+  mode: fixed-percent
+  value: "50"
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: api-gateway
+  gracePeriod: 0
+  duration: "1m"
+
+---
+# PodChaos: Pod failure (make pods unavailable)
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-failure-example
+  namespace: chaos-testing
+spec:
+  action: pod-failure
+  mode: fixed
+  value: "2"
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: notification-svc
+  duration: "5m"
+
+---
+# StressChaos: CPU stress
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: cpu-stress-example
+  namespace: chaos-testing
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: compute-svc
+  stressors:
+    cpu:
+      workers: 2
+      load: 80
+  duration: "5m"
+
+---
+# StressChaos: Memory stress
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: memory-stress-example
+  namespace: chaos-testing
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: cache-svc
+  stressors:
+    memory:
+      workers: 1
+      size: "512MB"
+  duration: "3m"
+
+---
+# IOChaos: Disk I/O latency
+apiVersion: chaos-mesh.org/v1alpha1
+kind: IOChaos
+metadata:
+  name: io-latency-example
+  namespace: chaos-testing
+spec:
+  action: latency
+  mode: one
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: database
+  volumePath: /var/lib/data
+  path: "*"
+  delay: "100ms"
+  percent: 50
+  duration: "5m"
+
+---
+# DNSChaos: DNS errors
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: dns-error-example
+  namespace: chaos-testing
+spec:
+  action: error
+  mode: all
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: frontend
+  patterns:
+    - "external-api.example.com"
+  duration: "3m"
+
+---
+# HTTPChaos: HTTP response injection
+apiVersion: chaos-mesh.org/v1alpha1
+kind: HTTPChaos
+metadata:
+  name: http-abort-example
+  namespace: chaos-testing
+spec:
+  mode: all
+  selector:
+    namespaces:
+      - production
+    labelSelectors:
+      app: backend-api
+  target: Response
+  port: 8080
+  code: 503
+  replace:
+    body: '{"error": "chaos-injected service unavailable"}'
+  duration: "2m"
