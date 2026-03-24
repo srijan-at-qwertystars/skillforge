@@ -1,0 +1,529 @@
+<!--
+  htmx Component Library — Copy-Paste Components
+  Each component is self-contained. Copy the HTML into your templates
+  and adjust endpoints/IDs as needed.
+
+  Components:
+  1. Active Search
+  2. Modal Dialog
+  3. Tabs
+  4. Infinite Scroll
+  5. Inline Edit (Click-to-Edit)
+  6. Bulk Operations
+  7. File Upload with Progress
+  8. Confirmation Dialog
+  9. Lazy-Loaded Content
+  10. Toast Notifications
+  11. Sortable List
+  12. Typeahead / Autocomplete
+-->
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     1. ACTIVE SEARCH
+     Debounced input that searches on typing.
+     Server endpoint: GET /search?q=<query>
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<div id="component-search">
+  <div class="relative">
+    <input type="search" name="q"
+           hx-get="/search"
+           hx-trigger="input changed delay:300ms, search"
+           hx-target="#search-results"
+           hx-indicator="#search-spinner"
+           class="w-full border rounded-lg px-4 py-2 pl-10"
+           placeholder="Search..."
+           autocomplete="off">
+    <svg class="absolute left-3 top-2.5 h-5 w-5 text-gray-400" fill="none"
+         stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+    </svg>
+    <span id="search-spinner" class="htmx-indicator absolute right-3 top-2.5">⏳</span>
+  </div>
+  <div id="search-results" class="mt-4"></div>
+</div>
+
+<!-- Server returns:
+<ul class="divide-y">
+  <li class="py-2"><a href="/item/1">Result 1</a></li>
+</ul>
+-->
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     2. MODAL DIALOG
+     Loads modal content from server into a container.
+     Close: Escape, backdrop click, or cancel button.
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<!-- Trigger (place anywhere) -->
+<button hx-get="/modal/create"
+        hx-target="#modal-container"
+        hx-swap="innerHTML"
+        class="px-4 py-2 bg-blue-600 text-white rounded">
+  Open Modal
+</button>
+
+<!-- Container (place once in layout) -->
+<div id="modal-container"></div>
+
+<!-- Server returns (GET /modal/create):
+<div id="modal-backdrop" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+     onclick="if(event.target===this) this.remove()">
+  <div class="bg-white rounded-lg shadow-xl w-full max-w-lg p-6" onclick="event.stopPropagation()">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-semibold">Title</h2>
+      <button onclick="document.getElementById('modal-backdrop').remove()"
+              class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+    </div>
+    <form hx-post="/items"
+          hx-target="#item-list" hx-swap="beforeend"
+          hx-on::after-request="document.getElementById('modal-backdrop')?.remove()">
+      <input name="title" required class="w-full border rounded px-3 py-2 mb-4" placeholder="Title">
+      <div class="flex justify-end gap-3">
+        <button type="button" onclick="document.getElementById('modal-backdrop').remove()"
+                class="px-4 py-2 text-gray-600">Cancel</button>
+        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+-->
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     3. TABS
+     Server-loaded tab content with active state and URL push.
+     Server endpoints: GET /tabs/overview, GET /tabs/details, etc.
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<div class="bg-white rounded-lg shadow">
+  <div id="tab-nav" class="flex border-b" role="tablist"
+       hx-target="#tab-content" hx-swap="innerHTML transition:true">
+    <button role="tab" hx-get="/tabs/overview"
+            hx-on::after-request="activateTab(this)"
+            class="tab-btn px-6 py-3 font-medium border-b-2 border-blue-500 text-blue-600"
+            aria-selected="true">Overview</button>
+    <button role="tab" hx-get="/tabs/details"
+            hx-on::after-request="activateTab(this)"
+            class="tab-btn px-6 py-3 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700"
+            aria-selected="false">Details</button>
+    <button role="tab" hx-get="/tabs/settings"
+            hx-on::after-request="activateTab(this)"
+            class="tab-btn px-6 py-3 font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700"
+            aria-selected="false">Settings</button>
+  </div>
+  <div id="tab-content" class="p-6">
+    <!-- Initial content rendered server-side -->
+  </div>
+</div>
+
+<script>
+function activateTab(el) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.remove('border-blue-500', 'text-blue-600');
+    btn.classList.add('border-transparent', 'text-gray-500');
+    btn.setAttribute('aria-selected', 'false');
+  });
+  el.classList.remove('border-transparent', 'text-gray-500');
+  el.classList.add('border-blue-500', 'text-blue-600');
+  el.setAttribute('aria-selected', 'true');
+}
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     4. INFINITE SCROLL
+     Sentinel-based pattern — last item triggers next page load.
+     Server endpoint: GET /items?page=N
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<div id="item-feed" class="space-y-4">
+  <!-- Existing items rendered server-side -->
+  <div class="item p-4 bg-white rounded shadow">Item 1</div>
+  <div class="item p-4 bg-white rounded shadow">Item 2</div>
+
+  <!-- Sentinel: loads next page when scrolled into view -->
+  <div hx-get="/items?page=2"
+       hx-trigger="revealed"
+       hx-swap="outerHTML"
+       class="text-center py-8">
+    <span class="htmx-indicator text-gray-500">Loading more...</span>
+  </div>
+</div>
+
+<!-- Server returns for page 2:
+<div class="item p-4 bg-white rounded shadow">Item 3</div>
+<div class="item p-4 bg-white rounded shadow">Item 4</div>
+<div hx-get="/items?page=3"
+     hx-trigger="revealed"
+     hx-swap="outerHTML"
+     class="text-center py-8">
+  <span class="htmx-indicator text-gray-500">Loading more...</span>
+</div>
+(omit sentinel div when no more pages)
+-->
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     5. INLINE EDIT (Click-to-Edit)
+     Double-click to edit a cell. Blur or Enter saves. Escape cancels.
+     Server endpoints: GET /items/:id/edit, PUT /items/:id
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<table class="w-full bg-white rounded shadow">
+  <thead class="bg-gray-50">
+    <tr>
+      <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Name</th>
+      <th class="px-4 py-3 text-left text-sm font-medium text-gray-600">Email</th>
+      <th class="px-4 py-3 text-left text-sm font-medium text-gray-600 w-24">Actions</th>
+    </tr>
+  </thead>
+  <tbody id="contact-table">
+    <tr id="contact-1" class="border-t">
+      <!-- Double-click to edit -->
+      <td class="px-4 py-3 cursor-pointer hover:bg-yellow-50"
+          hx-get="/contacts/1/edit" hx-trigger="dblclick"
+          hx-target="closest tr" hx-swap="outerHTML">
+        John Doe
+      </td>
+      <td class="px-4 py-3 cursor-pointer hover:bg-yellow-50"
+          hx-get="/contacts/1/edit" hx-trigger="dblclick"
+          hx-target="closest tr" hx-swap="outerHTML">
+        john@example.com
+      </td>
+      <td class="px-4 py-3">
+        <button hx-delete="/contacts/1"
+                hx-target="closest tr"
+                hx-swap="outerHTML swap:300ms"
+                hx-confirm="Delete this contact?"
+                class="text-red-500 hover:text-red-700 text-sm">Delete</button>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Server returns for GET /contacts/1/edit:
+<tr id="contact-1" class="border-t bg-yellow-50">
+  <td class="px-4 py-3" colspan="2">
+    <form hx-put="/contacts/1" hx-target="#contact-1" hx-swap="outerHTML"
+          class="flex gap-2">
+      <input name="name" value="John Doe" class="border rounded px-2 py-1 flex-1" autofocus>
+      <input name="email" value="john@example.com" class="border rounded px-2 py-1 flex-1">
+      <button type="submit" class="px-3 py-1 bg-blue-600 text-white rounded text-sm">Save</button>
+      <button type="button" hx-get="/contacts/1" hx-target="#contact-1" hx-swap="outerHTML"
+              class="px-3 py-1 text-gray-600 text-sm">Cancel</button>
+    </form>
+  </td>
+  <td></td>
+</tr>
+-->
+
+<style>
+tr.htmx-swapping { opacity: 0; transition: opacity 300ms ease-out; }
+</style>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     6. BULK OPERATIONS
+     Select items with checkboxes, apply batch actions.
+     Server endpoint: POST /items/bulk  { action, ids[] }
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<form id="bulk-form">
+  <div class="flex items-center gap-4 mb-4 p-3 bg-white rounded shadow">
+    <label class="flex items-center gap-2">
+      <input type="checkbox" id="select-all"
+             onclick="document.querySelectorAll('input[name=ids]').forEach(c=>c.checked=this.checked)">
+      <span class="text-sm text-gray-600">Select All</span>
+    </label>
+    <select name="action" class="border rounded px-3 py-1 text-sm">
+      <option value="">— Bulk Action —</option>
+      <option value="archive">Archive</option>
+      <option value="delete">Delete</option>
+      <option value="export">Export</option>
+    </select>
+    <button hx-post="/items/bulk"
+            hx-include="#bulk-form"
+            hx-target="#item-list"
+            hx-swap="innerHTML"
+            hx-confirm="Apply action to selected items?"
+            class="px-3 py-1 bg-gray-800 text-white rounded text-sm">
+      Apply
+    </button>
+    <span id="selection-count" class="text-sm text-gray-500"></span>
+  </div>
+
+  <div id="item-list" class="space-y-2">
+    <div class="flex items-center gap-3 p-3 bg-white rounded shadow">
+      <input type="checkbox" name="ids" value="1"
+             onchange="updateSelectionCount()">
+      <span>Item 1</span>
+    </div>
+    <div class="flex items-center gap-3 p-3 bg-white rounded shadow">
+      <input type="checkbox" name="ids" value="2"
+             onchange="updateSelectionCount()">
+      <span>Item 2</span>
+    </div>
+  </div>
+</form>
+
+<script>
+function updateSelectionCount() {
+  const count = document.querySelectorAll('input[name=ids]:checked').length;
+  document.getElementById('selection-count').textContent =
+    count ? `${count} selected` : '';
+}
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     7. FILE UPLOAD WITH PROGRESS
+     Multipart upload with real-time progress bar.
+     Server endpoint: POST /upload (multipart/form-data)
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<form hx-post="/upload"
+      hx-encoding="multipart/form-data"
+      hx-target="#upload-result"
+      hx-swap="innerHTML"
+      class="bg-white rounded-lg shadow p-6">
+  <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center
+              hover:border-blue-400 transition-colors">
+    <input type="file" name="files" multiple id="upload-input"
+           class="hidden" onchange="showFileNames(this)">
+    <label for="upload-input" class="cursor-pointer">
+      <p class="text-gray-500">Drop files or click to browse</p>
+      <p id="file-names" class="text-sm text-gray-400 mt-2"></p>
+    </label>
+  </div>
+  <div id="upload-progress" class="mt-4 hidden">
+    <div class="w-full bg-gray-200 rounded-full h-2">
+      <div id="progress-bar" class="bg-blue-600 h-2 rounded-full" style="width:0%"></div>
+    </div>
+    <p id="progress-pct" class="text-sm text-gray-500 mt-1">0%</p>
+  </div>
+  <button type="submit" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded">Upload</button>
+</form>
+<div id="upload-result" class="mt-4"></div>
+
+<script>
+function showFileNames(input) {
+  document.getElementById('file-names').textContent =
+    Array.from(input.files).map(f => f.name).join(', ');
+}
+htmx.on('htmx:xhr:progress', function(evt) {
+  if (!evt.detail.lengthComputable) return;
+  const pct = Math.round((evt.detail.loaded / evt.detail.total) * 100);
+  document.getElementById('upload-progress').classList.remove('hidden');
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-pct').textContent = pct + '%';
+});
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     8. CONFIRMATION DIALOG
+     Custom confirmation modal (replaces browser confirm).
+     Uses hx-confirm event interception.
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<button hx-delete="/items/42"
+        hx-target="closest .item-row"
+        hx-swap="outerHTML swap:300ms"
+        hx-confirm="Are you sure you want to delete this item?"
+        class="text-red-500">
+  Delete
+</button>
+
+<!-- Custom confirm dialog (replaces browser native) -->
+<script>
+document.body.addEventListener('htmx:confirm', function(evt) {
+  evt.preventDefault();
+  const message = evt.detail.question;
+
+  // Build custom modal
+  const backdrop = document.createElement('div');
+  backdrop.id = 'confirm-backdrop';
+  backdrop.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+  backdrop.innerHTML = `
+    <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+      <p class="text-gray-700 mb-6">${message}</p>
+      <div class="flex justify-end gap-3">
+        <button id="confirm-cancel" class="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
+        <button id="confirm-ok" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Confirm</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+
+  document.getElementById('confirm-ok').addEventListener('click', () => {
+    evt.detail.issueRequest(true);
+    backdrop.remove();
+  });
+  document.getElementById('confirm-cancel').addEventListener('click', () => {
+    backdrop.remove();
+  });
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+});
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     9. LAZY-LOADED CONTENT
+     Sections that load when visible or on page load.
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<!-- Load immediately after page renders -->
+<div hx-get="/widgets/stats"
+     hx-trigger="load"
+     hx-swap="innerHTML"
+     class="bg-white rounded shadow p-6">
+  <div class="skeleton h-24"></div>
+</div>
+
+<!-- Load when scrolled into view -->
+<div hx-get="/widgets/chart"
+     hx-trigger="revealed"
+     hx-swap="innerHTML"
+     class="bg-white rounded shadow p-6 mt-8">
+  <div class="skeleton h-64"></div>
+</div>
+
+<!-- Load when 50% visible (IntersectionObserver) -->
+<div hx-get="/widgets/recommendations"
+     hx-trigger="intersect threshold:0.5 once"
+     hx-swap="innerHTML"
+     class="bg-white rounded shadow p-6 mt-8">
+  <div class="skeleton h-48"></div>
+</div>
+
+<style>
+.skeleton {
+  background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 0.25rem;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+</style>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     10. TOAST NOTIFICATIONS (via HX-Trigger)
+     Server sends: HX-Trigger: {"showToast": "message"}
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<!-- Container (place in base layout) -->
+<div id="toast-container"
+     class="fixed top-4 right-4 space-y-2 z-50"
+     aria-live="polite">
+</div>
+
+<script>
+document.body.addEventListener('showToast', function(evt) {
+  const detail = evt.detail;
+  const message = typeof detail === 'string' ? detail : (detail.message || detail.value || '');
+  const type = (detail && detail.type) || 'success';
+  const colors = { success:'bg-green-500', error:'bg-red-500', warning:'bg-yellow-500 text-black', info:'bg-blue-500' };
+
+  const toast = document.createElement('div');
+  toast.className = `${colors[type]||colors.info} text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 min-w-[250px]`;
+  toast.style.animation = 'slideIn 300ms ease-out';
+  toast.innerHTML = `<span class="flex-1">${message}</span><button onclick="this.parentElement.remove()" class="opacity-75 hover:opacity-100">✕</button>`;
+  document.getElementById('toast-container').appendChild(toast);
+  setTimeout(() => {
+    toast.style.animation = 'slideOut 300ms ease-in forwards';
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+});
+</script>
+
+<style>
+@keyframes slideIn { from { transform:translateX(100%); opacity:0 } to { transform:translateX(0); opacity:1 } }
+@keyframes slideOut { from { transform:translateX(0); opacity:1 } to { transform:translateX(100%); opacity:0 } }
+</style>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     11. SORTABLE LIST (htmx + SortableJS)
+     Drag to reorder, persist order to server.
+     Server endpoint: POST /items/reorder { order: [id1, id2, ...] }
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15/Sortable.min.js"></script>
+
+<ul id="sortable-list" class="space-y-2">
+  <li data-id="1" class="p-3 bg-white rounded shadow cursor-move flex items-center gap-3">
+    <span class="text-gray-400">☰</span> Task Alpha
+  </li>
+  <li data-id="2" class="p-3 bg-white rounded shadow cursor-move flex items-center gap-3">
+    <span class="text-gray-400">☰</span> Task Beta
+  </li>
+  <li data-id="3" class="p-3 bg-white rounded shadow cursor-move flex items-center gap-3">
+    <span class="text-gray-400">☰</span> Task Gamma
+  </li>
+</ul>
+
+<script>
+new Sortable(document.getElementById('sortable-list'), {
+  animation: 150,
+  ghostClass: 'opacity-50',
+  onEnd: function() {
+    const order = Array.from(this.el.children).map(li => li.dataset.id);
+    htmx.ajax('POST', '/items/reorder', {
+      target: '#sortable-list',
+      swap: 'none',
+      values: { order: JSON.stringify(order) }
+    });
+  }
+});
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     12. TYPEAHEAD / AUTOCOMPLETE
+     Shows dropdown suggestions as user types.
+     Server endpoint: GET /autocomplete?q=<query>
+     ═══════════════════════════════════════════════════════════════════ -->
+
+<div class="relative" id="autocomplete-wrapper">
+  <input type="text" name="city"
+         hx-get="/autocomplete"
+         hx-trigger="input changed delay:200ms"
+         hx-target="#suggestions"
+         hx-swap="innerHTML"
+         autocomplete="off"
+         class="w-full border rounded px-3 py-2"
+         placeholder="Start typing a city...">
+  <ul id="suggestions"
+      class="absolute z-10 w-full bg-white border rounded-b shadow-lg mt-0 max-h-48 overflow-y-auto">
+  </ul>
+</div>
+
+<!-- Server returns for GET /autocomplete?q=new:
+<li class="px-3 py-2 hover:bg-blue-50 cursor-pointer"
+    hx-on:click="selectSuggestion(this, 'New York')">New York</li>
+<li class="px-3 py-2 hover:bg-blue-50 cursor-pointer"
+    hx-on:click="selectSuggestion(this, 'New Orleans')">New Orleans</li>
+-->
+
+<script>
+function selectSuggestion(el, value) {
+  const input = document.querySelector('#autocomplete-wrapper input');
+  input.value = value;
+  document.getElementById('suggestions').innerHTML = '';
+}
+// Close suggestions when clicking outside
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#autocomplete-wrapper')) {
+    document.getElementById('suggestions').innerHTML = '';
+  }
+});
+</script>

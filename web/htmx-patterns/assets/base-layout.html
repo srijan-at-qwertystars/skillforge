@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}App{% endblock %}</title>
+
+  <!-- htmx 2.x -->
+  <script src="https://unpkg.com/htmx.org@2"
+          integrity="sha384-..." crossorigin="anonymous"></script>
+
+  <!-- Common extensions (load only what you need) -->
+  <!-- <script src="https://unpkg.com/htmx-ext-sse@2/sse.js"></script> -->
+  <!-- <script src="https://unpkg.com/htmx-ext-ws@2/ws.js"></script> -->
+  <!-- <script src="https://unpkg.com/htmx-ext-response-targets@2/response-targets.js"></script> -->
+  <!-- <script src="https://unpkg.com/htmx-ext-head-support@2/head-support.js"></script> -->
+
+  <!-- htmx configuration -->
+  <meta name="htmx-config" content='{
+    "historyCacheSize": 10,
+    "defaultSwapStyle": "innerHTML",
+    "globalViewTransitions": false,
+    "responseHandling": [
+      {"code": "204", "swap": false},
+      {"code": "[23]..", "swap": true},
+      {"code": "422", "swap": true, "error": false},
+      {"code": "[45]..", "swap": false, "error": true}
+    ]
+  }'>
+
+  <!-- CSRF token (set by server) -->
+  <meta name="csrf-token" content="{{ csrf_token }}">
+
+  <!-- Tailwind CSS (swap for local build in production) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /* ─── htmx Indicators ──────────────────────────────────────── */
+    .htmx-indicator {
+      display: none;
+    }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator {
+      display: inline-block;
+    }
+
+    /* ─── Swap Transitions ─────────────────────────────────────── */
+    .htmx-swapping {
+      opacity: 0;
+      transition: opacity 300ms ease-out;
+    }
+    .htmx-settling {
+      opacity: 1;
+      transition: opacity 300ms ease-in;
+    }
+    .htmx-added {
+      opacity: 0;
+    }
+
+    /* ─── Skeleton Loader ──────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+      border-radius: 0.25rem;
+      min-height: 1rem;
+    }
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ─── Toast Animations ─────────────────────────────────────── */
+    .toast-enter {
+      animation: slideIn 300ms ease-out;
+    }
+    .toast-exit {
+      animation: slideOut 300ms ease-in forwards;
+    }
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+
+    /* ─── Loading Bar ──────────────────────────────────────────── */
+    #htmx-loading-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      height: 3px;
+      background: #3b82f6;
+      transition: width 300ms ease;
+      z-index: 9999;
+    }
+  </style>
+
+  {% block head %}{% endblock %}
+</head>
+
+<body class="bg-gray-50 text-gray-900 min-h-screen"
+      hx-boost="true"
+      hx-ext="head-support"
+      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+
+  <!-- Global loading bar -->
+  <div id="htmx-loading-bar" style="width: 0%"></div>
+
+  <!-- Navigation -->
+  <nav class="bg-white shadow-sm border-b sticky top-0 z-40">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between items-center h-16">
+        <a href="/" class="text-xl font-bold text-gray-900">
+          {% block brand %}App{% endblock %}
+        </a>
+        <div class="flex items-center gap-4">
+          {% block nav %}{% endblock %}
+          <!-- Notification badge (updated via OOB or HX-Trigger) -->
+          <div id="notification-badge"
+               hx-get="/notifications/count"
+               hx-trigger="load, notificationChanged from:body"
+               hx-swap="innerHTML">
+          </div>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Flash messages (server can target via OOB) -->
+  <div id="flash-messages" class="max-w-6xl mx-auto px-4 mt-4"></div>
+
+  <!-- Main content -->
+  <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Toast container (fixed position) -->
+  <div id="toast-container"
+       class="fixed top-4 right-4 space-y-2 z-50 pointer-events-none"
+       aria-live="polite">
+  </div>
+
+  <!-- Modal container -->
+  <div id="modal-container"></div>
+
+  <!-- ─── Global Scripts ──────────────────────────────────────── -->
+  <script>
+  (function() {
+    'use strict';
+
+    // ── CSRF Token Injection ─────────────────────────────────
+    const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+    if (csrfMeta) {
+      document.body.addEventListener('htmx:configRequest', (evt) => {
+        if (!['GET', 'HEAD'].includes(evt.detail.verb)) {
+          evt.detail.headers['X-CSRFToken'] = csrfMeta.content;
+        }
+      });
+    }
+
+    // ── Loading Bar ──────────────────────────────────────────
+    const loadingBar = document.getElementById('htmx-loading-bar');
+    let activeRequests = 0;
+
+    document.body.addEventListener('htmx:beforeRequest', () => {
+      activeRequests++;
+      loadingBar.style.width = '70%';
+    });
+
+    document.body.addEventListener('htmx:afterRequest', () => {
+      activeRequests--;
+      if (activeRequests <= 0) {
+        activeRequests = 0;
+        loadingBar.style.width = '100%';
+        setTimeout(() => { loadingBar.style.width = '0%'; }, 300);
+      }
+    });
+
+    // ── Toast Notifications ──────────────────────────────────
+    // Triggered via HX-Trigger header: {"showToast": "message"}
+    // or {"showToast": {"message": "text", "type": "success|error|warning"}}
+    document.body.addEventListener('showToast', (evt) => {
+      const detail = evt.detail;
+      let message, type;
+      if (typeof detail === 'string') {
+        message = detail;
+        type = 'success';
+      } else if (detail && typeof detail === 'object') {
+        message = detail.message || detail.value || JSON.stringify(detail);
+        type = detail.type || 'success';
+      } else {
+        return;
+      }
+
+      const colors = {
+        success: 'bg-green-500',
+        error: 'bg-red-500',
+        warning: 'bg-yellow-500 text-gray-900',
+        info: 'bg-blue-500'
+      };
+
+      const toast = document.createElement('div');
+      toast.className = `${colors[type] || colors.info} text-white px-4 py-3 rounded-lg shadow-lg toast-enter pointer-events-auto flex items-center justify-between min-w-[300px]`;
+      toast.innerHTML = `<span>${escapeHtml(message)}</span><button onclick="this.parentElement.remove()" class="ml-4 hover:opacity-75">✕</button>`;
+      document.getElementById('toast-container').appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.replace('toast-enter', 'toast-exit');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    });
+
+    // ── Error Handling ───────────────────────────────────────
+    document.body.addEventListener('htmx:responseError', (evt) => {
+      const status = evt.detail.xhr.status;
+      let message;
+      if (status === 0) message = 'Network error — check your connection';
+      else if (status === 403) message = 'Permission denied';
+      else if (status === 404) message = 'Resource not found';
+      else if (status === 429) message = 'Too many requests — please slow down';
+      else if (status >= 500) message = 'Server error — please try again';
+      else message = `Request failed (${status})`;
+
+      document.body.dispatchEvent(new CustomEvent('showToast', {
+        detail: { message, type: 'error' }
+      }));
+    });
+
+    // ── Keyboard Shortcuts ───────────────────────────────────
+    document.addEventListener('keydown', (e) => {
+      // Escape closes modals
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('modal-backdrop');
+        if (modal) modal.remove();
+      }
+    });
+
+    // ── Utility ──────────────────────────────────────────────
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // Expose for inline handlers
+    window.escapeHtml = escapeHtml;
+  })();
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,204 @@
+# ──────────────────────────────────────────────────────────────────────
+# GitHub Actions CI/CD for Pulumi
+# ──────────────────────────────────────────────────────────────────────
+# - Pull requests: runs `pulumi preview` and posts diff as PR comment
+# - Push to main:  runs `pulumi up` to deploy to production
+# - Supports multiple stacks via matrix (uncomment for multi-env)
+# ──────────────────────────────────────────────────────────────────────
+
+name: Pulumi CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/pulumi.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/pulumi.yml"
+
+permissions:
+  contents: read
+  pull-requests: write    # needed for PR comments
+  id-token: write         # needed for OIDC auth (AWS/Azure/GCP)
+
+env:
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  WORK_DIR: ./infra
+
+# Prevent concurrent deployments to the same stack
+concurrency:
+  group: pulumi-${{ github.ref }}
+  cancel-in-progress: false  # don't cancel running deploys
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────
+  # Preview on pull requests
+  # ────────────────────────────────────────────────────────────────────
+  preview:
+    name: Preview
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ${{ env.WORK_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORK_DIR }}
+        run: npm ci
+
+      # Option A: OIDC authentication (recommended — no static credentials)
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      # Option B: Static credentials (uncomment if not using OIDC)
+      # - name: Configure AWS credentials (static)
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: us-west-2
+
+      - name: Pulumi Preview
+        uses: pulumi/actions@v5
+        with:
+          command: preview
+          stack-name: org/my-project/dev
+          work-dir: ${{ env.WORK_DIR }}
+          comment-on-pr: true
+          comment-on-pr-number: ${{ github.event.pull_request.number }}
+          diff: true
+
+  # ────────────────────────────────────────────────────────────────────
+  # Deploy on merge to main
+  # ────────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production  # requires environment approval in GitHub
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ${{ env.WORK_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORK_DIR }}
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Pulumi Up
+        uses: pulumi/actions@v5
+        with:
+          command: up
+          stack-name: org/my-project/prod
+          work-dir: ${{ env.WORK_DIR }}
+
+      # Post-deployment validation
+      - name: Smoke test
+        working-directory: ${{ env.WORK_DIR }}
+        run: |
+          ALB_URL=$(pulumi stack output albUrl --stack org/my-project/prod 2>/dev/null || echo "")
+          if [ -n "$ALB_URL" ]; then
+            echo "Testing endpoint: $ALB_URL"
+            curl --fail --silent --max-time 30 "$ALB_URL" > /dev/null
+            echo "Smoke test passed"
+          else
+            echo "No ALB URL found — skipping smoke test"
+          fi
+
+  # ────────────────────────────────────────────────────────────────────
+  # Drift detection (scheduled)
+  # ────────────────────────────────────────────────────────────────────
+  drift-check:
+    name: Drift Check
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: ${{ env.WORK_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORK_DIR }}
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Check for drift
+        uses: pulumi/actions@v5
+        with:
+          command: preview
+          stack-name: org/my-project/prod
+          work-dir: ${{ env.WORK_DIR }}
+          expect-no-changes: true
+          refresh: true
+
+# ──────────────────────────────────────────────────────────────────────
+# Multi-environment matrix (uncomment to deploy dev → staging → prod)
+# ──────────────────────────────────────────────────────────────────────
+#   deploy-all:
+#     strategy:
+#       max-parallel: 1   # deploy sequentially
+#       matrix:
+#         include:
+#           - env: dev
+#             stack: org/my-project/dev
+#             aws-role: ${{ secrets.AWS_ROLE_ARN_DEV }}
+#           - env: staging
+#             stack: org/my-project/staging
+#             aws-role: ${{ secrets.AWS_ROLE_ARN_STAGING }}
+#           - env: prod
+#             stack: org/my-project/prod
+#             aws-role: ${{ secrets.AWS_ROLE_ARN_PROD }}
+#     runs-on: ubuntu-latest
+#     environment: ${{ matrix.env }}
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-node@v4
+#         with: { node-version: "20" }
+#       - run: npm ci
+#         working-directory: ${{ env.WORK_DIR }}
+#       - uses: aws-actions/configure-aws-credentials@v4
+#         with:
+#           role-to-assume: ${{ matrix.aws-role }}
+#           aws-region: us-west-2
+#       - uses: pulumi/actions@v5
+#         with:
+#           command: up
+#           stack-name: ${{ matrix.stack }}
+#           work-dir: ${{ env.WORK_DIR }}

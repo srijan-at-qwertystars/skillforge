@@ -439,6 +439,33 @@ tr.htmx-swapping { opacity: 0; transition: opacity 500ms ease-out; }
 **htmx strengths:** No build step, tiny bundle, works with any backend, progressive enhancement, reduced complexity.
 **htmx weakness:** Not suited for complex client-only interactions, less ecosystem for component libraries.
 
+## Additional Resources
+
+### references/
+
+In-depth guides for complex scenarios:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Multi-step forms/wizards, lazy loading, infinite scroll deep dive, drag-and-drop with SortableJS, modal dialogs, tabs, inline editing with validation, bulk operations, file uploads with progress, SSE streaming patterns, WebSocket chat, content negotiation, advanced OOB swap patterns with `hx-select-oob`
+- **[troubleshooting.md](references/troubleshooting.md)** — Event bubbling fixes, CSRF token handling (Django/Rails/Express), cache busting, CSP header configuration, debugging with `htmx.logAll()`, swap timing issues, history cache problems, script evaluation (`hx-on:`, hyperscript), CORS setup, 422 validation error handling with `response-targets` extension
+- **[backend-integration.md](references/backend-integration.md)** — Server-side patterns for Express/Fastify, Django, Flask/FastAPI, Go (net/http, Echo, Fiber), Rails, Phoenix LiveView comparison, partial template rendering strategies, OOB helper functions, response header usage patterns
+
+### scripts/
+
+Project tooling (run with `./scripts/<name>.sh`):
+
+- **[setup-project.sh](scripts/setup-project.sh)** — Bootstrap an htmx project with Express, Flask, or Go backend, Tailwind CSS, and live reload. Usage: `./scripts/setup-project.sh my-app express`
+- **[create-component.sh](scripts/create-component.sh)** — Generate htmx component templates: modal, infinite-scroll, inline-edit, search, tabs, file-upload. Usage: `./scripts/create-component.sh modal ./templates`
+- **[analyze-htmx.sh](scripts/analyze-htmx.sh)** — Analyze HTML files for htmx usage statistics, extension detection, swap strategies, and potential issues (missing targets, old syntax, CSRF gaps). Usage: `./scripts/analyze-htmx.sh ./templates`
+
+### assets/
+
+Production-ready templates and starter code:
+
+- **[express-server.js](assets/express-server.js)** — Express server with htmx detection middleware, CSRF protection, partial rendering, OOB swap helpers, HX-Trigger response helpers, and example CRUD routes
+- **[base-layout.html](assets/base-layout.html)** — HTML base layout with htmx 2.x CDN, htmx config (responseHandling for 422), loading bar, toast notifications, CSRF injection, skeleton loaders, modal container, error handling
+- **[components.html](assets/components.html)** — 12 copy-paste htmx components: active search, modal, tabs, infinite scroll, inline edit, bulk operations, file upload with progress, custom confirmation dialog, lazy loading, toast system, sortable list, typeahead/autocomplete
+- **[htmx-django-views.py](assets/htmx-django-views.py)** — Django views with HtmxMiddleware, HtmxMixin for CBVs, fluent HtmxResponse builder, `@htmx_partial` decorator, CRUD views with validation, inline editing, infinite scroll pagination, and template examples
+
 ## Common Pitfalls and Anti-Patterns
 
 1. **Returning JSON instead of HTML** — htmx expects HTML fragments. Use `json-enc` extension only for sending JSON; responses must still be HTML.

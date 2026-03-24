@@ -140,6 +140,6 @@
 | devops | [nix-packages](devops/nix-packages/) | Nix package manager — flakes, devShells, mkDerivation, nixpkgs overlays, NixOS, Home Manager, caching, and reproducible builds | tested |
 | databases | [drizzle-orm](databases/drizzle-orm/) | Drizzle ORM — SQL-like TypeScript query builder, schema definition, drizzle-kit migrations, relations, type inference, and serverless patterns | tested |
 | languages | [zig-language](languages/zig-language/) | Zig programming language — comptime generics, allocator patterns, error unions, C interop, build.zig, cross-compilation, and zero-overhead systems programming | tested |
-| web | [htmx-patterns](web/htmx-patterns/) | htmx 2.x hypermedia-driven UI — core attributes, targeting, swapping, OOB updates, extensions, server-side patterns, and progressive enhancement | created |
-| typescript | [zod-validation](typescript/zod-validation/) | Zod schema validation — TypeScript-first parsing, transforms, refinements, error handling, framework integration, and type inference | created |
-| devops | [pulumi-iac](devops/pulumi-iac/) | Pulumi Infrastructure as Code — real programming languages for cloud resources, stacks, component resources, testing, Automation API, and CI/CD | created |
+| web | [htmx-patterns](web/htmx-patterns/) | htmx 2.x hypermedia-driven UI — core attributes, targeting, swapping, OOB updates, extensions, server-side patterns, and progressive enhancement | enriched |
+| typescript | [zod-validation](typescript/zod-validation/) | Zod schema validation — TypeScript-first parsing, transforms, refinements, error handling, framework integration, and type inference | enriched |
+| devops | [pulumi-iac](devops/pulumi-iac/) | Pulumi Infrastructure as Code — real programming languages for cloud resources, stacks, component resources, testing, Automation API, and CI/CD | enriched |

@@ -1,0 +1,70 @@
+# ──────────────────────────────────────────────────────────────────────
+# Pulumi.yaml — Annotated project configuration template
+# ──────────────────────────────────────────────────────────────────────
+#
+# This file defines project-level metadata for a Pulumi program.
+# Place it in the root of your infrastructure project.
+# Stack-specific config goes in Pulumi.<stack>.yaml (e.g., Pulumi.dev.yaml).
+
+# REQUIRED — Unique project name (used in stack URNs and state keys).
+# Convention: lowercase, hyphens. Must be stable — renaming breaks state mapping.
+name: my-infrastructure
+
+# REQUIRED — Language runtime. Determines which SDK and plugin loader to use.
+# Values: nodejs | python | go | dotnet | java | yaml
+runtime:
+  name: nodejs
+  options:
+    # TypeScript-specific: compile before running (set false if using ts-node)
+    typescript: true
+    # Package manager: npm | yarn | pnpm
+    packagemanager: npm
+
+# OPTIONAL — Human-readable description (shown in Pulumi Cloud dashboard).
+description: Production infrastructure for the platform team
+
+# OPTIONAL — Default configuration values applied to ALL stacks.
+# Stack-specific Pulumi.<stack>.yaml values override these.
+config:
+  # Typed config schema (validated at preview/up time)
+  aws:region:
+    type: string
+    default: us-west-2
+  app:instanceCount:
+    type: integer
+    default: 2
+  app:enableMonitoring:
+    type: boolean
+    default: true
+
+# OPTIONAL — Pulumi Cloud organization and project settings.
+# Uncomment if using Pulumi Cloud as state backend.
+# options:
+#   # Refresh state before every update
+#   refresh: always
+
+# OPTIONAL — Backend configuration (overrides `pulumi login`).
+# backend:
+#   url: s3://my-pulumi-state-bucket
+
+# OPTIONAL — Plugin dependencies (auto-managed, but can pin versions).
+# plugins:
+#   providers:
+#     - name: aws
+#       version: 6.52.0
+#     - name: random
+#       version: 4.16.0
+
+# ──────────────────────────────────────────────────────────────────────
+# Stack config file example (Pulumi.dev.yaml):
+# ──────────────────────────────────────────────────────────────────────
+#
+# environment:
+#   - aws-dev                    # Import Pulumi ESC environment
+#
+# config:
+#   aws:region: us-west-2
+#   app:instanceCount: 1
+#   app:enableMonitoring: false
+#   app:dbPassword:
+#     secure: AAABADQx...        # Encrypted secret value

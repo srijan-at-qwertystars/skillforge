@@ -15,7 +15,7 @@ description: >
 
 ## Philosophy
 
-Pulumi uses real programming languages (TypeScript, Python, Go, C#, Java, YAML) to define cloud infrastructure. No DSL. Use loops, conditionals, functions, classes, packages, and IDE tooling. Infrastructure is code — test it, refactor it, review it like application code. Pulumi tracks desired vs actual state and performs diffing to apply minimal changes.
+Pulumi uses real programming languages (TypeScript, Python, Go, C#, Java, YAML) to define cloud infrastructure. No DSL. Use loops, conditionals, functions, classes, packages, and IDE tooling. Infrastructure is code — test, refactor, and review it like application code.
 
 ## Project Setup
 
@@ -129,7 +129,6 @@ func main() {
         return nil
     })
 }
-```
 
 ## Core Concepts
 
@@ -224,26 +223,24 @@ const region = awsConfig.require("region");
 
 ### Secrets providers
 ```bash
-pulumi stack init dev --secrets-provider="awskms://alias/pulumi"
-pulumi stack init dev --secrets-provider="azurekeyvault://myVault.vault.azure.net/keys/myKey"
+pulumi stack init dev --secrets-provider="awskms://alias/pulumi"       # AWS KMS
+pulumi stack init dev --secrets-provider="azurekeyvault://vault.vault.azure.net/keys/k"
 pulumi stack init dev --secrets-provider="gcpkms://projects/p/locations/l/keyRings/r/cryptoKeys/k"
-pulumi stack init dev --secrets-provider="passphrase"
+pulumi stack init dev --secrets-provider="passphrase"                  # local passphrase
 ```
 
 ## State Backends
 
 ```bash
-pulumi login                          # Pulumi Cloud (default, recommended for teams)
+pulumi login                          # Pulumi Cloud (default, recommended)
 pulumi login s3://my-pulumi-state     # AWS S3
 pulumi login azblob://my-container    # Azure Blob Storage
 pulumi login gs://my-pulumi-state     # Google Cloud Storage
 pulumi login --local                  # Local filesystem
 ```
-
-State stores the mapping between logical resource names and cloud resource IDs. Never edit state files manually. Use `pulumi state delete` or `pulumi state unprotect` for state surgery.
+State maps logical names to cloud IDs. Never edit manually. Use `pulumi state delete` or `pulumi state unprotect`.
 
 ## Providers
-
 ### Explicit provider configuration
 ```typescript
 const euProvider = new aws.Provider("eu-provider", { region: "eu-west-1", profile: "eu-account" });
@@ -257,7 +254,7 @@ const gcpBucket = new gcp.storage.Bucket("gcp-bucket", { location: "US" });
 ```
 
 ### Default providers
-If no explicit provider is specified, Pulumi uses the default provider configured via environment variables or `pulumi config set aws:region`.
+If no explicit provider, Pulumi uses the default configured via env vars or `pulumi config set aws:region`.
 
 ## Dynamic Providers
 
@@ -282,7 +279,7 @@ class MyResource extends pulumi.dynamic.Resource {
 }
 ```
 
-Use dynamic providers for resources not covered by existing providers (internal APIs, custom SaaS integrations).
+Use dynamic providers for resources not covered by existing providers (internal APIs, SaaS integrations).
 
 ## Policy as Code (CrossGuard)
 
@@ -345,14 +342,11 @@ describe("infrastructure", () => {
 ### Unit tests (Python with mocks)
 ```python
 import pulumi
-
 class MyMocks(pulumi.runtime.Mocks):
     def new_resource(self, args): return [args.name + "_id", args.inputs]
     def call(self, args): return {}
-
 pulumi.runtime.set_mocks(MyMocks())
 from my_infra import bucket  # import after setting mocks
-
 @pulumi.runtime.test
 def test_bucket_tags():
     def check_tags(tags): assert "Environment" in tags
@@ -371,9 +365,6 @@ const outputs = await stack.outputs();
 assert(outputs["url"].value.startsWith("https://"));
 await stack.destroy();
 ```
-
-### Property tests
-CrossGuard policies act as property tests -- they validate invariants across all resources in a stack during preview and update.
 
 ## Import Existing Resources
 
@@ -394,25 +385,19 @@ const bucket = new aws.s3.Bucket("my-bucket", {
 ## Automation API
 
 Drive Pulumi programmatically without the CLI:
-
 ```typescript
 import { LocalWorkspace } from "@pulumi/pulumi/automation";
-import * as aws from "@pulumi/aws";
-
 const program = async () => {
     const bucket = new aws.s3.Bucket("auto-bucket");
     return { bucketName: bucket.id };
 };
-
 const stack = await LocalWorkspace.createOrSelectStack({
     stackName: "dev", projectName: "auto-deploy", program,
 });
 await stack.setConfig("aws:region", { value: "us-west-2" });
 const upResult = await stack.up({ onOutput: console.log });
-console.log("Outputs:", upResult.outputs);
 ```
-
-Use cases: self-service infrastructure portals, multi-tenant provisioning, integration tests, custom deployment pipelines.
+Use cases: self-service portals, multi-tenant provisioning, integration tests. See `references/advanced-patterns.md` for patterns.
 
 ## CI/CD Integration
 
@@ -431,8 +416,7 @@ jobs:
       - run: npm ci
       - uses: pulumi/actions@v5
         with: { command: preview, stack-name: org/project/dev, comment-on-pr: true }
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        env: { PULUMI_ACCESS_TOKEN: "${{ secrets.PULUMI_ACCESS_TOKEN }}" }
   deploy:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -443,9 +427,10 @@ jobs:
       - run: npm ci
       - uses: pulumi/actions@v5
         with: { command: up, stack-name: org/project/prod }
-        env:
-          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        env: { PULUMI_ACCESS_TOKEN: "${{ secrets.PULUMI_ACCESS_TOKEN }}" }
 ```
+
+See `assets/github-actions-pulumi.yml` for a production-grade version with OIDC, drift detection, and multi-env matrix.
 
 ### GitLab CI
 ```yaml
@@ -454,7 +439,6 @@ pulumi-preview:
   image: pulumi/pulumi-nodejs:latest
   script: [npm ci, pulumi stack select dev, pulumi preview]
   only: [merge_requests]
-
 pulumi-deploy:
   stage: deploy
   image: pulumi/pulumi-nodejs:latest
@@ -464,18 +448,7 @@ pulumi-deploy:
 
 ## Pulumi vs Terraform
 
-| Aspect | Pulumi | Terraform |
-|--------|--------|-----------|
-| Language | TypeScript, Python, Go, C#, Java, YAML | HCL (DSL) |
-| Loops/conditionals | Native language constructs | count, for_each, dynamic blocks |
-| Testing | Standard test frameworks | terraform test (limited) |
-| State | Pulumi Cloud, S3, Azure, GCS, local | Terraform Cloud, S3, Azure, GCS, local |
-| Reuse | Classes, functions, packages | Modules |
-| Secrets | Built-in encryption | Requires external tooling |
-| IDE support | Full (autocompletion, types, refactoring) | Limited (HCL extensions) |
-| Provider ecosystem | 150+ (many bridged from Terraform) | 3000+ |
-
-Pulumi can consume Terraform providers via the bridge. Migrate with `pulumi convert --from terraform`.
+Real languages vs HCL DSL. Pulumi: native loops/conditionals, standard test frameworks, built-in secret encryption, full IDE support, classes/functions/packages for reuse. Terraform: larger provider ecosystem (3000+ vs 150+). Pulumi bridges Terraform providers. Migrate with `pulumi convert --from terraform`.
 
 ## Common Pitfalls
 
@@ -498,3 +471,30 @@ new aws.s3.BucketObject("obj", { bucket: bucket.id, key: "index.html", source: n
 **Forgetting registerOutputs**: Always call `this.registerOutputs()` in ComponentResource constructors.
 
 **Import cleanup**: Remove `{ import: "..." }` from resource options after the first `pulumi up`.
+
+## Additional Resources
+
+### References
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Component deep dive, multi-stack architectures, stack references for microservices, dynamic providers, resource transformations, aliases, protect/retain, Automation API, provider invoke, Pulumi ESC.
+- **[troubleshooting.md](references/troubleshooting.md)** — Dependency cycles, state corruption, import failures, provider conflicts, secret decryption, pending operations, refresh vs up, safe replacements, API throttling, verbose debugging.
+- **[aws-patterns.md](references/aws-patterns.md)** — VPC, ECS Fargate, Lambda + API Gateway, S3 + CloudFront, RDS + Secrets Manager, IAM patterns, cross-account, EKS + IRSA, Step Functions.
+
+### Scripts
+
+Operational scripts in `scripts/` (all executable):
+
+- **[init-project.sh](scripts/init-project.sh)** — Initialize Pulumi project with `--lang` (ts/py/go/csharp/yaml) and `--cloud` (aws/azure/gcp/k8s).
+- **[stack-manager.sh](scripts/stack-manager.sh)** — Stack lifecycle: create, list, select, destroy, export/import state, clone/diff config.
+- **[drift-detector.sh](scripts/drift-detector.sh)** — Detect drift via `pulumi refresh --diff`. JSON output, CI fail-on-drift, Slack webhooks.
+
+### Assets
+
+Starter templates in `assets/`:
+
+- **[Pulumi.yaml](assets/Pulumi.yaml)** — Annotated project file with typed config schema and backend options.
+- **[index.ts](assets/index.ts)** — TypeScript starter: VPC, security groups, ECS Fargate + ALB, RDS PostgreSQL.
+- **[github-actions-pulumi.yml](assets/github-actions-pulumi.yml)** — CI/CD: preview on PR, deploy on merge, OIDC auth, drift checks.
+- **[component-template.ts](assets/component-template.ts)** — Reusable ComponentResource template (WebService) with full lifecycle.
