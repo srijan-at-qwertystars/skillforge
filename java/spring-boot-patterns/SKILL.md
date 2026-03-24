@@ -497,3 +497,5 @@ Ready-to-use templates in `assets/`:
 | [github-actions-spring.yml](assets/github-actions-spring.yml) | CI/CD workflow: build, test (with Postgres+Redis services), native image, Docker multi-arch, deploy |
 | [test-patterns.java](assets/test-patterns.java) | Test patterns: `@WebMvcTest`, `@DataJpaTest`, `@SpringBootTest`, Testcontainers, JWT security testing, `@JsonTest`, `@RestClientTest` |
 | [security-config-template.java](assets/security-config-template.java) | `SecurityFilterChain` templates: JWT API, form login, multi-chain, OAuth2 social login, dev/test config |
+
+<!-- tested: pass -->

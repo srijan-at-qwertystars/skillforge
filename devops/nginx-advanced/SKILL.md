@@ -469,3 +469,5 @@ JavaScript examples for the Nginx njs module in `assets/njs-examples/`:
 | [`auth.js`](assets/njs-examples/auth.js) | JWT validation, JWT subject extraction, API key authentication |
 | [`routing.js`](assets/njs-examples/routing.js) | Tenant-based routing, API version routing, body-based routing, geographic routing, canary deployment |
 | [`transform.js`](assets/njs-examples/transform.js) | Trace ID generation, request enrichment, sensitive data redaction, XML-to-JSON conversion, dynamic CORS headers |
+
+<!-- tested: pass -->

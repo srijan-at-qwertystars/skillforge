@@ -487,3 +487,5 @@ Copy-paste templates for common project files:
 | [assets/oak-server-template.ts](assets/oak-server-template.ts) | Oak middleware server with CRUD routes, CORS, error handling, request logging |
 | [assets/github-actions-deno.yml](assets/github-actions-deno.yml) | CI/CD workflow: lint, fmt, type-check, test with coverage, optional deploy |
 | [assets/dockerfile-deno](assets/dockerfile-deno) | Multi-stage Dockerfile with dependency caching, non-root user, health check |
+
+<!-- tested: pass -->
