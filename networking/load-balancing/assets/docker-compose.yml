@@ -1,0 +1,276 @@
+# Docker Compose — Load Balancer Demo Environment
+# Includes Nginx LB, HAProxy LB, and multiple backend instances for testing.
+#
+# Usage:
+#   docker compose up -d                    # Start all services
+#   docker compose up -d --scale backend=5  # Scale backends
+#   docker compose logs -f nginx-lb         # Watch Nginx LB logs
+#   docker compose logs -f haproxy-lb       # Watch HAProxy LB logs
+#
+# Endpoints:
+#   Nginx LB:         http://localhost:8080
+#   HAProxy LB:       http://localhost:8081
+#   HAProxy Stats:    http://localhost:8404/stats  (admin / haproxy-demo)
+#   Backend direct:   http://localhost:9001-9003
+
+services:
+  # ===========================================
+  # Backend application servers
+  # ===========================================
+  backend-1:
+    image: nginx:alpine
+    volumes:
+      - ./demo/backend.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./demo/index-template.html:/usr/share/nginx/html/index-template.html:ro
+    environment:
+      - SERVER_ID=backend-1
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        # Generate unique response page per instance
+        HOSTNAME=$$(hostname)
+        cat > /usr/share/nginx/html/index.html <<EOF
+        <!DOCTYPE html>
+        <html>
+        <head><title>Backend: $${SERVER_ID:-$$HOSTNAME}</title></head>
+        <body>
+          <h1>Hello from $${SERVER_ID:-$$HOSTNAME}</h1>
+          <p>Hostname: $$HOSTNAME</p>
+          <p>Timestamp: $$(date -u +%Y-%m-%dT%H:%M:%SZ)</p>
+        </body>
+        </html>
+        EOF
+        cat > /usr/share/nginx/html/healthz <<EOF
+        {"status":"ok","server":"$${SERVER_ID:-$$HOSTNAME}"}
+        EOF
+        nginx -g "daemon off;"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    ports:
+      - "9001:80"
+    networks:
+      - lb-net
+
+  backend-2:
+    image: nginx:alpine
+    volumes:
+      - ./demo/backend.conf:/etc/nginx/conf.d/default.conf:ro
+    environment:
+      - SERVER_ID=backend-2
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        HOSTNAME=$$(hostname)
+        cat > /usr/share/nginx/html/index.html <<EOF
+        <!DOCTYPE html>
+        <html>
+        <head><title>Backend: $${SERVER_ID:-$$HOSTNAME}</title></head>
+        <body>
+          <h1>Hello from $${SERVER_ID:-$$HOSTNAME}</h1>
+          <p>Hostname: $$HOSTNAME</p>
+          <p>Timestamp: $$(date -u +%Y-%m-%dT%H:%M:%SZ)</p>
+        </body>
+        </html>
+        EOF
+        cat > /usr/share/nginx/html/healthz <<EOF
+        {"status":"ok","server":"$${SERVER_ID:-$$HOSTNAME}"}
+        EOF
+        nginx -g "daemon off;"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    ports:
+      - "9002:80"
+    networks:
+      - lb-net
+
+  backend-3:
+    image: nginx:alpine
+    volumes:
+      - ./demo/backend.conf:/etc/nginx/conf.d/default.conf:ro
+    environment:
+      - SERVER_ID=backend-3
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        HOSTNAME=$$(hostname)
+        cat > /usr/share/nginx/html/index.html <<EOF
+        <!DOCTYPE html>
+        <html>
+        <head><title>Backend: $${SERVER_ID:-$$HOSTNAME}</title></head>
+        <body>
+          <h1>Hello from $${SERVER_ID:-$$HOSTNAME}</h1>
+          <p>Hostname: $$HOSTNAME</p>
+          <p>Timestamp: $$(date -u +%Y-%m-%dT%H:%M:%SZ)</p>
+        </body>
+        </html>
+        EOF
+        cat > /usr/share/nginx/html/healthz <<EOF
+        {"status":"ok","server":"$${SERVER_ID:-$$HOSTNAME}"}
+        EOF
+        nginx -g "daemon off;"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    ports:
+      - "9003:80"
+    networks:
+      - lb-net
+
+  # ===========================================
+  # Nginx Load Balancer
+  # ===========================================
+  nginx-lb:
+    image: nginx:alpine
+    volumes:
+      - ./demo/nginx-lb.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+      backend-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - lb-net
+
+  # ===========================================
+  # HAProxy Load Balancer
+  # ===========================================
+  haproxy-lb:
+    image: haproxy:lts-alpine
+    volumes:
+      - ./demo/haproxy-demo.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "8081:80"
+      - "8404:8404"
+    depends_on:
+      backend-1:
+        condition: service_healthy
+      backend-2:
+        condition: service_healthy
+      backend-3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - lb-net
+
+networks:
+  lb-net:
+    driver: bridge
+
+# ===========================================
+# Demo support files (create before running)
+# ===========================================
+# Run: mkdir -p demo && create support files
+# See README section below for file contents.
+#
+# Required files in ./demo/:
+#   backend.conf      - Nginx config for backend servers
+#   nginx-lb.conf     - Nginx config for LB
+#   haproxy-demo.cfg  - HAProxy config for LB
+#
+# Quick setup:
+#   mkdir -p demo
+#
+#   # demo/backend.conf
+#   cat > demo/backend.conf << 'CONF'
+#   server {
+#       listen 80;
+#       location / {
+#           root /usr/share/nginx/html;
+#           add_header X-Backend-Server $hostname always;
+#       }
+#       location /healthz {
+#           default_type application/json;
+#           alias /usr/share/nginx/html/healthz;
+#           add_header X-Backend-Server $hostname always;
+#       }
+#   }
+#   CONF
+#
+#   # demo/nginx-lb.conf
+#   cat > demo/nginx-lb.conf << 'CONF'
+#   upstream backends {
+#       least_conn;
+#       server backend-1:80 max_fails=3 fail_timeout=10s;
+#       server backend-2:80 max_fails=3 fail_timeout=10s;
+#       server backend-3:80 max_fails=3 fail_timeout=10s;
+#       keepalive 16;
+#   }
+#   server {
+#       listen 80;
+#       location / {
+#           proxy_pass http://backends;
+#           proxy_http_version 1.1;
+#           proxy_set_header Connection "";
+#           proxy_set_header Host $host;
+#           proxy_set_header X-Real-IP $remote_addr;
+#           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#           add_header X-Upstream $upstream_addr always;
+#       }
+#       location /healthz {
+#           access_log off;
+#           return 200 '{"status":"ok","lb":"nginx"}';
+#           add_header Content-Type application/json;
+#       }
+#   }
+#   CONF
+#
+#   # demo/haproxy-demo.cfg
+#   cat > demo/haproxy-demo.cfg << 'CONF'
+#   global
+#       log stdout format raw local0
+#       maxconn 4096
+#
+#   defaults
+#       log global
+#       mode http
+#       option httplog
+#       option dontlognull
+#       timeout connect 5s
+#       timeout client 30s
+#       timeout server 30s
+#       timeout check 5s
+#
+#   frontend http
+#       bind *:80
+#       default_backend servers
+#
+#   backend servers
+#       balance leastconn
+#       option httpchk GET /healthz
+#       http-check expect status 200
+#       default-server inter 5s fall 3 rise 2
+#       server backend1 backend-1:80 check
+#       server backend2 backend-2:80 check
+#       server backend3 backend-3:80 check
+#
+#   listen stats
+#       bind *:8404
+#       stats enable
+#       stats uri /stats
+#       stats refresh 5s
+#       stats auth admin:haproxy-demo
+#   CONF

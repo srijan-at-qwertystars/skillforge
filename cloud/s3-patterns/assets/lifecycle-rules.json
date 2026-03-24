@@ -1,0 +1,205 @@
+{
+  "_description": "S3 lifecycle rule templates for common patterns. Copy the relevant Rules array into your lifecycle configuration. Adjust Days, prefixes, and storage classes to match your requirements.",
+
+  "archive_tiered": {
+    "_description": "Progressive archival: Standard → IA → Glacier → Deep Archive → Expire. Suitable for logs, audit trails, and compliance data.",
+    "Rules": [
+      {
+        "ID": "TieredArchive",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "logs/"
+        },
+        "Transitions": [
+          {
+            "Days": 30,
+            "StorageClass": "STANDARD_IA"
+          },
+          {
+            "Days": 90,
+            "StorageClass": "GLACIER"
+          },
+          {
+            "Days": 365,
+            "StorageClass": "DEEP_ARCHIVE"
+          }
+        ],
+        "Expiration": {
+          "Days": 2555
+        }
+      }
+    ]
+  },
+
+  "expire_temporary": {
+    "_description": "Auto-expire temporary files, build artifacts, and uploads. Short-lived data that should be cleaned up automatically.",
+    "Rules": [
+      {
+        "ID": "ExpireTempUploads",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "tmp/"
+        },
+        "Expiration": {
+          "Days": 1
+        }
+      },
+      {
+        "ID": "ExpireBuildArtifacts",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "builds/"
+        },
+        "Expiration": {
+          "Days": 30
+        }
+      },
+      {
+        "ID": "ExpireOldUploads",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "uploads/pending/"
+        },
+        "Expiration": {
+          "Days": 7
+        }
+      }
+    ]
+  },
+
+  "cleanup_versions_and_parts": {
+    "_description": "Housekeeping rules that should be on every versioned bucket: expire old versions, clean up delete markers, and abort incomplete multipart uploads.",
+    "Rules": [
+      {
+        "ID": "ExpireNoncurrentVersions",
+        "Status": "Enabled",
+        "Filter": {},
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 30,
+          "NewerNoncurrentVersions": 3
+        }
+      },
+      {
+        "ID": "CleanupDeleteMarkers",
+        "Status": "Enabled",
+        "Filter": {},
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        }
+      },
+      {
+        "ID": "AbortIncompleteMultipartUploads",
+        "Status": "Enabled",
+        "Filter": {},
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 7
+        }
+      }
+    ]
+  },
+
+  "intelligent_tiering_with_archive": {
+    "_description": "Use Intelligent-Tiering for automatic cost optimization. Objects are moved between access tiers based on observed patterns. Opt-in to archive tiers for maximum savings.",
+    "Rules": [
+      {
+        "ID": "MoveToIntelligentTiering",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "data/"
+        },
+        "Transitions": [
+          {
+            "Days": 0,
+            "StorageClass": "INTELLIGENT_TIERING"
+          }
+        ]
+      }
+    ]
+  },
+
+  "data_lake_lifecycle": {
+    "_description": "Data lake pattern: raw data transitions to IA, curated data stays in Standard, and old raw data moves to Glacier. Combined with tag-based filtering.",
+    "Rules": [
+      {
+        "ID": "ArchiveRawData",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "raw/"
+        },
+        "Transitions": [
+          {
+            "Days": 30,
+            "StorageClass": "STANDARD_IA"
+          },
+          {
+            "Days": 180,
+            "StorageClass": "GLACIER"
+          }
+        ],
+        "Expiration": {
+          "Days": 730
+        }
+      },
+      {
+        "ID": "ArchiveCuratedData",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "curated/"
+        },
+        "Transitions": [
+          {
+            "Days": 90,
+            "StorageClass": "STANDARD_IA"
+          },
+          {
+            "Days": 365,
+            "StorageClass": "GLACIER"
+          }
+        ]
+      },
+      {
+        "ID": "ExpireStagingData",
+        "Status": "Enabled",
+        "Filter": {
+          "Prefix": "staging/"
+        },
+        "Expiration": {
+          "Days": 14
+        }
+      }
+    ]
+  },
+
+  "compliance_retention": {
+    "_description": "Keep all versions for compliance. Transition noncurrent versions to cheaper storage but never expire them. Pair with Object Lock for WORM compliance.",
+    "Rules": [
+      {
+        "ID": "ArchiveNoncurrentVersions",
+        "Status": "Enabled",
+        "Filter": {},
+        "NoncurrentVersionTransitions": [
+          {
+            "NoncurrentDays": 30,
+            "StorageClass": "STANDARD_IA"
+          },
+          {
+            "NoncurrentDays": 90,
+            "StorageClass": "GLACIER"
+          },
+          {
+            "NoncurrentDays": 365,
+            "StorageClass": "DEEP_ARCHIVE"
+          }
+        ]
+      },
+      {
+        "ID": "AbortIncompleteUploads",
+        "Status": "Enabled",
+        "Filter": {},
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 7
+        }
+      }
+    ]
+  }
+}

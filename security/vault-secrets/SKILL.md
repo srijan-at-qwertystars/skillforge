@@ -485,3 +485,11 @@ vault policy write/read/list/delete <name> [file]
 vault namespace create/list/delete    # Enterprise
 vault debug -duration=5m              # Diagnostics bundle
 ```
+
+## Additional Resources
+
+**References:** [Advanced Patterns](references/advanced-patterns.md) (secret zero, Agent caching, response wrapping, control groups, Sentinel, replication, batch/service tokens, identity, OIDC provider, Terraform) · [Troubleshooting](references/troubleshooting.md) (seal failures, token expiry, lease storms, storage perf, audit flooding, cert rotation, K8s auth, AppRole wrapping, Raft recovery, DR) · [Kubernetes Integration](references/kubernetes-integration.md)
+
+**Scripts:** [setup-vault.sh](scripts/setup-vault.sh) (Docker dev/prod setup with init, unseal, engines, policies) · [rotate-secrets.sh](scripts/rotate-secrets.sh) (zero-downtime DB credential rotation) · [setup-vault-dev.sh](scripts/setup-vault-dev.sh) · [vault-backup.sh](scripts/vault-backup.sh)
+
+**Assets:** [vault-policy.hcl](assets/vault-policy.hcl) (admin, readonly, app, CI/CD, operator, user-workspace, db-admin policies) · [vault-agent-config.hcl](assets/vault-agent-config.hcl) (production Agent with auto-auth, caching, templates) · [docker-compose.yml](assets/docker-compose.yml) (3-node HA Raft cluster + Prometheus + Grafana) · [docker-compose-vault.yml](assets/docker-compose-vault.yml) · [vault-policy-templates/](assets/vault-policy-templates/)

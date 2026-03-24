@@ -383,3 +383,47 @@ Check that backend expects HTTP (not HTTPS) when TLS terminates at LB. Ensure
 3. Test with a single backend to isolate LB vs application issues.
 4. Use `tcpdump` or `ss` to verify connections reach backends.
 5. Review LB metrics dashboard for connection counts and latency per backend.
+
+## Additional Resources
+
+### Reference Guides
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Deep dive into consistent hashing
+  with virtual nodes, power of two random choices, least-loaded with slow start, blue-green
+  deployments, canary routing, request hedging, priority-based routing, circuit breaker
+  integration, multi-region failover with GSLB, and sidecar vs centralized LB for microservices.
+
+- **[Troubleshooting Guide](references/troubleshooting.md)** — Diagnosis and fixes for uneven
+  distribution, health check flapping, connection timeout tuning, keep-alive misconfiguration,
+  SSL/TLS handshake failures, WebSocket upgrade failures, gRPC balancing issues, client IP
+  preservation (X-Forwarded-For, PROXY protocol), CORS with LBs, and log-based debugging.
+
+### Scripts
+
+- **[lb-health-check.sh](scripts/lb-health-check.sh)** — Health verification script that tests
+  all backends, measures response time percentiles (p50/p90/p99), checks TLS certificates, and
+  validates traffic distribution across the pool.
+  ```bash
+  ./scripts/lb-health-check.sh -l http://lb.example.com -b 10.0.1.10:8080,10.0.1.11:8080
+  ```
+
+- **[setup-haproxy.sh](scripts/setup-haproxy.sh)** — Automated HAProxy installation and
+  configuration with frontend/backend setup, health checks, rate limiting, stats dashboard,
+  and SSL support. Supports `--dry-run` for config generation without installation.
+  ```bash
+  ./scripts/setup-haproxy.sh --backends "10.0.1.10:8080,10.0.1.11:8080" --ssl-cert /path/to/cert.pem
+  ```
+
+### Configuration Assets
+
+- **[nginx-lb.conf](assets/nginx-lb.conf)** — Production Nginx LB config with multiple upstream
+  groups (app, API, WebSocket, gRPC), SSL termination, caching, rate limiting, CORS handling,
+  security headers, and structured JSON logging.
+
+- **[haproxy.cfg](assets/haproxy.cfg)** — Production HAProxy config with HTTPS frontend,
+  ACL-based routing, multiple backends, stick-table rate limiting, gRPC support, connection
+  draining, and stats dashboard.
+
+- **[docker-compose.yml](assets/docker-compose.yml)** — Local demo environment with both Nginx
+  and HAProxy LBs fronting three backend instances. Includes health checks and HAProxy stats
+  dashboard for testing and experimentation.

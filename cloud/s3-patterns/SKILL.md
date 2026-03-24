@@ -449,3 +449,46 @@ const { Body } = await client.send(new GetObjectCommand({
 }));
 const text = await Body.transformToString();
 ```
+
+## Additional Resources
+
+### References
+
+In-depth guides for advanced use cases and troubleshooting:
+
+- **[Advanced Patterns](references/advanced-patterns.md):** S3 Express One Zone, Object Lambda,
+  Batch Operations, Access Grants, Inventory & Analytics, data lake patterns (S3 + Athena + Glue),
+  event-driven architectures, cost optimization with Intelligent-Tiering, Object Lock for
+  compliance, and CloudFront signed URLs vs presigned URLs comparison.
+
+- **[Troubleshooting](references/troubleshooting.md):** 403 access denied debugging (bucket
+  policy, IAM, ACL, VPC endpoint), slow uploads/downloads, 503 slow down errors, presigned URL
+  expiry, CORS errors, versioning and delete marker confusion, lifecycle rule issues, replication
+  lag, encryption key errors, and unexpected cost diagnosis.
+
+### Scripts
+
+Ready-to-use shell scripts for common operations:
+
+- **[s3-setup.sh](scripts/s3-setup.sh):** Production bucket setup with versioning, encryption
+  (SSE-S3 or SSE-KMS), lifecycle rules, access logging, block public access, TLS enforcement,
+  and CloudWatch metrics. Usage: `./s3-setup.sh <bucket> <region> [--kms-key-id <id>] [--logging-bucket <bucket>]`
+
+- **[s3-sync.sh](scripts/s3-sync.sh):** Smart sync with include/exclude patterns, pre/post size
+  verification, progress reporting, storage class override, and dry-run mode.
+  Usage: `./s3-sync.sh <source> <dest> [--include PATTERN] [--exclude PATTERN] [--delete] [--dry-run]`
+
+### Assets (Templates)
+
+Copy-and-customize configuration templates:
+
+- **[bucket-policy.json](assets/bucket-policy.json):** Bucket policy templates for CloudFront OAC,
+  VPC endpoint restriction, cross-account access, enforce encryption (SSE-S3/KMS), and TLS 1.2+.
+
+- **[lifecycle-rules.json](assets/lifecycle-rules.json):** Lifecycle configurations for tiered
+  archival, temporary file expiration, version cleanup, Intelligent-Tiering, data lake patterns,
+  and compliance retention.
+
+- **[cloudformation-s3.yaml](assets/cloudformation-s3.yaml):** CloudFormation template for a
+  production S3 bucket with encryption, versioning, replication (CRR with RTC), EventBridge
+  notifications, lifecycle rules, access logging, TLS enforcement, and CloudWatch alarms.

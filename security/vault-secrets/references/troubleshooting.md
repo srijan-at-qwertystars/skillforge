@@ -2,711 +2,830 @@
 
 ## Table of Contents
 
-- [Common Errors](#common-errors)
-  - [Permission Denied (403)](#permission-denied-403)
-  - [Seal Status Issues](#seal-status-issues)
-  - [Lease Not Found](#lease-not-found)
-  - [Token Expired / Invalid Token](#token-expired--invalid-token)
-  - [Backend Connection Errors](#backend-connection-errors)
-- [Debugging Auth Methods](#debugging-auth-methods)
-  - [AppRole Issues](#approle-issues)
-  - [Kubernetes Auth Issues](#kubernetes-auth-issues)
-  - [OIDC Auth Issues](#oidc-auth-issues)
-  - [LDAP Auth Issues](#ldap-auth-issues)
-- [Storage Backend Issues](#storage-backend-issues)
-  - [Raft Storage](#raft-storage)
-  - [Consul Storage](#consul-storage)
-- [HA and Failover Problems](#ha-and-failover-problems)
-  - [Leader Election Failures](#leader-election-failures)
-  - [Split-Brain Scenarios](#split-brain-scenarios)
-  - [Performance Standby Issues](#performance-standby-issues)
-- [Audit Log Analysis](#audit-log-analysis)
-  - [Reading Audit Logs](#reading-audit-logs)
-  - [Correlating HMAC Values](#correlating-hmac-values)
-  - [Common Audit Patterns](#common-audit-patterns)
-- [Performance Tuning](#performance-tuning)
-  - [Identifying Bottlenecks](#identifying-bottlenecks)
-  - [Tuning Vault Configuration](#tuning-vault-configuration)
-  - [Client-Side Optimizations](#client-side-optimizations)
+- [Seal/Unseal Failures](#sealunseal-failures)
+  - [Manual Unseal Failures](#manual-unseal-failures)
+  - [Auto-Unseal Failures](#auto-unseal-failures)
+  - [Seal Migration Issues](#seal-migration-issues)
+- [Token Expiry and Renewal](#token-expiry-and-renewal)
+  - [Diagnosing Token Issues](#diagnosing-token-issues)
+  - [Token Renewal Strategies](#token-renewal-strategies)
+  - [Orphan Token Problems](#orphan-token-problems)
+  - [Token Type Confusion](#token-type-confusion)
+- [Lease Revocation Storms](#lease-revocation-storms)
+  - [Identifying a Revocation Storm](#identifying-a-revocation-storm)
+  - [Preventing Revocation Storms](#preventing-revocation-storms)
+  - [Recovering from a Revocation Storm](#recovering-from-a-revocation-storm)
+- [Storage Backend Performance](#storage-backend-performance)
+  - [Raft Performance Tuning](#raft-performance-tuning)
+  - [Consul Backend Issues](#consul-backend-issues)
+  - [General Storage Diagnostics](#general-storage-diagnostics)
+- [Audit Log Flooding](#audit-log-flooding)
+  - [Identifying the Cause](#identifying-the-cause)
+  - [Mitigating Audit Log Volume](#mitigating-audit-log-volume)
+  - [Audit Device Failures](#audit-device-failures)
+- [Certificate Rotation Failures](#certificate-rotation-failures)
+  - [PKI Engine Issues](#pki-engine-issues)
+  - [Vault TLS Certificate Rotation](#vault-tls-certificate-rotation)
+  - [Vault Agent Certificate Template Failures](#vault-agent-certificate-template-failures)
+- [Kubernetes Auth Mount Issues](#kubernetes-auth-mount-issues)
+  - [Configuration Errors](#configuration-errors)
+  - [Token Reviewer Problems](#token-reviewer-problems)
+  - [Service Account Token Issues](#service-account-token-issues)
+  - [Namespace and RBAC Mismatches](#namespace-and-rbac-mismatches)
+- [AppRole Secret ID Wrapping](#approle-secret-id-wrapping)
+  - [Wrapping Failures](#wrapping-failures)
+  - [Unwrapping Issues](#unwrapping-issues)
+  - [Secret ID Lifecycle Problems](#secret-id-lifecycle-problems)
+- [Raft Cluster Recovery](#raft-cluster-recovery)
+  - [Single Node Failure](#single-node-failure)
+  - [Quorum Loss](#quorum-loss)
+  - [Data Corruption Recovery](#data-corruption-recovery)
+  - [Snapshot Operations](#snapshot-operations)
 - [Disaster Recovery Procedures](#disaster-recovery-procedures)
-  - [Raft Snapshot Restore](#raft-snapshot-restore)
-  - [Recovering from Data Loss](#recovering-from-data-loss)
+  - [DR Replication Failover](#dr-replication-failover)
+  - [Full Cluster Rebuild](#full-cluster-rebuild)
   - [Emergency Break-Glass](#emergency-break-glass)
+  - [Post-Incident Checklist](#post-incident-checklist)
 
 ---
 
-## Common Errors
+## Seal/Unseal Failures
 
-### Permission Denied (403)
-
-**Error:** `Error making API request: URL: PUT .../secret/data/myapp, Code: 403. Errors: 1 error occurred: * permission denied`
-
-**Diagnosis Steps:**
+### Manual Unseal Failures
 
 ```bash
-# 1. Check what token you're using
-vault token lookup
-
-# 2. Check token's policies
-vault token lookup -format=json | jq '.data.policies'
-
-# 3. Check capabilities on the specific path
-vault token capabilities secret/data/myapp/config
-
-# 4. Read the policy to verify paths
-vault policy read <policy-name>
-
-# 5. Check if namespace is correct (Enterprise)
-echo $VAULT_NAMESPACE
-```
-
-**Common Causes & Fixes:**
-
-| Cause | Fix |
-|-------|-----|
-| KV v2 path missing `data/` prefix | Use `secret/data/myapp` not `secret/myapp` in policies |
-| Wrong namespace | Set `VAULT_NAMESPACE` or use `-namespace=` flag |
-| Policy uses `+` but path has multiple segments | Use `*` for multi-segment matches |
-| Token expired or revoked | Create new token or re-authenticate |
-| `deny` capability on parent path | Check for deny rules at parent paths |
-| Case sensitivity | Paths are case-sensitive — verify exact casing |
-
-**KV v2 Policy Gotcha:**
-
-```hcl
-# WRONG — This won't work for KV v2
-path "secret/myapp/*" {
-  capabilities = ["read"]
-}
-
-# CORRECT — KV v2 requires data/ prefix for read/write
-path "secret/data/myapp/*" {
-  capabilities = ["read"]
-}
-# And metadata/ prefix for list
-path "secret/metadata/myapp/*" {
-  capabilities = ["list"]
-}
-```
-
-### Seal Status Issues
-
-**Error:** `Vault is sealed` or `error during core unsealing`
-
-```bash
-# Check seal status
+# Check current seal status
 vault status
-# Key outputs: Sealed (true/false), Unseal Progress, Unseal Nonce
+# Key fields: Sealed, Unseal Progress, Unseal Nonce, Seal Type
 
-# Check server logs for seal errors
-journalctl -u vault -f --no-pager | grep -i seal
+# Error: "unseal key is invalid" or "unseal nonce mismatch"
+# Cause: Mixed up key shares from different init ceremonies
+# Fix: Reset unseal progress and start over
+vault operator unseal -reset
+
+# Error: "cannot unseal — already in progress with different nonce"
+vault operator unseal -reset
+vault operator unseal <key1>
+vault operator unseal <key2>
+vault operator unseal <key3>
+
+# Error: "post-unseal setup failed"
+# Check server logs for root cause
+journalctl -u vault --no-pager -n 100 | grep -i "post-unseal\|error\|fatal"
+
+# Verify storage backend is accessible before unsealing
+df -h /opt/vault/data
+ls -la /opt/vault/data/
+
+# Consul: verify connectivity
+consul members
+consul kv get vault/core/seal-config
 ```
 
-**Auto-Unseal Failures:**
+### Auto-Unseal Failures
 
 ```bash
-# AWS KMS — check IAM permissions
-aws kms describe-key --key-id <key-id>
-aws kms encrypt --key-id <key-id> --plaintext "test" 2>&1
+# AWS KMS auto-unseal failure
+# Error: "error unsealing: failed to decrypt seal key"
+aws kms describe-key --key-id <key-id> --query 'KeyMetadata.KeyState'
+# Must be "Enabled"
 
-# Common issues:
-# - KMS key deleted or disabled
-# - IAM role/policy missing kms:Encrypt, kms:Decrypt, kms:DescribeKey
-# - Network connectivity to KMS endpoint blocked
-# - AWS credentials expired (if not using IAM roles)
+# Check IAM permissions
+aws kms encrypt --key-id <key-id> --plaintext "dGVzdA==" --output text 2>&1
+# Required: kms:Encrypt, kms:Decrypt, kms:DescribeKey
 
-# Azure Key Vault — check service principal
-az keyvault key show --vault-name <vault> --name <key>
+# Network: ensure Vault can reach KMS endpoint
+curl -s https://kms.us-east-1.amazonaws.com/ 2>&1 | head -5
 
-# GCP CKMS — check service account
-gcloud kms keys describe <key> --location=<loc> --keyring=<ring>
+# Azure Key Vault auto-unseal failure
+az keyvault key show --vault-name <vault> --name <key> 2>&1
+az keyvault network-rule list --name <vault>
+
+# GCP CKMS auto-unseal failure
+gcloud kms keys describe <key> --location=<loc> --keyring=<ring> \
+  --format='value(primary.state)'
+# Must be "ENABLED"
+
+# Transit auto-unseal failure
+VAULT_ADDR="https://upstream-vault:8200" VAULT_TOKEN="<transit-token>" \
+  vault read transit/keys/autounseal
 ```
 
-**Recovering from Failed Unseal:**
+### Seal Migration Issues
 
 ```bash
-# If unseal keys are lost but recovery keys exist (auto-unseal)
-vault operator generate-root -init
-vault operator generate-root -nonce=<nonce> <recovery_key>
-# Repeat for threshold, then decode
+# Error: "cannot migrate seal — vault is not initialized"
+# Vault must be initialized with OLD seal before migrating
 
-# If Shamir keys are partially available
-vault operator unseal <key_share>  # Repeat until threshold met
+# Stuck migration: vault started with -migrate but unseal never completes
+journalctl -u vault --no-pager -n 50 | grep -i migrate
 
-# Nuclear option: re-initialize (DESTROYS ALL DATA)
-vault operator init -key-shares=5 -key-threshold=3
+# Verify old seal config is present with disabled=true
+grep -A5 'disabled.*true' /etc/vault.d/vault.hcl
+
+# Restart vault with -migrate flag and provide recovery keys
+systemctl stop vault
+vault server -config=/etc/vault.d/vault.hcl -migrate &
+vault operator unseal -migrate <key>
 ```
 
-### Lease Not Found
+---
 
-**Error:** `lease not found` or `lease is not renewable`
+## Token Expiry and Renewal
+
+### Diagnosing Token Issues
 
 ```bash
-# Check if lease exists
-vault write sys/leases/lookup lease_id="<lease_id>"
+# Error: "permission denied" (often a token issue, not a policy issue)
+# Step 1: Check if token exists
+vault token lookup 2>&1
+# "bad token" or "token not found" = expired/revoked
 
-# List leases for a path
-vault list sys/leases/lookup/database/creds/app-role
+# Step 2: Check token details
+vault token lookup -format=json | jq '{
+  policies: .data.policies,
+  ttl: .data.ttl,
+  renewable: .data.renewable,
+  expire_time: .data.expire_time,
+  type: .data.type,
+  orphan: .data.orphan,
+  num_uses: .data.num_uses
+}'
 
-# Common causes:
-# 1. Lease already expired — request new credentials
-# 2. Lease was revoked — check audit logs
-# 3. Max TTL exceeded — lease cannot be renewed past max_ttl
-# 4. Backend revoked the credential (e.g., DB user dropped)
+# Step 3: Check if token's parent was revoked (cascading revocation)
+# Step 4: Check audit logs for revocation events
+jq 'select(.request.path | startswith("auth/token/revoke"))' \
+  /var/log/vault/audit.log | tail -5
 ```
 
-**Fixing Lease Issues:**
+### Token Renewal Strategies
 
 ```bash
-# Check lease configuration on the role
-vault read database/roles/app-role
-# Verify default_ttl and max_ttl values
+# Check remaining TTL before renewing
+TTL=$(vault token lookup -format=json | jq -r '.data.ttl')
 
-# Tidy expired leases
-vault write -f sys/leases/tidy
-
-# Check lease count quotas (Enterprise)
-vault read sys/quotas/lease-count/<name>
-
-# Force revoke all stale leases for a mount
-vault lease revoke -prefix -force database/creds/
-```
-
-### Token Expired / Invalid Token
-
-**Error:** `permission denied` with `token not found` in audit logs
-
-```bash
-# Check token details
-vault token lookup <token>
-
-# If using VAULT_TOKEN env var
-vault token lookup
-
-# Check for orphan tokens (no parent)
-vault token lookup -format=json | jq '.data.orphan'
-```
-
-**Token Renewal Patterns:**
-
-```bash
-# Check if token is renewable
-vault token lookup -format=json | jq '.data.renewable'
-
-# Renew before expiry
+# Renew with increment
 vault token renew -increment=1h
 
-# Self-renewal in scripts
-while true; do
-  vault token renew -increment=1h 2>/dev/null || {
-    echo "Token renewal failed — re-authenticating"
-    # Re-authenticate via AppRole, K8s, etc.
-  }
-  sleep 1800  # Renew every 30 minutes
+# If renewal fails, re-authenticate
+vault write auth/approle/login \
+  role_id="$ROLE_ID" secret_id="$SECRET_ID"
+
+# Best practice: renew at 2/3 of TTL (e.g., 1h TTL -> renew at 40m)
+# Use Vault Agent for automatic renewal in production
+```
+
+### Orphan Token Problems
+
+```bash
+# Orphan tokens are NOT revoked when their parent is revoked
+# This can lead to token leaks
+
+# Find orphan tokens in audit logs
+jq 'select(.auth.orphan == true)' /var/log/vault/audit.log | \
+  jq '{accessor: .auth.accessor, policies: .auth.policies, time: .time}'
+
+# List token accessors (requires sudo)
+vault list auth/token/accessors
+
+# Revoke specific orphan token by accessor
+vault token revoke -accessor <accessor>
+```
+
+### Token Type Confusion
+
+```bash
+# Batch tokens cannot be renewed or revoked individually
+vault token lookup -format=json | jq '.data.type'
+# "batch" tokens: large (base64), not stored, not renewable
+# "service" tokens: short (s.xxx), stored, renewable
+
+# Error: "batch tokens cannot be renewed"
+# Fix: re-authenticate to get a new batch token
+
+# Error: "batch tokens cannot be revoked"
+# Batch tokens expire naturally; revoke the parent to cascade
+
+# Force service tokens for a role
+vault write auth/approle/role/my-app token_type=service
+```
+
+---
+
+## Lease Revocation Storms
+
+### Identifying a Revocation Storm
+
+A revocation storm occurs when a large number of leases expire or are revoked simultaneously, overwhelming Vault and its backend.
+
+```bash
+# Symptoms:
+# - High CPU/memory on Vault servers
+# - Slow or timed-out API responses
+# - Storage backend under heavy write load
+# - Errors: "context deadline exceeded" in logs
+
+# Check total lease count
+vault read -format=json sys/internal/counters/tokens | jq '.data'
+
+# Count leases by prefix
+vault list -format=json sys/leases/lookup/database/creds/ 2>/dev/null | \
+  jq 'length'
+
+# Monitor Prometheus metrics for lease operations
+curl -s "$VAULT_ADDR/v1/sys/metrics?format=prometheus" | \
+  grep -E "vault.expire.(num_leases|revoke|renew)"
+```
+
+### Preventing Revocation Storms
+
+```bash
+# 1. Stagger lease TTLs — use jitter instead of identical TTLs
+vault write database/roles/app-role \
+  default_ttl=55m max_ttl=24h  # not exactly 1h
+
+# 2. Set lease count quotas (Enterprise)
+vault write sys/quotas/lease-count/db-lease-limit \
+  path="database/creds/" max_leases=5000
+
+# 3. Use shorter max_ttl to prevent lease accumulation
+vault secrets tune -max-lease-ttl=4h database/
+
+# 4. Prefer batch tokens for ephemeral workloads (no lease storage)
+vault write auth/kubernetes/role/ephemeral token_type=batch
+
+# 5. Tidy leases periodically
+vault write -f sys/leases/tidy
+```
+
+### Recovering from a Revocation Storm
+
+```bash
+# Emergency: force-revoke all leases under a prefix (skips backend cleanup)
+vault lease revoke -prefix -force database/creds/app-role
+
+# Throttle revocations by revoking in batches
+for lease_id in $(vault list -format=json sys/leases/lookup/database/creds/app-role \
+    | jq -r '.[]' | head -100); do
+  vault lease revoke "database/creds/app-role/$lease_id"
+  sleep 0.1  # throttle
 done
-```
 
-### Backend Connection Errors
-
-**Error:** `error connecting to database` or `failed to verify connection`
-
-```bash
-# Database secrets engine
-vault read database/config/mydb 2>&1
-
-# Test connectivity from Vault server
-# (run on the Vault server itself)
-psql -h db.example.com -U vault_admin -d mydb -c "SELECT 1"
-
-# Rotate the root credentials if they've changed
-vault write -f database/rotate-root/mydb
-
-# Re-configure the connection
-vault write database/config/mydb \
-  connection_url="postgresql://{{username}}:{{password}}@newhost:5432/mydb" \
-  username="vault_admin" password="new_password"
-```
-
----
-
-## Debugging Auth Methods
-
-### AppRole Issues
-
-```bash
-# Check role configuration
-vault read auth/approle/role/my-app
-
-# Verify role-id
-vault read auth/approle/role/my-app/role-id
-
-# Generate and test secret-id
-SECRET_ID=$(vault write -f -field=secret_id auth/approle/role/my-app/secret-id)
-
-# Test login
-vault write auth/approle/login role_id="<role-id>" secret_id="$SECRET_ID"
-
-# Common issues:
-# - secret_id_num_uses exhausted → generate new secret-id
-# - secret_id_ttl expired → generate new secret-id
-# - CIDR binding mismatch → check secret_id_bound_cidrs and token_bound_cidrs
-# - role not found → verify auth mount path
-```
-
-**Secret-ID Exhaustion Debugging:**
-
-```bash
-# Check secret-id accessors
-vault list auth/approle/role/my-app/secret-id
-
-# Look up specific secret-id
-vault write auth/approle/role/my-app/secret-id/lookup \
-  secret_id="<secret-id>"
-
-# Check remaining uses
-vault write auth/approle/role/my-app/secret-id/lookup \
-  secret_id="<secret-id>" | grep -E "num_uses|ttl"
-```
-
-### Kubernetes Auth Issues
-
-```bash
-# Check configuration
-vault read auth/kubernetes/config
-
-# Common error: "service account not allowed"
-# Fix: Check bound_service_account_names and bound_service_account_namespaces
-vault read auth/kubernetes/role/app
-
-# Test from a pod
-JWT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
-curl -s --request POST \
-  --data "{\"jwt\":\"$JWT\",\"role\":\"app\"}" \
-  $VAULT_ADDR/v1/auth/kubernetes/login | jq .
-
-# Debug JWT contents
-echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | jq .
-# Check: "iss", "sub", "kubernetes.io/serviceaccount/namespace"
-```
-
-**Token Reviewer Issues:**
-
-```bash
-# Vault needs permission to validate service account tokens
-# Check if token reviewer is configured
-kubectl get clusterrolebinding vault-tokenreview 2>/dev/null
-
-# Create if missing
-kubectl create clusterrolebinding vault-tokenreview \
-  --clusterrole=system:auth-delegator \
-  --serviceaccount=vault:vault
-
-# For Kubernetes 1.24+, manually create long-lived token
-kubectl create token vault -n vault --duration=8760h
-```
-
-### OIDC Auth Issues
-
-```bash
-# Check OIDC configuration
-vault read auth/oidc/config
-
-# Test OIDC discovery URL
-curl -s https://accounts.google.com/.well-known/openid-configuration | jq .
-
-# Common issues:
-# - redirect_uri mismatch → must match exactly in IDP and Vault role
-# - Clock skew → ensure Vault server time is synced (NTP)
-# - Missing claims → check user_claim, groups_claim mappings
-# - bound_audiences mismatch → verify oidc_client_id matches
-
-# Debug: Enable verbose auth logging
-vault auth tune -listing-visibility=unauth oidc/
-```
-
-### LDAP Auth Issues
-
-```bash
-# Check configuration
-vault read auth/ldap/config
-
-# Test LDAP connectivity from Vault server
-ldapsearch -H ldaps://ldap.example.com -D "cn=vault,ou=services,dc=example,dc=com" \
-  -w password -b "ou=users,dc=example,dc=com" "(uid=testuser)"
-
-# Test login
-vault login -method=ldap username=testuser
-
-# Common issues:
-# - TLS certificate verification → set insecure_tls=true for testing
-# - userattr mismatch → try "sAMAccountName" for AD, "uid" for OpenLDAP
-# - groupattr mismatch → try "memberOf" for AD, "cn" for OpenLDAP
-# - userdn too restrictive → broaden the search base
-```
-
----
-
-## Storage Backend Issues
-
-### Raft Storage
-
-```bash
-# Check Raft cluster status
-vault operator raft list-peers
-
-# Example output:
-# Node       Address             State       Voter
-# vault-1    vault-1:8201        leader      true
-# vault-2    vault-2:8201        follower    true
-# vault-3    vault-3:8201        follower    true
-
-# Check autopilot health
+# If Vault is unresponsive, check storage for pressure
 vault operator raft autopilot state
 
-# Remove a dead/failed peer
-vault operator raft remove-peer vault-3
-
-# Force a leader step-down
-vault operator step-down
+# After recovery: review lease configuration
+vault read database/roles/app-role | grep -E "ttl|max_ttl"
 ```
 
-**Raft Data Corruption:**
+---
+
+## Storage Backend Performance
+
+### Raft Performance Tuning
 
 ```bash
-# Check Raft storage integrity
-vault operator raft snapshot save /tmp/raft-backup.snap
-# If snapshot fails, data may be corrupted
+# Monitor Raft health
+vault operator raft autopilot state -format=json | jq '{
+  healthy: .Healthy,
+  leader: .Leader
+}'
 
-# Restore from snapshot (DESTRUCTIVE)
-vault operator raft snapshot restore /tmp/raft-backup.snap
+# Key Raft metrics to monitor
+curl -s "$VAULT_ADDR/v1/sys/metrics?format=prometheus" | grep -E "raft\." | head -20
+# vault.raft.apply — log apply latency (should be <100ms)
+# vault.raft.commitTime — commit time (should be <200ms)
+# vault.raft.leader.lastContact — follower-to-leader RTT
 
-# If cluster is in bad state, force new cluster from single node:
-# 1. Stop all Vault nodes
-# 2. On one node, set raft config to bootstrap
-# 3. Start that node, restore snapshot
-# 4. Join other nodes
+# Check disk I/O (Raft is I/O sensitive)
+iostat -x 5 3
+# Solution: use SSDs, dedicated disk for Raft data
+
+# Check Raft log size
+du -sh /opt/vault/data/raft/
+
+# Force a Raft snapshot to compact logs
+vault operator raft snapshot save /tmp/manual-snapshot.snap
 ```
 
-**Raft Performance Issues:**
-
-```bash
-# Monitor Raft metrics
-curl -s $VAULT_ADDR/v1/sys/metrics?format=prometheus | grep raft
-
-# Key metrics:
-# vault.raft.apply — Raft log apply latency
-# vault.raft.commitTime — Commit time
-# vault.raft.leader.dispatchLog — Log dispatch time
-# vault.raft.rpc.appendEntries — Append entries RPC time
-
-# Increase Raft snapshot interval if I/O-bound
-# vault.hcl:
-# storage "raft" {
-#   snapshot_threshold = 16384  # default 8192
-#   trailing_logs     = 20000  # default 10000
-# }
+Raft tuning parameters (vault.hcl):
+```hcl
+storage "raft" {
+  path                = "/opt/vault/data"
+  node_id             = "vault-1"
+  performance_multiplier = 1       # tighter election timeout (default: 5)
+  snapshot_threshold   = 16384     # snapshots less frequently (default: 8192)
+  trailing_logs        = 20000     # keep more logs before snapshot (default: 10000)
+}
 ```
 
-### Consul Storage
+### Consul Backend Issues
 
 ```bash
 # Check Consul health
 consul members
 consul operator raft list-peers
 
-# Check Vault's KV data in Consul
-consul kv get -recurse vault/
-
-# Consul ACL issues — verify Vault's Consul token
-consul acl token read -id <vault-consul-token-id>
-
-# Required Consul permissions:
+# Verify Vault's Consul ACL token
+consul acl token read -id <vault-token-id>
+# Required permissions:
 # key_prefix "vault/" { policy = "write" }
 # node_prefix "" { policy = "read" }
 # service "vault" { policy = "write" }
 # session_prefix "" { policy = "write" }
+
+# Check KV entry count
+consul kv get -recurse -keys vault/ | wc -l
+```
+
+### General Storage Diagnostics
+
+```bash
+# Generate Vault debug bundle
+vault debug -duration=5m -targets=metrics,server-status,replication-status,host
+
+# Key metrics
+curl -s "$VAULT_ADDR/v1/sys/metrics?format=prometheus" | \
+  grep -E "vault\.(barrier|core)\." | head -20
+# vault.barrier.get / vault.barrier.put — storage I/O latency
+# vault.core.handle_request — overall request duration
+
+# Monitor goroutine count (leak indicator)
+curl -s "$VAULT_ADDR/v1/sys/metrics?format=prometheus" | \
+  grep "vault.runtime.num_goroutines"
 ```
 
 ---
 
-## HA and Failover Problems
+## Audit Log Flooding
 
-### Leader Election Failures
+### Identifying the Cause
 
 ```bash
-# Check cluster members
-vault operator members
+# Check audit log growth rate
+ls -lh /var/log/vault/audit.log
 
-# Force leader step-down
-vault operator step-down
+# Find the top request paths
+tail -100000 /var/log/vault/audit.log | \
+  jq -r '.request.path // empty' | sort | uniq -c | sort -rn | head -10
 
-# Check for network partitions
-# Each node should be able to reach others on cluster_addr (port 8201)
-curl -k https://vault-2:8201/v1/sys/health
+# Find the top requesters
+tail -100000 /var/log/vault/audit.log | \
+  jq -r '.auth.accessor // empty' | sort | uniq -c | sort -rn | head -10
 
-# Verify cluster_addr and api_addr are correct
-vault read sys/config/state/sanitized
+# Common flood sources:
+# 1. Vault Agent polling (static_secret_render_interval too low)
+# 2. Health check endpoints hitting audit (load balancers)
+# 3. Token renewal loops (renewal interval too aggressive)
+# 4. Lease renewal storms
+# 5. Misconfigured monitoring scraping all paths
+
+# Find requests per second
+tail -10000 /var/log/vault/audit.log | \
+  jq -r '.time[:19]' | sort | uniq -c | sort -rn | head -5
 ```
 
-### Split-Brain Scenarios
-
-If multiple nodes think they're the leader:
+### Mitigating Audit Log Volume
 
 ```bash
-# 1. Identify actual leader
-for node in vault-1 vault-2 vault-3; do
-  echo "$node: $(curl -sk https://$node:8200/v1/sys/leader | jq -r .is_self)"
-done
+# 1. Use unauthenticated health check path (not logged)
+# Configure LB: GET /v1/sys/health
 
-# 2. Step down all nodes except desired leader
-vault operator step-down  # Run on incorrect leaders
+# 2. Increase Vault Agent polling intervals
+# template_config {
+#   static_secret_render_interval = "5m"  # not "5s"
+# }
 
-# 3. If Raft, check quorum
-vault operator raft list-peers
-
-# 4. Nuclear option: restart all nodes sequentially
-systemctl stop vault  # All nodes
-systemctl start vault # One at a time, starting with node that has latest data
-```
-
-### Performance Standby Issues
-
-```bash
-# Check if node is a performance standby
-vault status -format=json | jq '.performance_standby'
-
-# Performance standbys returning stale data
-# Client fix: use X-Vault-Inconsistent header
-curl -H "X-Vault-Inconsistent: forward-active-node" ...
-
-# Check replication lag
-vault read sys/replication/status -format=json | jq '.data'
-```
-
----
-
-## Audit Log Analysis
-
-### Reading Audit Logs
-
-Audit logs are JSON, one entry per line. Every request and response is logged.
-
-```bash
-# Stream audit log
-tail -f /var/log/vault/audit.log | jq .
-
-# Find all operations by a specific token accessor
-jq 'select(.auth.accessor == "accessor_value")' /var/log/vault/audit.log
-
-# Find all permission denied errors
-jq 'select(.error != "" and .error != null)' /var/log/vault/audit.log
-
-# Find all secret reads
-jq 'select(.request.operation == "read" and (.request.path | startswith("secret/")))' \
-  /var/log/vault/audit.log
-
-# Find requests in a time window
-jq 'select(.time >= "2025-01-15T10:00:00Z" and .time <= "2025-01-15T11:00:00Z")' \
-  /var/log/vault/audit.log
-
-# Count operations by path
-jq -r '.request.path' /var/log/vault/audit.log | sort | uniq -c | sort -rn | head -20
-```
-
-### Correlating HMAC Values
-
-Audit logs HMAC sensitive values. To find which token generated a log entry:
-
-```bash
-# Hash a known token accessor to find it in audit logs
-vault audit hash sys/audit-hash/file input="<known_value>"
-# Output: hmac-sha256:<hash>
-# Search logs for this hash
-
-# Or reverse: find the token by accessor in logs
-jq 'select(.auth.accessor == "<accessor>")' /var/log/vault/audit.log
-```
-
-### Common Audit Patterns
-
-```bash
-# Find who deleted a secret
-jq 'select(.request.path == "secret/data/myapp/config" and .request.operation == "delete")' \
-  /var/log/vault/audit.log | jq '{time, accessor: .auth.accessor, policies: .auth.policies}'
-
-# Find failed authentication attempts
-jq 'select(.request.path | startswith("auth/")) | select(.error != null)' \
-  /var/log/vault/audit.log
-
-# Track lease revocations
-jq 'select(.request.path | startswith("sys/leases/revoke"))' /var/log/vault/audit.log
-
-# Audit log rotation (via logrotate)
-cat > /etc/logrotate.d/vault <<'EOF'
+# 3. Set up log rotation
+cat > /etc/logrotate.d/vault-audit << 'ROTEOF'
 /var/log/vault/audit.log {
     daily
-    rotate 30
+    rotate 14
     compress
     delaycompress
     missingok
     notifempty
-    postrotate
-        /bin/kill -HUP $(cat /var/run/vault.pid 2>/dev/null) 2>/dev/null || true
-    endscript
+    copytruncate
+    maxsize 1G
 }
-EOF
+ROTEOF
+
+# 4. Use syslog audit device for centralized management
+vault audit enable syslog tag="vault" facility="LOCAL0"
+```
+
+### Audit Device Failures
+
+```bash
+# CRITICAL: If ALL audit devices fail, Vault BLOCKS all operations
+# Error: "no audit backend available to log request"
+
+# Check audit device status
+vault audit list -detailed
+
+# If disk full:
+df -h /var/log/vault/
+# Fix: free space, rotate logs, expand volume
+
+# Emergency: enable a second audit device
+vault audit enable -path=emergency-audit file \
+  file_path=/tmp/vault-emergency-audit.log
+
+# Disable the failed device
+vault audit disable file/
 ```
 
 ---
 
-## Performance Tuning
+## Certificate Rotation Failures
 
-### Identifying Bottlenecks
+### PKI Engine Issues
 
 ```bash
-# Enable Prometheus metrics
-# vault.hcl:
-# telemetry {
-#   prometheus_retention_time = "24h"
-#   disable_hostname = true
+# Check CA certificate expiry
+vault read -format=json pki/cert/ca | \
+  jq -r '.data.certificate' | \
+  openssl x509 -noout -dates
+
+# Error: "requested domain not allowed by role"
+vault read pki/roles/<role-name> | grep -E "allowed_domains|allow_subdomains"
+vault write pki/roles/<role-name> \
+  allowed_domains="example.com,newdomain.com" allow_subdomains=true
+
+# Error: "TTL exceeds max"
+vault read pki/roles/<role-name> | grep max_ttl
+vault secrets tune -max-lease-ttl=87600h pki/
+
+# CRL auto-rebuild
+vault write pki/config/crl expiry=72h auto_rebuild=true auto_rebuild_grace_period=12h
+
+# Tidy expired certificates
+vault write pki/tidy \
+  tidy_cert_store=true \
+  tidy_revoked_certs=true \
+  safety_buffer=72h
+```
+
+### Vault TLS Certificate Rotation
+
+```bash
+# Check current certificate expiry
+echo | openssl s_client -connect vault.example.com:8200 2>/dev/null | \
+  openssl x509 -noout -dates
+
+# Rotate:
+# 1. Issue new certificate
+vault write pki_int/issue/vault-server \
+  common_name="vault.example.com" \
+  alt_names="vault-0.vault-internal,vault-1.vault-internal" \
+  ttl=8760h
+
+# 2. Replace cert files
+cp new-cert.pem /opt/vault/tls/cert.pem
+cp new-key.pem /opt/vault/tls/key.pem
+
+# 3. Reload Vault (no restart needed)
+vault operator reload
+
+# 4. Verify
+echo | openssl s_client -connect vault.example.com:8200 2>/dev/null | \
+  openssl x509 -noout -subject -dates
+```
+
+### Vault Agent Certificate Template Failures
+
+```bash
+# Error: "permission denied" in template rendering
+# Check Agent token policies
+vault token lookup $(cat /vault/agent/token) | grep policies
+
+# Error: template renders empty file
+# Verify the secret path is correct
+vault read pki_int/issue/app-certs common_name=app.example.com ttl=24h
+
+# Whitespace in certificate templates — use dash to trim:
+# {{- with secret "pki/issue/role" "common_name=app.example.com" -}}
+# {{ .Data.certificate }}
+# {{- end -}}
+
+# Certificate renewal not triggering
+# Ensure command is set to reload the service
+# template {
+#   command = "nginx -s reload"
+#   wait { min = "5s" max = "30s" }
+# }
+```
+
+---
+
+## Kubernetes Auth Mount Issues
+
+### Configuration Errors
+
+```bash
+# Verify auth mount exists
+vault auth list | grep kubernetes
+
+# Check configuration
+vault read auth/kubernetes/config
+
+# Test connectivity from Vault to K8s API
+curl -sk https://kubernetes.default.svc:443/version
+
+# Error: "namespaces not authorized"
+vault read auth/kubernetes/role/<role-name>
+# Check bound_service_account_namespaces
+
+# Error: "service account name not authorized"
+vault read auth/kubernetes/role/<role-name>
+# Check bound_service_account_names
+```
+
+### Token Reviewer Problems
+
+```bash
+# Vault needs token review permissions to validate pod JWTs
+
+# Check if binding exists
+kubectl get clusterrolebinding | grep vault
+
+# Create if missing
+kubectl create clusterrolebinding vault-tokenreview \
+  --clusterrole=system:auth-delegator \
+  --serviceaccount=vault:vault
+
+# For external Vault, configure with a service account token
+TOKEN=$(kubectl create token vault-auth -n vault --duration=8760h)
+vault write auth/kubernetes/config \
+  kubernetes_host="https://k8s-api.example.com:6443" \
+  token_reviewer_jwt="$TOKEN" \
+  kubernetes_ca_cert=@/path/to/ca.crt
+```
+
+### Service Account Token Issues
+
+```bash
+# K8s 1.24+ uses projected service account tokens (time-limited, audience-bound)
+
+# Check pod token contents
+kubectl exec -it <pod> -- cat /var/run/secrets/kubernetes.io/serviceaccount/token | \
+  cut -d. -f2 | base64 -d 2>/dev/null | jq '{iss, sub, aud, exp}'
+
+# Audience mismatch fix
+vault write auth/kubernetes/config \
+  kubernetes_host="https://kubernetes.default.svc:443" \
+  issuer="https://kubernetes.default.svc"
+
+# Custom audience in pod spec:
+# volumes:
+# - name: vault-token
+#   projected:
+#     sources:
+#     - serviceAccountToken:
+#         path: vault-token
+#         expirationSeconds: 7200
+#         audience: vault
+```
+
+### Namespace and RBAC Mismatches
+
+```bash
+# Update role to allow additional namespaces
+vault write auth/kubernetes/role/<role> \
+  bound_service_account_names="app-sa" \
+  bound_service_account_namespaces="staging,production" \
+  policies="app-policy"
+
+# Test login from a pod
+JWT=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+curl -s --request POST \
+  --data "{\"jwt\":\"$JWT\",\"role\":\"app\"}" \
+  $VAULT_ADDR/v1/auth/kubernetes/login | jq .
+```
+
+---
+
+## AppRole Secret ID Wrapping
+
+### Wrapping Failures
+
+```bash
+# Error: "permission denied" when wrapping secret-id
+# Policy must allow:
+# path "auth/approle/role/my-app/secret-id" {
+#   capabilities = ["create", "update"]
 # }
 
-# Query metrics endpoint
-curl -s -H "X-Vault-Token: $VAULT_TOKEN" \
-  $VAULT_ADDR/v1/sys/metrics?format=prometheus
+# Wrap a secret-id correctly
+vault write -wrap-ttl=120s -f auth/approle/role/my-app/secret-id
+# Returns: wrapping_token, wrapping_accessor, creation_path
 
-# Key metrics to monitor:
-# vault.core.handle_request (duration) — overall request latency
-# vault.barrier.get / vault.barrier.put — storage latency
-# vault.expire.num_leases — total active leases
-# vault.runtime.alloc_bytes — memory usage
-# vault.runtime.num_goroutines — goroutine count
-# vault.audit.log_request (duration) — audit write latency
+# Verify the wrapping token is valid
+vault write sys/wrapping/lookup token=<wrapping_token>
 ```
 
-### Tuning Vault Configuration
-
-```hcl
-# vault.hcl performance tuning options
-
-# Increase max request size (default 32MB)
-max_request_size = 67108864  # 64MB
-
-# Tune cache size (default 0 = disabled)
-cache_size = 100000
-
-# Listener tuning
-listener "tcp" {
-  address     = "0.0.0.0:8200"
-  # Increase max request duration
-  max_request_duration = "90s"
-
-  # TLS settings for performance
-  tls_min_version = "tls12"
-  tls_prefer_server_cipher_suites = true
-}
-```
+### Unwrapping Issues
 
 ```bash
-# Tune secrets engine max TTL and default TTL
-vault secrets tune -default-lease-ttl=1h -max-lease-ttl=24h database/
+# Error: "wrapping token is not valid or does not exist"
+# Causes:
+# 1. Token already unwrapped (single-use) — possible interception
+# 2. Token TTL expired
+# 3. Wrong token value
 
-# Tune auth method token TTL
-vault auth tune -default-lease-ttl=1h -max-lease-ttl=8h kubernetes/
+# Check if wrapping token was already used (tamper detection)
+vault write sys/wrapping/lookup token=<wrapping_token>
+# Error = already consumed or expired
 
-# Adjust Raft parameters for write-heavy workloads
-# storage "raft" {
-#   performance_multiplier = 1  # Tighter election timing
-#   snapshot_threshold = 16384
-# }
+# Proper unwrap flow
+WRAPPED=$(vault write -wrap-ttl=120 -f -field=wrapping_token \
+  auth/approle/role/my-app/secret-id)
+SECRET_ID=$(VAULT_TOKEN="$WRAPPED" vault unwrap -field=secret_id)
 ```
 
-### Client-Side Optimizations
+### Secret ID Lifecycle Problems
 
 ```bash
-# Use connection pooling in client libraries
-# Python example:
-# import hvac
-# client = hvac.Client(url='https://vault:8200', session=requests.Session())
+# Error: "invalid secret id" during AppRole login
+# Causes: num_uses exhausted, TTL expired, manually revoked
 
-# Use response caching with Vault Agent
-# Agent caches auth tokens and secret responses locally
+# Check role configuration
+vault read auth/approle/role/my-app | grep -E "secret_id_ttl|secret_id_num_uses"
 
-# Batch operations where possible
-# Use sys/tools/hash for batch hashing
-# Use transit/encrypt for batch encryption:
-vault write transit/encrypt/my-key \
-  batch_input='[{"plaintext":"cGxhaW4x"},{"plaintext":"cGxhaW4y"}]'
+# List active secret ID accessors
+vault list auth/approle/role/my-app/secret-id
 
-# Use -wrap-ttl for secret delivery instead of multiple reads
+# Look up specific secret ID
+vault write auth/approle/role/my-app/secret-id/lookup secret_id=<secret_id>
+# Shows: creation_time, expiration_time, remaining uses
+
+# CIDR binding mismatch
+vault read auth/approle/role/my-app | grep cidr
+vault write auth/approle/role/my-app \
+  secret_id_bound_cidrs="" token_bound_cidrs=""
+
+# Recommended: use-limited, short-TTL, wrapped secret IDs
+vault write auth/approle/role/my-app \
+  secret_id_ttl=5m secret_id_num_uses=1
+```
+
+---
+
+## Raft Cluster Recovery
+
+### Single Node Failure
+
+```bash
+# Check cluster state
+vault operator raft list-peers
+
+# Remove permanently failed node
+vault operator raft remove-peer <node-id>
+
+# Add replacement node (configure retry_join in vault.hcl)
+systemctl start vault
+vault operator unseal <key>
+
+# Verify
+vault operator raft list-peers
+vault operator raft autopilot state
+```
+
+### Quorum Loss
+
+```bash
+# If majority of nodes are lost, cluster cannot elect a leader
+
+# Option 1: Bring enough nodes back to reach majority
+for node in vault-1 vault-2; do
+  ssh $node 'systemctl start vault'
+done
+
+# Option 2: Force new cluster from single node (LAST RESORT)
+# 1. Stop ALL vault nodes
+# 2. On the node with most recent data, create peers.json:
+cat > /opt/vault/data/raft/peers.json << 'PEERS'
+[{"id":"vault-1","address":"vault-1:8201","non_voter":false}]
+PEERS
+
+# 3. Start only this node
+systemctl start vault
+vault operator unseal <key>
+
+# 4. Join other nodes one by one
+vault operator raft join https://vault-1:8200
+```
+
+### Data Corruption Recovery
+
+```bash
+# Try to take a snapshot (may fail if corruption is severe)
+vault operator raft snapshot save /backup/emergency.snap
+
+# Restore from last known good snapshot
+vault operator raft snapshot restore -force /backup/vault-latest.snap
+
+# Verify data integrity
+vault status
+vault kv list -mount=secret /
+vault list sys/leases/lookup/
+
+# If no snapshot: reinitialize (DATA LOSS)
+# rm -rf /opt/vault/data/raft/
+vault operator init -key-shares=5 -key-threshold=3
+```
+
+### Snapshot Operations
+
+```bash
+# Manual snapshot
+vault operator raft snapshot save /backup/vault-$(date +%Y%m%d-%H%M%S).snap
+
+# Verify snapshot integrity
+vault operator raft snapshot inspect /backup/vault-latest.snap
+
+# Restore (run on leader, cluster must be unsealed)
+vault operator raft snapshot restore -force /backup/vault-latest.snap
+
+# Automated snapshot schedule (cron example)
+# 0 */6 * * * vault operator raft snapshot save /backup/vault-$(date +\%Y\%m\%d-\%H\%M\%S).snap
+# 0 2 * * * find /backup -name "vault-*.snap" -mtime +30 -delete
 ```
 
 ---
 
 ## Disaster Recovery Procedures
 
-### Raft Snapshot Restore
+### DR Replication Failover
 
 ```bash
-# Take a snapshot (run regularly!)
-vault operator raft snapshot save /backup/vault-$(date +%Y%m%d-%H%M%S).snap
+# Step 1: Confirm primary is down
+curl -s https://vault-primary.example.com:8200/v1/sys/health
 
-# Verify snapshot
-vault operator raft snapshot inspect /backup/vault-latest.snap
+# Step 2: Generate DR operation token on secondary
+vault operator generate-root -dr-token -init
+vault operator generate-root -dr-token \
+  -nonce="<nonce>" "<recovery_key>"  # repeat for threshold
+DR_TOKEN=$(vault operator generate-root -dr-token \
+  -decode="<encoded_token>" -otp="<otp>")
 
-# Restore snapshot (run on leader, cluster must be unsealed)
-vault operator raft snapshot restore -force /backup/vault-latest.snap
-# -force skips the configuration check and restores regardless of
-# the current cluster state
+# Step 3: Promote DR secondary
+vault write sys/replication/dr/secondary/promote \
+  dr_operation_token="$DR_TOKEN"
+
+# Step 4: Update DNS / load balancer
+# Step 5: Verify
+vault status
+vault kv get -mount=secret test/key
 ```
 
-### Recovering from Data Loss
+### Full Cluster Rebuild
 
 ```bash
-# Scenario: Accidental secret deletion (KV v2)
-# 1. Check if soft-deleted (within delete_version_after window)
-vault kv undelete -versions=1 secret/myapp/config
+# When all nodes are lost and only snapshots remain:
+# 1. Deploy new cluster (3+ nodes)
+# 2. Initialize first node
+vault operator init -key-shares=5 -key-threshold=3
 
-# 2. If permanently destroyed, restore from snapshot
-vault operator raft snapshot restore /backup/vault-latest.snap
+# 3. Unseal all nodes
+# 4. Join remaining nodes
+vault operator raft join https://vault-1:8200
 
-# Scenario: Lost all unseal keys
-# If auto-unseal configured: Vault auto-unseals on start
-# If Shamir and ALL keys lost: DATA IS UNRECOVERABLE
-# Preventive: Store key shares in separate secure locations
-#   - Hardware security modules
-#   - Separate password managers
-#   - Physical safes in different locations
+# 5. Restore from snapshot
+vault operator raft snapshot restore -force /backup/vault-latest.snap
+
+# 6. Verify and re-configure audit, license, replication
 ```
 
 ### Emergency Break-Glass
 
 ```bash
-# Generate root token (emergency use only)
+# Generate emergency root token
 vault operator generate-root -init
-# Distribute nonce to key holders
-
-# Each key holder provides their share
 vault operator generate-root -nonce=<nonce> <unseal_key>
-# Repeat until threshold met
-
-# Decode the generated token
+# Repeat until threshold
 vault operator generate-root -decode=<encoded_token> -otp=<otp>
 
-# Use root token for emergency operations
-VAULT_TOKEN=<root_token> vault policy write emergency-fix emergency.hcl
+# Use root token for emergency operations ONLY
+export VAULT_TOKEN=<root_token>
+vault policy write emergency-fix emergency.hcl
 
 # ALWAYS revoke root token when done
-vault token revoke <root_token>
+vault token revoke "$VAULT_TOKEN"
 
-# Audit: Root token generation is always logged
-# Ensure someone reviews the audit log after break-glass events
+# Review all root token operations
+jq 'select(.auth.policies | index("root"))' /var/log/vault/audit.log
 ```
 
-**Root Token Safety Checklist:**
-1. Generate root token only when necessary
-2. Use it for the minimum required operations
-3. Revoke immediately after use
-4. Review audit logs for all operations performed
-5. Document the incident and operations performed
-6. Have at least two people present during the procedure
+### Post-Incident Checklist
+
+1. **Revoke emergency credentials** — root tokens, temporary policies
+2. **Review audit logs** — verify no unauthorized access during outage
+3. **Rotate affected secrets** — any secret that may have been exposed
+4. **Verify replication** — confirm DR/perf secondaries are in sync
+5. **Update snapshots** — take a fresh snapshot of the recovered cluster
+6. **Test failover** — validate DR procedures still work
+7. **Document the incident** — RCA with timeline, actions, improvements
+8. **Update runbooks** — incorporate lessons learned
+9. **Notify stakeholders** — inform teams of credential rotations needed
+10. **Monitor closely** — watch metrics for 24-48 hours post-recovery

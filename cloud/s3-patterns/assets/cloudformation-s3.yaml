@@ -1,0 +1,353 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  S3 bucket with production best practices: encryption, versioning, replication,
+  event notifications, lifecycle rules, access logging, and security controls.
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment environment.
+
+  BucketNameSuffix:
+    Type: String
+    Description: Suffix for the bucket name (bucket will be named {AccountId}-{Environment}-{Suffix}).
+    AllowedPattern: '[a-z0-9][a-z0-9.-]*[a-z0-9]'
+    MinLength: 3
+    MaxLength: 40
+
+  EnableReplication:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Enable cross-region replication to a destination bucket.
+
+  ReplicationDestBucketArn:
+    Type: String
+    Default: ''
+    Description: ARN of the destination bucket for replication (required if EnableReplication is true).
+
+  ReplicationDestRegion:
+    Type: String
+    Default: ''
+    Description: Region of the destination bucket.
+
+  KMSKeyArn:
+    Type: String
+    Default: ''
+    Description: ARN of KMS key for SSE-KMS encryption. Leave empty for SSE-S3 (AES-256).
+
+  NotificationTopicArn:
+    Type: String
+    Default: ''
+    Description: SNS topic ARN for S3 event notifications. Leave empty to disable.
+
+  EnableAccessLogging:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable server access logging.
+
+Conditions:
+  IsProduction: !Equals [!Ref Environment, prod]
+  UseKMS: !Not [!Equals [!Ref KMSKeyArn, '']]
+  ShouldReplicate: !Equals [!Ref EnableReplication, 'true']
+  HasNotificationTopic: !Not [!Equals [!Ref NotificationTopicArn, '']]
+  ShouldLog: !Equals [!Ref EnableAccessLogging, 'true']
+
+Resources:
+  # ─── Logging Bucket ──────────────────────────────────────────────
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Condition: ShouldLog
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${AWS::AccountId}-${Environment}-${BucketNameSuffix}-logs'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldLogs
+            Status: Enabled
+            ExpirationInDays: 90
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+  LoggingBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Condition: ShouldLog
+    Properties:
+      Bucket: !Ref LoggingBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: S3ServerAccessLogsPolicy
+            Effect: Allow
+            Principal:
+              Service: logging.s3.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub '${LoggingBucket.Arn}/*'
+            Condition:
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:aws:s3:::${AWS::AccountId}-${Environment}-${BucketNameSuffix}'
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+          - Sid: EnforceTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt LoggingBucket.Arn
+              - !Sub '${LoggingBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  # ─── Primary Bucket ──────────────────────────────────────────────
+  PrimaryBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${AWS::AccountId}-${Environment}-${BucketNameSuffix}'
+
+      # --- Security ---
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: !If [UseKMS, 'aws:kms', 'AES256']
+              KMSMasterKeyID: !If [UseKMS, !Ref KMSKeyArn, !Ref 'AWS::NoValue']
+            BucketKeyEnabled: !If [UseKMS, true, !Ref 'AWS::NoValue']
+
+      # --- Versioning ---
+      VersioningConfiguration:
+        Status: Enabled
+
+      # --- Access Logging ---
+      LoggingConfiguration: !If
+        - ShouldLog
+        - DestinationBucketName: !Ref LoggingBucket
+          LogFilePrefix: !Sub 'access-logs/${AWS::AccountId}-${Environment}-${BucketNameSuffix}/'
+        - !Ref 'AWS::NoValue'
+
+      # --- Lifecycle Rules ---
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: STANDARD_IA
+          - Id: TransitionToGlacier
+            Status: !If [IsProduction, Enabled, Disabled]
+            Transitions:
+              - TransitionInDays: 365
+                StorageClass: GLACIER
+          - Id: ExpireNoncurrentVersions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+              NewerNoncurrentVersions: 3
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          - Id: CleanupDeleteMarkers
+            Status: Enabled
+            ExpiredObjectDeleteMarker: true
+
+      # --- Event Notifications ---
+      NotificationConfiguration: !If
+        - HasNotificationTopic
+        - TopicConfigurations:
+            - Topic: !Ref NotificationTopicArn
+              Event: 's3:ObjectCreated:*'
+            - Topic: !Ref NotificationTopicArn
+              Event: 's3:ObjectRemoved:*'
+          EventBridgeConfiguration:
+            EventBridgeEnabled: true
+        - EventBridgeConfiguration:
+            EventBridgeEnabled: true
+
+      # --- Replication ---
+      ReplicationConfiguration: !If
+        - ShouldReplicate
+        - Role: !GetAtt ReplicationRole.Arn
+          Rules:
+            - Id: ReplicateAll
+              Status: Enabled
+              Priority: 1
+              Filter: {}
+              Destination:
+                Bucket: !Ref ReplicationDestBucketArn
+                StorageClass: STANDARD_IA
+                EncryptionConfiguration: !If
+                  - UseKMS
+                  - ReplicaKmsKeyID: !Ref KMSKeyArn
+                  - !Ref 'AWS::NoValue'
+                Metrics:
+                  Status: Enabled
+                  EventThreshold:
+                    Minutes: 15
+                ReplicationTime:
+                  Status: Enabled
+                  Time:
+                    Minutes: 15
+              DeleteMarkerReplication:
+                Status: Enabled
+              SourceSelectionCriteria: !If
+                - UseKMS
+                - SseKmsEncryptedObjects:
+                    Status: Enabled
+                - !Ref 'AWS::NoValue'
+        - !Ref 'AWS::NoValue'
+
+      # --- Tags ---
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: Stack
+          Value: !Ref AWS::StackName
+
+  # ─── Bucket Policy ──────────────────────────────────────────────
+  PrimaryBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PrimaryBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: EnforceTLS
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt PrimaryBucket.Arn
+              - !Sub '${PrimaryBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+          - Sid: EnforceTLSVersion
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt PrimaryBucket.Arn
+              - !Sub '${PrimaryBucket.Arn}/*'
+            Condition:
+              NumericLessThan:
+                s3:TlsVersion: '1.2'
+
+  # ─── Replication IAM Role ───────────────────────────────────────
+  ReplicationRole:
+    Type: AWS::IAM::Role
+    Condition: ShouldReplicate
+    Properties:
+      RoleName: !Sub '${Environment}-${BucketNameSuffix}-replication-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3ReplicationPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetReplicationConfiguration
+                  - s3:ListBucket
+                Resource: !GetAtt PrimaryBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObjectVersionForReplication
+                  - s3:GetObjectVersionAcl
+                  - s3:GetObjectVersionTagging
+                Resource: !Sub '${PrimaryBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - s3:ReplicateObject
+                  - s3:ReplicateDelete
+                  - s3:ReplicateTags
+                Resource: !Sub '${ReplicationDestBucketArn}/*'
+
+  # ─── CloudWatch Alarms ──────────────────────────────────────────
+  S3ErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: IsProduction
+    Properties:
+      AlarmName: !Sub '${Environment}-${BucketNameSuffix}-4xx-errors'
+      AlarmDescription: Alert on elevated 4xx errors on S3 bucket.
+      Namespace: AWS/S3
+      MetricName: 4xxErrors
+      Dimensions:
+        - Name: BucketName
+          Value: !Ref PrimaryBucket
+        - Name: FilterId
+          Value: EntireBucket
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 100
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If
+        - HasNotificationTopic
+        - [!Ref NotificationTopicArn]
+        - []
+
+Outputs:
+  BucketName:
+    Description: Name of the S3 bucket.
+    Value: !Ref PrimaryBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+
+  BucketArn:
+    Description: ARN of the S3 bucket.
+    Value: !GetAtt PrimaryBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketArn'
+
+  BucketDomainName:
+    Description: Regional domain name of the bucket.
+    Value: !GetAtt PrimaryBucket.RegionalDomainName
+
+  LoggingBucketName:
+    Condition: ShouldLog
+    Description: Name of the logging bucket.
+    Value: !Ref LoggingBucket
+
+  ReplicationRoleArn:
+    Condition: ShouldReplicate
+    Description: ARN of the replication IAM role.
+    Value: !GetAtt ReplicationRole.Arn

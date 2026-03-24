@@ -1,0 +1,221 @@
+{
+  "_description": "Collection of S3 bucket policy templates. Copy and customize the relevant policy for your use case. Replace placeholder values (BUCKET_NAME, ACCOUNT_ID, etc.) before applying.",
+
+  "cloudfront_oac_policy": {
+    "_description": "Allow CloudFront to read objects via Origin Access Control (OAC). Replace DISTRIBUTION_ARN and BUCKET_NAME.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowCloudFrontServicePrincipalReadOnly",
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "cloudfront.amazonaws.com"
+        },
+        "Action": "s3:GetObject",
+        "Resource": "arn:aws:s3:::BUCKET_NAME/*",
+        "Condition": {
+          "StringEquals": {
+            "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/DISTRIBUTION_ID"
+          }
+        }
+      }
+    ]
+  },
+
+  "vpc_endpoint_policy": {
+    "_description": "Restrict bucket access to a specific VPC endpoint. All non-VPC requests are denied. Replace VPCE_ID and BUCKET_NAME.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowAccessFromVPCEndpoint",
+        "Effect": "Allow",
+        "Principal": "*",
+        "Action": [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:ListBucket"
+        ],
+        "Resource": [
+          "arn:aws:s3:::BUCKET_NAME",
+          "arn:aws:s3:::BUCKET_NAME/*"
+        ],
+        "Condition": {
+          "StringEquals": {
+            "aws:sourceVpce": "VPCE_ID"
+          }
+        }
+      },
+      {
+        "Sid": "DenyNonVPCAccess",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::BUCKET_NAME",
+          "arn:aws:s3:::BUCKET_NAME/*"
+        ],
+        "Condition": {
+          "StringNotEquals": {
+            "aws:sourceVpce": "VPCE_ID"
+          }
+        }
+      }
+    ]
+  },
+
+  "cross_account_policy": {
+    "_description": "Grant read/write access to a specific role in another AWS account. Replace EXTERNAL_ACCOUNT_ID, EXTERNAL_ROLE_NAME, and BUCKET_NAME.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowCrossAccountList",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::EXTERNAL_ACCOUNT_ID:role/EXTERNAL_ROLE_NAME"
+        },
+        "Action": [
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ],
+        "Resource": "arn:aws:s3:::BUCKET_NAME"
+      },
+      {
+        "Sid": "AllowCrossAccountReadWrite",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::EXTERNAL_ACCOUNT_ID:role/EXTERNAL_ROLE_NAME"
+        },
+        "Action": [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ],
+        "Resource": "arn:aws:s3:::BUCKET_NAME/*"
+      },
+      {
+        "Sid": "EnforceBucketOwnerFullControl",
+        "Effect": "Deny",
+        "Principal": {
+          "AWS": "arn:aws:iam::EXTERNAL_ACCOUNT_ID:role/EXTERNAL_ROLE_NAME"
+        },
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::BUCKET_NAME/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:x-amz-acl": "bucket-owner-full-control"
+          }
+        }
+      }
+    ]
+  },
+
+  "enforce_encryption_policy": {
+    "_description": "Deny unencrypted uploads and enforce TLS. Combine with default bucket encryption for defense in depth. Replace BUCKET_NAME.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyUnencryptedUploads",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::BUCKET_NAME/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:x-amz-server-side-encryption": [
+              "aws:kms",
+              "AES256"
+            ]
+          }
+        }
+      },
+      {
+        "Sid": "DenyNoEncryptionHeader",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::BUCKET_NAME/*",
+        "Condition": {
+          "Null": {
+            "s3:x-amz-server-side-encryption": "true"
+          }
+        }
+      },
+      {
+        "Sid": "EnforceTLSOnly",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::BUCKET_NAME",
+          "arn:aws:s3:::BUCKET_NAME/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      },
+      {
+        "Sid": "EnforceTLSVersion",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::BUCKET_NAME",
+          "arn:aws:s3:::BUCKET_NAME/*"
+        ],
+        "Condition": {
+          "NumericLessThan": {
+            "s3:TlsVersion": "1.2"
+          }
+        }
+      }
+    ]
+  },
+
+  "enforce_kms_only_policy": {
+    "_description": "Enforce only KMS encryption (reject SSE-S3). Use when you need audit trail via CloudTrail for all object access. Replace BUCKET_NAME and KMS_KEY_ARN.",
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "DenyNonKMSEncryption",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::BUCKET_NAME/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:x-amz-server-side-encryption": "aws:kms"
+          }
+        }
+      },
+      {
+        "Sid": "DenyWrongKMSKey",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:PutObject",
+        "Resource": "arn:aws:s3:::BUCKET_NAME/*",
+        "Condition": {
+          "StringNotEquals": {
+            "s3:x-amz-server-side-encryption-aws-kms-key-id": "KMS_KEY_ARN"
+          }
+        }
+      },
+      {
+        "Sid": "EnforceTLS",
+        "Effect": "Deny",
+        "Principal": "*",
+        "Action": "s3:*",
+        "Resource": [
+          "arn:aws:s3:::BUCKET_NAME",
+          "arn:aws:s3:::BUCKET_NAME/*"
+        ],
+        "Condition": {
+          "Bool": {
+            "aws:SecureTransport": "false"
+          }
+        }
+      }
+    ]
+  }
+}

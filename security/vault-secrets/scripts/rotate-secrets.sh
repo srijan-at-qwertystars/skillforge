@@ -1,89 +1,66 @@
 #!/usr/bin/env bash
 #
-# rotate-secrets.sh — Rotates dynamic secrets and updates dependent services
+# rotate-secrets.sh — Zero-downtime database credential rotation with Vault
 #
 # Usage:
-#   ./rotate-secrets.sh --engine database --role app-role     # Rotate DB creds for a role
-#   ./rotate-secrets.sh --engine database --rotate-root mydb  # Rotate root DB password
-#   ./rotate-secrets.sh --engine aws --role deploy-role       # Rotate AWS creds
-#   ./rotate-secrets.sh --kv secret/myapp/api-key             # Rotate a static KV secret
-#   ./rotate-secrets.sh --revoke-prefix database/creds/app    # Revoke all leases under prefix
-#   ./rotate-secrets.sh --transit-key my-key                  # Rotate Transit encryption key
+#   ./rotate-secrets.sh --role app-db                          # Rotate credentials for a role
+#   ./rotate-secrets.sh --role app-db --grace-period 300       # Keep old creds alive for 5 min
+#   ./rotate-secrets.sh --rotate-root mydb                     # Rotate root DB password
+#   ./rotate-secrets.sh --role app-db --revoke-old             # Rotate and revoke old leases
+#   ./rotate-secrets.sh --role app-db --notify webhook-url     # Notify via webhook after rotation
+#   ./rotate-secrets.sh --status app-db                        # Show active leases for a role
+#   ./rotate-secrets.sh --dry-run --role app-db                # Preview without changes
+#
+# Zero-Downtime Strategy:
+#   1. Request new dynamic credentials from Vault
+#   2. Verify new credentials work (optional --verify-cmd)
+#   3. Write new credentials to output file (optional --output)
+#   4. Signal application to pick up new credentials (optional --signal-cmd)
+#   5. Wait grace period for in-flight connections to drain
+#   6. Revoke old leases (only with --revoke-old)
 #
 # Prerequisites:
-#   - vault CLI installed and configured (VAULT_ADDR, VAULT_TOKEN)
-#   - Appropriate Vault policies for the operations
-#
-# This script:
-#   1. Rotates the specified secret type
-#   2. Verifies new credentials work (where applicable)
-#   3. Optionally revokes old leases
-#   4. Logs all operations for audit trail
-#
-# For automated rotation, combine with Vault Agent or a cron job.
+#   - vault CLI configured (VAULT_ADDR, VAULT_TOKEN)
+#   - Database secrets engine enabled with configured roles
 
 set -euo pipefail
 
 # --- Defaults ---
-ENGINE=""
 ROLE=""
+DB_ENGINE="database"
 ROTATE_ROOT=""
-KV_PATH=""
-REVOKE_PREFIX=""
-TRANSIT_KEY=""
-FORCE=false
+REVOKE_OLD=false
+GRACE_PERIOD=60
 DRY_RUN=false
+NOTIFY=""
+STATUS_ONLY=""
+SIGNAL_CMD=""
+VERIFY_CMD=""
+OUTPUT_FILE=""
 
 # --- Parse Arguments ---
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --engine)
-      ENGINE="$2"
-      shift 2
-      ;;
-    --role)
-      ROLE="$2"
-      shift 2
-      ;;
-    --rotate-root)
-      ROTATE_ROOT="$2"
-      shift 2
-      ;;
-    --kv)
-      KV_PATH="$2"
-      shift 2
-      ;;
-    --revoke-prefix)
-      REVOKE_PREFIX="$2"
-      shift 2
-      ;;
-    --transit-key)
-      TRANSIT_KEY="$2"
-      shift 2
-      ;;
-    --force)
-      FORCE=true
-      shift
-      ;;
-    --dry-run)
-      DRY_RUN=true
-      shift
-      ;;
-    --help|-h)
-      head -22 "$0" | tail -20
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      exit 1
-      ;;
+    --role)           ROLE="$2"; shift 2 ;;
+    --engine)         DB_ENGINE="$2"; shift 2 ;;
+    --rotate-root)    ROTATE_ROOT="$2"; shift 2 ;;
+    --revoke-old)     REVOKE_OLD=true; shift ;;
+    --grace-period)   GRACE_PERIOD="$2"; shift 2 ;;
+    --dry-run)        DRY_RUN=true; shift ;;
+    --notify)         NOTIFY="$2"; shift 2 ;;
+    --status)         STATUS_ONLY="$2"; shift 2 ;;
+    --signal-cmd)     SIGNAL_CMD="$2"; shift 2 ;;
+    --verify-cmd)     VERIFY_CMD="$2"; shift 2 ;;
+    --output)         OUTPUT_FILE="$2"; shift 2 ;;
+    --help|-h)        head -20 "$0" | tail -18; exit 0 ;;
+    *)                echo "Unknown option: $1" >&2; exit 1 ;;
   esac
 done
 
 # --- Helpers ---
-log() { echo -e "\033[1;32m[$(date '+%H:%M:%S')]\033[0m $1"; }
+log()  { echo -e "\033[1;32m[$(date '+%H:%M:%S')]\033[0m $1"; }
 warn() { echo -e "\033[1;33m[$(date '+%H:%M:%S')] WARN:\033[0m $1"; }
-err() { echo -e "\033[1;31m[$(date '+%H:%M:%S')] ERROR:\033[0m $1" >&2; exit 1; }
+err()  { echo -e "\033[1;31m[$(date '+%H:%M:%S')] ERROR:\033[0m $1" >&2; exit 1; }
 
 dry() {
   if $DRY_RUN; then
@@ -93,213 +70,147 @@ dry() {
   "$@"
 }
 
-# --- Preflight Checks ---
+notify() {
+  local message="$1"
+  if [[ -n "$NOTIFY" ]]; then
+    curl -sf -X POST "$NOTIFY" \
+      -H "Content-Type: application/json" \
+      -d "{\"text\":\"[Vault Rotation] ${message}\"}" 2>/dev/null || \
+      warn "Webhook notification failed"
+  fi
+}
+
+# --- Preflight ---
 command -v vault >/dev/null 2>&1 || err "vault CLI not found"
 [[ -n "${VAULT_ADDR:-}" ]] || err "VAULT_ADDR not set"
 [[ -n "${VAULT_TOKEN:-}" ]] || err "VAULT_TOKEN not set"
-vault token lookup &>/dev/null || err "Invalid Vault token"
+vault token lookup &>/dev/null || err "Invalid or expired Vault token"
 
-# --- Rotate Database Credentials ---
-rotate_database_creds() {
-  local engine="$1"
-  local role="$2"
+# --- Show Status ---
+if [[ -n "$STATUS_ONLY" ]]; then
+  log "Active leases for ${DB_ENGINE}/creds/${STATUS_ONLY}:"
+  LEASES=$(vault list -format=json \
+    "sys/leases/lookup/${DB_ENGINE}/creds/${STATUS_ONLY}" 2>/dev/null || echo "[]")
+  COUNT=$(echo "$LEASES" | jq 'length')
+  log "Total active leases: ${COUNT}"
 
-  log "Rotating database credentials for role: ${role} (engine: ${engine})"
-
-  # Count existing leases
-  LEASE_COUNT=$(vault list -format=json "sys/leases/lookup/${engine}/creds/${role}" 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
-  log "Active leases for ${role}: ${LEASE_COUNT}"
-
-  # Generate new credentials
-  log "Requesting new credentials..."
-  NEW_CREDS=$(dry vault read -format=json "${engine}/creds/${role}" 2>&1) || err "Failed to generate new credentials"
-
-  if ! $DRY_RUN; then
-    NEW_USER=$(echo "$NEW_CREDS" | jq -r '.data.username')
-    LEASE_ID=$(echo "$NEW_CREDS" | jq -r '.lease_id')
-    LEASE_DURATION=$(echo "$NEW_CREDS" | jq -r '.lease_duration')
-
-    log "New credentials generated:"
-    log "  Username:       ${NEW_USER}"
-    log "  Lease ID:       ${LEASE_ID}"
-    log "  Lease Duration: ${LEASE_DURATION}s"
+  if [[ "$COUNT" -gt 0 ]]; then
+    echo "$LEASES" | jq -r '.[]' | head -20 | while read -r lease_key; do
+      LEASE_INFO=$(vault write -format=json sys/leases/lookup \
+        lease_id="${DB_ENGINE}/creds/${STATUS_ONLY}/${lease_key}" 2>/dev/null || echo '{}')
+      TTL=$(echo "$LEASE_INFO" | jq -r '.data.ttl // "unknown"')
+      echo "  ${lease_key} (TTL: ${TTL}s)"
+    done
+    [[ "$COUNT" -gt 20 ]] && log "  ... and $((COUNT - 20)) more"
   fi
-
-  # Optionally revoke old leases
-  if $FORCE && [[ "$LEASE_COUNT" -gt 0 ]]; then
-    warn "Revoking ${LEASE_COUNT} old lease(s) for ${role}..."
-    dry vault lease revoke -prefix "${engine}/creds/${role}"
-    log "Old leases revoked"
-  fi
-}
-
-# --- Rotate Root Database Password ---
-rotate_database_root() {
-  local db_name="$1"
-
-  log "Rotating root credentials for database: ${db_name}"
-  warn "This will change the root password. Vault will manage the new password."
-
-  if ! $FORCE; then
-    warn "Use --force to confirm root credential rotation"
-    return 1
-  fi
-
-  dry vault write -f "database/rotate-root/${db_name}" || err "Failed to rotate root credentials"
-  log "Root credentials rotated for ${db_name}"
-  log "The new password is managed by Vault and cannot be retrieved"
-}
-
-# --- Rotate AWS Credentials ---
-rotate_aws_creds() {
-  local engine="$1"
-  local role="$2"
-
-  log "Rotating AWS credentials for role: ${role} (engine: ${engine})"
-
-  # Revoke existing leases
-  if $FORCE; then
-    LEASE_COUNT=$(vault list -format=json "sys/leases/lookup/${engine}/creds/${role}" 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
-    if [[ "$LEASE_COUNT" -gt 0 ]]; then
-      log "Revoking ${LEASE_COUNT} existing AWS credential lease(s)..."
-      dry vault lease revoke -prefix "${engine}/creds/${role}"
-    fi
-  fi
-
-  # Generate new credentials
-  log "Requesting new AWS credentials..."
-  NEW_CREDS=$(dry vault read -format=json "${engine}/creds/${role}" 2>&1) || err "Failed to generate AWS credentials"
-
-  if ! $DRY_RUN; then
-    ACCESS_KEY=$(echo "$NEW_CREDS" | jq -r '.data.access_key')
-    LEASE_ID=$(echo "$NEW_CREDS" | jq -r '.lease_id')
-    log "New AWS credentials generated:"
-    log "  Access Key: ${ACCESS_KEY}"
-    log "  Lease ID:   ${LEASE_ID}"
-  fi
-}
-
-# --- Rotate KV Secret ---
-rotate_kv_secret() {
-  local kv_path="$1"
-
-  log "Rotating static secret at: ${kv_path}"
-
-  # Read current secret
-  CURRENT=$(vault kv get -format=json "$kv_path" 2>/dev/null) || err "Cannot read ${kv_path}"
-  VERSION=$(echo "$CURRENT" | jq -r '.data.metadata.version')
-  log "Current version: ${VERSION}"
-
-  # Get current keys
-  KEYS=$(echo "$CURRENT" | jq -r '.data.data | keys[]')
-  log "Keys in secret: $(echo $KEYS | tr '\n' ', ')"
-
-  # Prompt-style: show what would be updated
-  echo ""
-  echo "To rotate, update the secret with new values:"
-  echo ""
-  echo "  vault kv put ${kv_path} \\"
-
-  for key in $KEYS; do
-    VALUE=$(echo "$CURRENT" | jq -r ".data.data.\"${key}\"")
-    # Mask the value for display
-    MASKED="${VALUE:0:3}***"
-    echo "    ${key}=\"<new-value>\"  # current: ${MASKED} \\"
-  done
-  echo ""
-
-  log "Use 'vault kv rollback -version=${VERSION} ${kv_path}' to revert if needed"
-}
-
-# --- Revoke Leases by Prefix ---
-revoke_lease_prefix() {
-  local prefix="$1"
-
-  log "Revoking all leases under prefix: ${prefix}"
-
-  LEASE_COUNT=$(vault list -format=json "sys/leases/lookup/${prefix}" 2>/dev/null | jq 'length' 2>/dev/null || echo "0")
-  log "Found ${LEASE_COUNT} active lease(s)"
-
-  if [[ "$LEASE_COUNT" -eq 0 ]]; then
-    log "No leases to revoke"
-    return 0
-  fi
-
-  if ! $FORCE; then
-    warn "Use --force to confirm revocation of ${LEASE_COUNT} lease(s)"
-    return 1
-  fi
-
-  dry vault lease revoke -prefix "$prefix" || err "Failed to revoke leases"
-  log "Successfully revoked all leases under ${prefix}"
-}
-
-# --- Rotate Transit Key ---
-rotate_transit_key() {
-  local key_name="$1"
-
-  log "Rotating Transit encryption key: ${key_name}"
-
-  # Get current key info
-  KEY_INFO=$(vault read -format=json "transit/keys/${key_name}" 2>/dev/null) || err "Cannot read Transit key ${key_name}"
-  CURRENT_VERSION=$(echo "$KEY_INFO" | jq -r '.data.latest_version')
-  MIN_DECRYPT=$(echo "$KEY_INFO" | jq -r '.data.min_decryption_version')
-  log "Current version: ${CURRENT_VERSION}, Min decryption version: ${MIN_DECRYPT}"
-
-  # Rotate
-  dry vault write -f "transit/keys/${key_name}/rotate" || err "Failed to rotate Transit key"
-
-  if ! $DRY_RUN; then
-    NEW_VERSION=$((CURRENT_VERSION + 1))
-    log "Key rotated to version ${NEW_VERSION}"
-    log "Old versions can still decrypt. To enforce new version only:"
-    log "  vault write transit/keys/${key_name}/config min_decryption_version=${NEW_VERSION}"
-    log ""
-    log "To re-encrypt existing ciphertext with new key version:"
-    log "  vault write transit/rewrap/${key_name} ciphertext=<old_ciphertext>"
-  fi
-}
-
-# --- Main ---
-ACTIONS=0
-
-if [[ -n "$ENGINE" && -n "$ROLE" ]]; then
-  case "$ENGINE" in
-    database|db)
-      rotate_database_creds "${ENGINE}" "${ROLE}"
-      ;;
-    aws)
-      rotate_aws_creds "${ENGINE}" "${ROLE}"
-      ;;
-    *)
-      err "Unsupported engine: ${ENGINE}. Supported: database, aws"
-      ;;
-  esac
-  ACTIONS=$((ACTIONS + 1))
+  exit 0
 fi
 
+# --- Rotate Root ---
 if [[ -n "$ROTATE_ROOT" ]]; then
-  rotate_database_root "$ROTATE_ROOT"
-  ACTIONS=$((ACTIONS + 1))
+  log "Rotating root credentials for database: ${ROTATE_ROOT}"
+  warn "After rotation, only Vault knows the new root password"
+
+  vault read "${DB_ENGINE}/config/${ROTATE_ROOT}" &>/dev/null || \
+    err "Cannot read database config for ${ROTATE_ROOT}"
+
+  dry vault write -f "${DB_ENGINE}/rotate-root/${ROTATE_ROOT}" || \
+    err "Root credential rotation failed"
+
+  log "Root credentials rotated for ${ROTATE_ROOT}"
+  notify "Root credentials rotated for database '${ROTATE_ROOT}'"
+  exit 0
 fi
 
-if [[ -n "$KV_PATH" ]]; then
-  rotate_kv_secret "$KV_PATH"
-  ACTIONS=$((ACTIONS + 1))
+# --- Validate Role ---
+[[ -n "$ROLE" ]] || err "No action specified. Use --role, --rotate-root, or --status."
+
+log "Verifying role: ${DB_ENGINE}/roles/${ROLE}"
+ROLE_CONFIG=$(vault read -format=json "${DB_ENGINE}/roles/${ROLE}" 2>/dev/null) || \
+  err "Role '${ROLE}' not found in engine '${DB_ENGINE}'"
+
+DEFAULT_TTL=$(echo "$ROLE_CONFIG" | jq -r '.data.default_ttl // 3600')
+MAX_TTL=$(echo "$ROLE_CONFIG" | jq -r '.data.max_ttl // 86400')
+log "Role TTLs: default=${DEFAULT_TTL}s, max=${MAX_TTL}s"
+
+# --- Snapshot Old Leases ---
+OLD_LEASES=$(vault list -format=json \
+  "sys/leases/lookup/${DB_ENGINE}/creds/${ROLE}" 2>/dev/null || echo "[]")
+OLD_LEASE_COUNT=$(echo "$OLD_LEASES" | jq 'length')
+log "Existing active leases: ${OLD_LEASE_COUNT}"
+
+# --- Generate New Credentials ---
+log "Requesting new database credentials..."
+if $DRY_RUN; then
+  log "DRY RUN: vault read ${DB_ENGINE}/creds/${ROLE}"
+  log "DRY RUN: Would generate new credentials, verify, and signal app"
+  if $REVOKE_OLD; then
+    log "DRY RUN: Would wait ${GRACE_PERIOD}s then revoke ${OLD_LEASE_COUNT} old lease(s)"
+  fi
+  exit 0
 fi
 
-if [[ -n "$REVOKE_PREFIX" ]]; then
-  revoke_lease_prefix "$REVOKE_PREFIX"
-  ACTIONS=$((ACTIONS + 1))
+NEW_CREDS=$(vault read -format=json "${DB_ENGINE}/creds/${ROLE}") || \
+  err "Failed to generate new credentials"
+
+NEW_USER=$(echo "$NEW_CREDS" | jq -r '.data.username')
+NEW_PASS=$(echo "$NEW_CREDS" | jq -r '.data.password')
+NEW_LEASE=$(echo "$NEW_CREDS" | jq -r '.lease_id')
+NEW_TTL=$(echo "$NEW_CREDS" | jq -r '.lease_duration')
+
+log "New credentials generated:"
+log "  Username: ${NEW_USER}"
+log "  Lease ID: ${NEW_LEASE}"
+log "  TTL:      ${NEW_TTL}s"
+
+# --- Verify New Credentials ---
+if [[ -n "$VERIFY_CMD" ]]; then
+  log "Verifying new credentials..."
+  EXPANDED_CMD=$(echo "$VERIFY_CMD" | \
+    sed "s|{username}|${NEW_USER}|g; s|{password}|${NEW_PASS}|g")
+  if eval "$EXPANDED_CMD" &>/dev/null; then
+    log "Credential verification succeeded"
+  else
+    warn "Credential verification FAILED — revoking new lease"
+    vault lease revoke "$NEW_LEASE" 2>/dev/null || true
+    err "New credentials do not work. Rotation aborted. Old creds unchanged."
+  fi
 fi
 
-if [[ -n "$TRANSIT_KEY" ]]; then
-  rotate_transit_key "$TRANSIT_KEY"
-  ACTIONS=$((ACTIONS + 1))
+# --- Write Output ---
+if [[ -n "$OUTPUT_FILE" ]]; then
+  echo "$NEW_CREDS" | jq -r '.data | to_entries | map("\(.key)=\(.value)") | .[]' \
+    > "$OUTPUT_FILE"
+  chmod 600 "$OUTPUT_FILE"
+  log "Credentials written to ${OUTPUT_FILE}"
 fi
 
-if [[ "$ACTIONS" -eq 0 ]]; then
-  err "No action specified. Use --help for usage."
+# --- Signal Application ---
+if [[ -n "$SIGNAL_CMD" ]]; then
+  log "Signaling application: ${SIGNAL_CMD}"
+  eval "$SIGNAL_CMD" || warn "Signal command returned non-zero"
 fi
 
-log "Done. ${ACTIONS} rotation action(s) completed."
+# --- Grace Period + Revoke Old ---
+if $REVOKE_OLD && [[ "$OLD_LEASE_COUNT" -gt 0 ]]; then
+  log "Waiting ${GRACE_PERIOD}s for in-flight connections to drain..."
+  sleep "$GRACE_PERIOD"
+
+  log "Revoking ${OLD_LEASE_COUNT} old lease(s)..."
+  REVOKED=0
+  FAILED=0
+  echo "$OLD_LEASES" | jq -r '.[]' | while read -r lease_key; do
+    if vault lease revoke "${DB_ENGINE}/creds/${ROLE}/${lease_key}" 2>/dev/null; then
+      REVOKED=$((REVOKED + 1))
+    else
+      FAILED=$((FAILED + 1))
+    fi
+  done
+  log "Old lease revocation complete"
+elif [[ "$OLD_LEASE_COUNT" -gt 0 ]]; then
+  log "Old leases (${OLD_LEASE_COUNT}) will expire naturally"
+  log "Use --revoke-old to revoke immediately after grace period"
+fi
+
+notify "Rotated credentials for role '${ROLE}'. New user: ${NEW_USER}. Old leases: ${OLD_LEASE_COUNT}."
+log "Rotation complete for role: ${ROLE}"

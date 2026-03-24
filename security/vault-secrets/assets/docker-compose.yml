@@ -1,0 +1,280 @@
+# Vault HA Cluster with Raft Storage, UI, and Monitoring
+#
+# Usage:
+#   docker compose up -d                          # Start cluster
+#   docker compose exec vault-1 vault operator init  # Initialize
+#   docker compose exec vault-1 vault operator unseal # Unseal (repeat 3x)
+#   docker compose down -v                        # Teardown
+#
+# Architecture:
+#   - 3-node Vault cluster with Raft integrated storage
+#   - Prometheus metrics collection
+#   - Grafana dashboard for monitoring
+#   - All nodes expose UI on different ports
+#
+# Ports:
+#   8200 — vault-1 (API + UI)
+#   8210 — vault-2 (API + UI)
+#   8220 — vault-3 (API + UI)
+#   9090 — Prometheus
+#   3000 — Grafana (admin/admin)
+
+services:
+  # --- Vault Node 1 (Bootstrap Leader) ---
+  vault-1:
+    image: hashicorp/vault:1.18.3
+    container_name: vault-1
+    hostname: vault-1
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_ADDR: "http://127.0.0.1:8200"
+      VAULT_API_ADDR: "http://vault-1:8200"
+      VAULT_CLUSTER_ADDR: "http://vault-1:8201"
+    volumes:
+      - vault-1-data:/vault/data
+      - vault-1-logs:/vault/logs
+    configs:
+      - source: vault-1-config
+        target: /vault/config/vault.hcl
+    command: server -config=/vault/config/vault.hcl
+    networks:
+      - vault-net
+    healthcheck:
+      test: ["CMD", "vault", "status", "-tls-skip-verify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # --- Vault Node 2 ---
+  vault-2:
+    image: hashicorp/vault:1.18.3
+    container_name: vault-2
+    hostname: vault-2
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8210:8200"
+    environment:
+      VAULT_ADDR: "http://127.0.0.1:8200"
+      VAULT_API_ADDR: "http://vault-2:8200"
+      VAULT_CLUSTER_ADDR: "http://vault-2:8201"
+    volumes:
+      - vault-2-data:/vault/data
+      - vault-2-logs:/vault/logs
+    configs:
+      - source: vault-2-config
+        target: /vault/config/vault.hcl
+    command: server -config=/vault/config/vault.hcl
+    networks:
+      - vault-net
+    depends_on:
+      vault-1:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "vault", "status", "-tls-skip-verify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # --- Vault Node 3 ---
+  vault-3:
+    image: hashicorp/vault:1.18.3
+    container_name: vault-3
+    hostname: vault-3
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8220:8200"
+    environment:
+      VAULT_ADDR: "http://127.0.0.1:8200"
+      VAULT_API_ADDR: "http://vault-3:8200"
+      VAULT_CLUSTER_ADDR: "http://vault-3:8201"
+    volumes:
+      - vault-3-data:/vault/data
+      - vault-3-logs:/vault/logs
+    configs:
+      - source: vault-3-config
+        target: /vault/config/vault.hcl
+    command: server -config=/vault/config/vault.hcl
+    networks:
+      - vault-net
+    depends_on:
+      vault-1:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "vault", "status", "-tls-skip-verify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  # --- Prometheus (Metrics Collection) ---
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: vault-prometheus
+    ports:
+      - "9090:9090"
+    configs:
+      - source: prometheus-config
+        target: /etc/prometheus/prometheus.yml
+    networks:
+      - vault-net
+    depends_on:
+      - vault-1
+    restart: unless-stopped
+
+  # --- Grafana (Dashboard) ---
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: vault-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    configs:
+      - source: grafana-datasource
+        target: /etc/grafana/provisioning/datasources/prometheus.yml
+    networks:
+      - vault-net
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+# --- Inline Configs ---
+configs:
+  vault-1-config:
+    content: |
+      ui            = true
+      disable_mlock = true
+      log_level     = "info"
+
+      storage "raft" {
+        path    = "/vault/data"
+        node_id = "vault-1"
+        retry_join { leader_api_addr = "http://vault-2:8200" }
+        retry_join { leader_api_addr = "http://vault-3:8200" }
+      }
+
+      listener "tcp" {
+        address         = "0.0.0.0:8200"
+        cluster_address = "0.0.0.0:8201"
+        tls_disable     = 1
+      }
+
+      api_addr     = "http://vault-1:8200"
+      cluster_addr = "http://vault-1:8201"
+
+      telemetry {
+        prometheus_retention_time = "30s"
+        disable_hostname          = true
+      }
+
+  vault-2-config:
+    content: |
+      ui            = true
+      disable_mlock = true
+      log_level     = "info"
+
+      storage "raft" {
+        path    = "/vault/data"
+        node_id = "vault-2"
+        retry_join { leader_api_addr = "http://vault-1:8200" }
+        retry_join { leader_api_addr = "http://vault-3:8200" }
+      }
+
+      listener "tcp" {
+        address         = "0.0.0.0:8200"
+        cluster_address = "0.0.0.0:8201"
+        tls_disable     = 1
+      }
+
+      api_addr     = "http://vault-2:8200"
+      cluster_addr = "http://vault-2:8201"
+
+      telemetry {
+        prometheus_retention_time = "30s"
+        disable_hostname          = true
+      }
+
+  vault-3-config:
+    content: |
+      ui            = true
+      disable_mlock = true
+      log_level     = "info"
+
+      storage "raft" {
+        path    = "/vault/data"
+        node_id = "vault-3"
+        retry_join { leader_api_addr = "http://vault-1:8200" }
+        retry_join { leader_api_addr = "http://vault-2:8200" }
+      }
+
+      listener "tcp" {
+        address         = "0.0.0.0:8200"
+        cluster_address = "0.0.0.0:8201"
+        tls_disable     = 1
+      }
+
+      api_addr     = "http://vault-3:8200"
+      cluster_addr = "http://vault-3:8201"
+
+      telemetry {
+        prometheus_retention_time = "30s"
+        disable_hostname          = true
+      }
+
+  prometheus-config:
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+
+      scrape_configs:
+        - job_name: "vault"
+          metrics_path: "/v1/sys/metrics"
+          params:
+            format: ["prometheus"]
+          scheme: "http"
+          static_configs:
+            - targets:
+                - "vault-1:8200"
+                - "vault-2:8200"
+                - "vault-3:8200"
+
+  grafana-datasource:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          access: proxy
+          url: http://prometheus:9090
+          isDefault: true
+          editable: true
+
+# --- Volumes ---
+volumes:
+  vault-1-data:
+  vault-1-logs:
+  vault-2-data:
+  vault-2-logs:
+  vault-3-data:
+  vault-3-logs:
+  grafana-data:
+
+# --- Networks ---
+networks:
+  vault-net:
+    driver: bridge
