@@ -1,0 +1,152 @@
+# Continuous Deployment Workflow
+# Multi-stage deploy with OIDC auth, environment approvals, and smoke tests.
+# Prerequisites:
+#   - Configure environments (staging, production) in repo Settings → Environments
+#   - Set up OIDC trust with your cloud provider
+#   - Add required reviewers to the production environment
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: staging
+      skip-tests:
+        description: 'Skip test stage'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.meta.outputs.version }}
+      image-digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+
+      - uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  test:
+    name: Integration Tests
+    needs: build
+    if: github.event.inputs.skip-tests != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          echo "Running integration tests against image: ${{ needs.build.outputs.image-tag }}"
+          # docker run --rm ghcr.io/${{ github.repository }}:${{ needs.build.outputs.image-tag }} test
+
+  deploy-staging:
+    name: Deploy to Staging
+    needs: [build, test]
+    if: always() && needs.build.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped')
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.example.com
+    steps:
+      # OIDC authentication — no stored credentials
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying ${{ needs.build.outputs.image-tag }} to staging"
+          # aws ecs update-service --cluster staging --service app \
+          #   --force-new-deployment \
+          #   --task-definition "app:${{ needs.build.outputs.image-tag }}"
+
+      - name: Smoke test
+        run: |
+          echo "Running smoke tests against staging"
+          # for i in {1..30}; do
+          #   if curl -sf https://staging.example.com/health; then
+          #     echo "Staging is healthy"
+          #     exit 0
+          #   fi
+          #   sleep 10
+          # done
+          # echo "Staging health check failed"
+          # exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    needs: [build, deploy-staging]
+    if: (github.event.inputs.environment == 'production') || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://example.com
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying ${{ needs.build.outputs.image-tag }} to production"
+          # aws ecs update-service --cluster production --service app \
+          #   --force-new-deployment
+
+      - name: Verify deployment
+        run: |
+          echo "Verifying production deployment"
+          # curl -sf https://example.com/health
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Production deployment failed!"
+          # Post to Slack, PagerDuty, etc.

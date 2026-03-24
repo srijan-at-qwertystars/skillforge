@@ -1,0 +1,116 @@
+# Composite Action Template
+# Place in: .github/actions/<action-name>/action.yml
+# Use with: uses: ./.github/actions/<action-name>
+#
+# Composite actions:
+#   - MUST specify `shell:` on every `run:` step
+#   - Cannot define `services:` or `container:`
+#   - Can use other actions with `uses:`
+#   - Can set outputs from steps
+#   - Support if: conditions on steps
+
+name: 'Setup, Build, and Test'
+description: 'Composite action to set up the environment, install dependencies, build, and run tests'
+author: 'your-org'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '20'
+  install-command:
+    description: 'Command to install dependencies'
+    required: false
+    default: 'npm ci'
+  build-command:
+    description: 'Command to build the project'
+    required: false
+    default: 'npm run build'
+  test-command:
+    description: 'Command to run tests'
+    required: false
+    default: 'npm test'
+  working-directory:
+    description: 'Working directory for commands'
+    required: false
+    default: '.'
+  enable-coverage:
+    description: 'Whether to collect test coverage'
+    required: false
+    default: 'false'
+
+outputs:
+  coverage-percentage:
+    description: 'Test coverage percentage (if enabled)'
+    value: ${{ steps.test.outputs.coverage }}
+  build-duration:
+    description: 'Build duration in seconds'
+    value: ${{ steps.build.outputs.duration }}
+  cache-hit:
+    description: 'Whether the dependency cache was hit'
+    value: ${{ steps.cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Cache dependencies
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          node_modules
+          ~/.npm
+        key: ${{ runner.os }}-node-${{ inputs.node-version }}-${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-node-${{ inputs.node-version }}-
+          ${{ runner.os }}-node-
+
+    - name: Install dependencies
+      if: steps.cache.outputs.cache-hit != 'true'
+      working-directory: ${{ inputs.working-directory }}
+      run: ${{ inputs.install-command }}
+      shell: bash
+
+    - name: Build
+      id: build
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        START=$(date +%s)
+        ${{ inputs.build-command }}
+        END=$(date +%s)
+        echo "duration=$((END - START))" >> "$GITHUB_OUTPUT"
+      shell: bash
+
+    - name: Test
+      id: test
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [[ "${{ inputs.enable-coverage }}" == "true" ]]; then
+          ${{ inputs.test-command }} -- --coverage 2>&1 | tee test-output.txt
+          COVERAGE=$(grep 'All files' test-output.txt | awk '{print $4}' || echo "unknown")
+          echo "coverage=${COVERAGE}" >> "$GITHUB_OUTPUT"
+          rm -f test-output.txt
+        else
+          ${{ inputs.test-command }}
+          echo "coverage=not-collected" >> "$GITHUB_OUTPUT"
+        fi
+      shell: bash
+
+# --- USAGE EXAMPLE ---
+# jobs:
+#   ci:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: ./.github/actions/setup-build-test
+#         id: ci
+#         with:
+#           node-version: '20'
+#           enable-coverage: 'true'
+#       - run: echo "Coverage: ${{ steps.ci.outputs.coverage-percentage }}"
+#       - run: echo "Build took ${{ steps.ci.outputs.build-duration }}s"

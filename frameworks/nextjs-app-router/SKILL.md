@@ -202,16 +202,12 @@ export async function generateStaticParams() {
 
 ### Route Groups `(name)`
 
-Organize routes without affecting URL. Wrap folder name in parentheses.
+Organize routes without affecting URL. Each group can have its own `layout.tsx`.
 
 ```
 app/(marketing)/about/page.tsx   → /about
 app/(shop)/products/page.tsx     → /products
 ```
-
-Each group can have its own `layout.tsx` for distinct layouts per section.
-
-### Parallel Routes `@slot`
 
 Render multiple pages simultaneously in the same layout. Prefix folder with `@`.
 
@@ -379,16 +375,8 @@ import heroImg from "@/public/hero.jpg";
 // Local: auto width/height, blur placeholder
 <Image src={heroImg} alt="Hero" placeholder="blur" priority />
 
-// Remote: must specify dimensions
+// Remote: must specify dimensions + configure remotePatterns in next.config.ts
 <Image src="https://cdn.example.com/photo.jpg" alt="Photo" width={800} height={600} />
-```
-
-Configure remote patterns in `next.config.ts`:
-
-```ts
-const nextConfig = {
-  images: { remotePatterns: [{ protocol: "https", hostname: "cdn.example.com" }] },
-};
 ```
 
 Use `priority` on LCP images. Use `sizes` for responsive. Prefer `fill` with `object-fit` for dynamic aspect ratios.
@@ -433,25 +421,10 @@ Push to Git. Vercel auto-detects Next.js. Supports all features: SSR, ISR, middl
 
 ### Docker (standalone)
 
+Set `output: "standalone"` in next.config.ts. See [`assets/Dockerfile`](assets/Dockerfile) for production multi-stage build.
+
 ```ts
-// next.config.ts
 const nextConfig = { output: "standalone" };
-```
-
-```dockerfile
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-
-FROM node:20-alpine AS runner
-WORKDIR /app
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
-CMD ["node", "server.js"]
 ```
 
 ### Static Export
@@ -464,10 +437,9 @@ CMD ["node", "server.js"]
 
 ```tsx
 import dynamic from "next/dynamic";
-
 const HeavyChart = dynamic(() => import("@/components/chart"), {
   loading: () => <p>Loading chart...</p>,
-  ssr: false, // Skip server rendering for browser-only components
+  ssr: false,
 });
 ```
 
@@ -484,7 +456,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ### Partial Prerendering (Experimental)
 
-Enable with `experimental: { ppr: true }` in next.config.ts. Combines static shell with dynamic Suspense holes — static parts serve instantly from CDN, dynamic parts stream in.
+Enable with `experimental: { ppr: true }`. Static shell from CDN, dynamic Suspense holes stream in. See [`references/advanced-patterns.md`](references/advanced-patterns.md#partial-prerendering-ppr).
 
 ## Common Pitfalls
 
@@ -498,3 +470,31 @@ Enable with `experimental: { ppr: true }` in next.config.ts. Combines static she
 8. **Not using `loading.tsx`.** Missing loading states cause blank screens during navigation. Add them to data-heavy routes.
 9. **Hydration mismatches.** Don't use `Date.now()`, `Math.random()`, or browser-only globals in shared render paths. Guard with `useEffect`.
 10. **Over-fetching in layouts.** Layouts don't re-render on navigation. Fetch route-specific data in `page.tsx`, not `layout.tsx`.
+
+---
+
+## References
+
+Deep-dive guides (self-contained, with TOC):
+
+- **[`references/advanced-patterns.md`](references/advanced-patterns.md)** — Parallel routes, intercepting routes, streaming, server action patterns, PPR, caching, ISR, i18n, multi-tenant, layouts, error boundaries, middleware
+- **[`references/troubleshooting.md`](references/troubleshooting.md)** — "use client" issues, hydration, caching, server actions, static/dynamic, bundles, images, deployment, TypeScript, RSC compat
+- **[`references/deployment-guide.md`](references/deployment-guide.md)** — Vercel, Docker, Node.js, static export, CDN, env vars, health checks, logging, monitoring, Edge vs Node, self-hosted ISR
+
+## Scripts
+
+Run from project root:
+
+- **[`scripts/nextjs-init.sh`](scripts/nextjs-init.sh)** `<project-name>` — Scaffold Next.js 15 + TypeScript + Tailwind + ESLint + `src/`
+- **[`scripts/route-generator.sh`](scripts/route-generator.sh)** `<path> [--api]` — Generate page, layout, loading, error (or route handler with `--api`)
+- **[`scripts/component-generator.sh`](scripts/component-generator.sh)** `<name> <server|client>` — Generate component with proper conventions
+
+## Assets
+
+Production templates — copy and adapt:
+
+- **[`assets/next.config.ts`](assets/next.config.ts)** — Images, security headers, redirects, rewrites, standalone output
+- **[`assets/middleware.ts`](assets/middleware.ts)** — Auth, locale detection, rate limiting, security headers
+- **[`assets/Dockerfile`](assets/Dockerfile)** — Multi-stage standalone build, non-root user, health check
+- **[`assets/docker-compose.yml`](assets/docker-compose.yml)** — Next.js + Postgres + Redis dev environment
+- **[`assets/server-action-template.ts`](assets/server-action-template.ts)** — Zod validation, error handling, revalidation, CRUD

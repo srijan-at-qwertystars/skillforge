@@ -103,8 +103,7 @@ PFMERGE unique:visitors:q1 unique:visitors:2024-01 unique:visitors:2024-02
 ```
 
 ### Bitmaps
-Bit-level operations on strings. Use for feature flags, bloom-filter-like checks, daily active users.
-
+Bit-level operations on strings. Use for feature flags, daily active users.
 ```redis
 SETBIT active:2024-01-15 1001 1        -- mark user 1001 active
 GETBIT active:2024-01-15 1001          -- 1
@@ -114,7 +113,6 @@ BITOP AND active:both day1 day2        -- users active both days
 
 ### Geospatial
 Longitude/latitude indexing built on sorted sets.
-
 ```redis
 GEOADD stores -73.935242 40.730610 "nyc" -118.243685 34.052234 "la"
 GEODIST stores "nyc" "la" km           -- distance in km
@@ -164,28 +162,14 @@ Pub/Sub clients cannot run other commands while subscribed. Use a dedicated conn
 ## Streams — Consumer Groups
 
 Durable, replayable message processing with consumer groups:
-
 ```redis
--- Create consumer group starting from beginning
-XGROUP CREATE events mygroup 0 MKSTREAM
-
--- Consumer reads from group (blocks 5s)
-XREADGROUP GROUP mygroup consumer1 COUNT 10 BLOCK 5000 STREAMS events >
-
--- Acknowledge processed messages
-XACK events mygroup "1234567890123-0" "1234567890124-0"
-
--- Check pending (unacknowledged) entries
-XPENDING events mygroup - + 10
-
--- Claim stale messages from dead consumers (idle > 60s)
-XCLAIM events mygroup consumer2 60000 "1234567890123-0"
-
--- Auto-claim (Redis 6.2+): claim + return in one step
-XAUTOCLAIM events mygroup consumer2 60000 0-0 COUNT 10
-
--- Trim stream to approximate max length
-XTRIM events MAXLEN ~ 10000
+XGROUP CREATE events mygroup 0 MKSTREAM          -- create consumer group
+XREADGROUP GROUP mygroup consumer1 COUNT 10 BLOCK 5000 STREAMS events >  -- read
+XACK events mygroup "1234567890123-0"             -- acknowledge
+XPENDING events mygroup - + 10                    -- check pending
+XCLAIM events mygroup consumer2 60000 "1234567890123-0"  -- claim stale
+XAUTOCLAIM events mygroup consumer2 60000 0-0 COUNT 10   -- auto-claim (6.2+)
+XTRIM events MAXLEN ~ 10000                       -- trim to ~10K entries
 ```
 
 Pattern: Use `>` to read only new messages. Use specific IDs to re-read pending messages.
@@ -284,13 +268,12 @@ Write to cache immediately, async flush to database. Higher throughput, risk of 
 - **Event-driven**: Publish invalidation events on write. Use Pub/Sub or Streams.
 - **Tag-based**: Track cache keys by tag set, invalidate all keys in a tag.
 
-Anti-pattern: Never cache without TTL. Unbounded caches cause OOM.
+Anti-pattern: Never cache without TTL. Unbounded caches cause OOM. See [`assets/cache-patterns.py`](assets/cache-patterns.py) for implementations.
 
 ## Rate Limiting
 
 ### Fixed Window
 ```redis
--- Allow 100 requests per minute per IP
 INCR rate:ip:10.0.0.1:minute:202401151430
 EXPIRE rate:ip:10.0.0.1:minute:202401151430 60
 -- check: if value > 100, reject
@@ -298,31 +281,13 @@ EXPIRE rate:ip:10.0.0.1:minute:202401151430 60
 
 ### Sliding Window (Sorted Set)
 ```redis
--- Add request timestamp as score and member
 ZADD rate:user:1001 1705334400.123 "req-uuid-1"
--- Remove entries older than window (60s ago)
 ZREMRANGEBYSCORE rate:user:1001 0 1705334340.123
--- Count remaining
 ZCARD rate:user:1001  -- if > 100, reject
 EXPIRE rate:user:1001 60
 ```
 
-### Token Bucket (Lua)
-```redis
-EVAL [[
-  local tokens = tonumber(redis.call('get', KEYS[1]) or ARGV[1])
-  local last = tonumber(redis.call('get', KEYS[2]) or ARGV[3])
-  local now = tonumber(ARGV[3])
-  local rate = tonumber(ARGV[2])
-  local max = tonumber(ARGV[1])
-  tokens = math.min(max, tokens + (now - last) * rate)
-  if tokens < 1 then return 0 end
-  tokens = tokens - 1
-  redis.call('set', KEYS[1], tokens)
-  redis.call('set', KEYS[2], now)
-  return 1
-]] 2 bucket:tokens:user1 bucket:ts:user1 10 2 <current_timestamp>
-```
+See [`assets/rate-limiter.lua`](assets/rate-limiter.lua) for a production sliding-window Lua implementation.
 
 ## Distributed Locks
 
@@ -496,3 +461,31 @@ BF.EXISTS filter:emails "other@example.com"   -- 0 (definitely not)
 10. **DEL on large keys**: Blocks server. Use UNLINK (async delete) for keys >1000 members.
 11. **No connection pooling**: Creating connections per request kills performance.
 12. **Ignoring SLOWLOG**: `SLOWLOG GET 10` — review slow commands regularly.
+
+## Additional Resources
+
+### References (Deep-Dive Guides)
+
+| File | Topics |
+|------|--------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Redis Functions (replacing EVAL), client-side caching (RESP3), probabilistic data structures (Bloom, CMS, Top-K, t-digest), RediSearch + vector similarity, RedisJSON paths, TimeSeries, pub/sub vs Streams, sharded pub/sub, keyspace notifications, modules architecture |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Memory pressure/eviction, slow commands, connection pool exhaustion, replication lag, cluster slot migration, AOF rewrite failures, hot keys, big keys, latency spikes (fork, fsync, swap), client output buffer overflow, Sentinel failover, split-brain, memory fragmentation |
+| [`references/operations-guide.md`](references/operations-guide.md) | Deployment topologies (standalone/Sentinel/Cluster), capacity planning, memory estimation, CONFIG tuning, OS tuning, monitoring (INFO, SLOWLOG, LATENCY, Prometheus), backup strategies, upgrades, security hardening (ACLs, TLS, network), Docker/K8s patterns |
+
+### Scripts (Ready-to-Run)
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [`scripts/redis-local.sh`](scripts/redis-local.sh) | Start Redis locally with Docker | `./redis-local.sh [standalone\|cluster\|sentinel]` |
+| [`scripts/redis-health-check.sh`](scripts/redis-health-check.sh) | Check Redis health: memory, connections, replication, keyspace, slow log | `./redis-health-check.sh [host:port] [password]` |
+| [`scripts/redis-benchmark.sh`](scripts/redis-benchmark.sh) | Run redis-benchmark with common patterns | `./redis-benchmark.sh [host:port] [quick\|standard\|pipeline\|throughput\|latency\|data-sizes\|all]` |
+
+### Assets (Templates and Code)
+
+| File | Description |
+|------|-------------|
+| [`assets/docker-compose.yml`](assets/docker-compose.yml) | Redis Stack dev environment with RedisInsight UI |
+| [`assets/redis-cluster-compose.yml`](assets/redis-cluster-compose.yml) | 6-node Redis Cluster docker-compose |
+| [`assets/redis.conf`](assets/redis.conf) | Production redis.conf with tuned settings, ACLs, persistence, lazy-free |
+| [`assets/rate-limiter.lua`](assets/rate-limiter.lua) | Sliding window rate limiter Lua script |
+| [`assets/cache-patterns.py`](assets/cache-patterns.py) | Python: cache-aside, write-through, distributed lock, cached decorator |

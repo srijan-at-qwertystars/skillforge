@@ -158,6 +158,6 @@
 | python | sqlalchemy-patterns | SQLAlchemy 2.0 — ORM, Core, async, Alembic migrations, relationships, performance | tested |
 | observability | grafana-dashboards | Grafana dashboards — panels, PromQL, alerting, provisioning, LGTM stack, variables | tested |
 | rust | rust-async | Rust async patterns — tokio, futures, channels, axum, graceful shutdown, tracing | tested |
-| databases | redis-patterns | Redis 7.x — data structures, caching, Pub/Sub, Streams, Cluster, Lua scripting, rate limiting | created |
-| ci-cd | github-actions | GitHub Actions — workflows, triggers, matrix, reusable workflows, composite actions, security | created |
-| frameworks | nextjs-app-router | Next.js 15 App Router — Server Components, Server Actions, caching, middleware, streaming | created |
+| databases | redis-patterns | Redis 7.x — data structures, caching, Pub/Sub, Streams, Cluster, Lua scripting, rate limiting | enriched |
+| ci-cd | github-actions | GitHub Actions — workflows, triggers, matrix, reusable workflows, composite actions, security | enriched |
+| frameworks | nextjs-app-router | Next.js 15 App Router — Server Components, Server Actions, caching, middleware, streaming | enriched |

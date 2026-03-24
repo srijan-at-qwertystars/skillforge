@@ -1,0 +1,155 @@
+# Reusable Workflow Template
+# Call from another workflow with: uses: ./.github/workflows/reusable-workflow.yml
+# or cross-repo: uses: org/repo/.github/workflows/reusable-workflow.yml@main
+#
+# Constraints:
+#   - Max 4 levels of reusable workflow nesting
+#   - Max 20 reusable workflow calls per workflow file
+#   - Reusable workflow jobs cannot be mixed with regular steps
+
+name: Reusable Deploy
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Deployment environment (staging, production)'
+        required: true
+        type: string
+      image-tag:
+        description: 'Docker image tag to deploy'
+        required: true
+        type: string
+      dry-run:
+        description: 'If true, show what would be deployed without deploying'
+        required: false
+        type: boolean
+        default: false
+      timeout:
+        description: 'Deployment timeout in minutes'
+        required: false
+        type: number
+        default: 15
+
+    outputs:
+      deploy-url:
+        description: 'URL of the deployed application'
+        value: ${{ jobs.deploy.outputs.url }}
+      deploy-status:
+        description: 'Deployment status (success, failed, skipped)'
+        value: ${{ jobs.deploy.outputs.status }}
+
+    secrets:
+      DEPLOY_TOKEN:
+        description: 'Token for deployment API'
+        required: true
+      SLACK_WEBHOOK:
+        description: 'Slack webhook for notifications'
+        required: false
+      # Or use: secrets: inherit  (in the caller)
+
+jobs:
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check environment
+        run: |
+          VALID_ENVS="staging production"
+          if [[ ! " $VALID_ENVS " =~ " ${{ inputs.environment }} " ]]; then
+            echo "::error::Invalid environment: '${{ inputs.environment }}'. Must be one of: $VALID_ENVS"
+            exit 1
+          fi
+
+      - name: Check image tag
+        run: |
+          if [[ -z "${{ inputs.image-tag }}" ]]; then
+            echo "::error::image-tag is required"
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout }}
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+      status: ${{ steps.deploy.outputs.status }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy
+        id: deploy
+        run: |
+          if [[ "${{ inputs.dry-run }}" == "true" ]]; then
+            echo "DRY RUN: Would deploy ${{ inputs.image-tag }} to ${{ inputs.environment }}"
+            echo "url=https://${{ inputs.environment }}.example.com" >> "$GITHUB_OUTPUT"
+            echo "status=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Deploying ${{ inputs.image-tag }} to ${{ inputs.environment }}..."
+          # TODO: Replace with actual deployment commands
+          # e.g., kubectl set image deployment/app app=${{ inputs.image-tag }}
+          echo "url=https://${{ inputs.environment }}.example.com" >> "$GITHUB_OUTPUT"
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+
+      - name: Health check
+        if: inputs.dry-run == false
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          echo "Checking health at ${URL}/health..."
+          # for i in {1..30}; do
+          #   if curl -sf "${URL}/health"; then exit 0; fi
+          #   sleep 10
+          # done
+          # exit 1
+
+  notify:
+    name: Notify
+    needs: deploy
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send notification
+        run: |
+          STATUS="${{ needs.deploy.outputs.status }}"
+          URL="${{ needs.deploy.outputs.url }}"
+          echo "Deployment to ${{ inputs.environment }}: ${STATUS}"
+          echo "URL: ${URL}"
+          # if [[ -n "$SLACK_WEBHOOK" ]]; then
+          #   curl -X POST "$SLACK_WEBHOOK" \
+          #     -H 'Content-type: application/json' \
+          #     -d "{\"text\":\"Deploy ${{ inputs.image-tag }} to ${{ inputs.environment }}: ${STATUS} — ${URL}\"}"
+          # fi
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+
+# --- CALLER EXAMPLE ---
+# name: CD
+# on:
+#   push:
+#     branches: [main]
+# jobs:
+#   deploy-staging:
+#     uses: ./.github/workflows/reusable-workflow.yml
+#     with:
+#       environment: staging
+#       image-tag: ghcr.io/org/app:${{ github.sha }}
+#     secrets:
+#       DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+#       SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+#
+#   deploy-production:
+#     needs: deploy-staging
+#     uses: ./.github/workflows/reusable-workflow.yml
+#     with:
+#       environment: production
+#       image-tag: ghcr.io/org/app:${{ github.sha }}
+#     secrets: inherit

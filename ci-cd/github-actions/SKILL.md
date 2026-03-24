@@ -105,10 +105,10 @@ jobs:
 ```
 
 Set outputs from steps using `>> "$GITHUB_OUTPUT"`. Pass between jobs via `needs.<job>.outputs.<name>`.
+
 ## Expressions and Contexts
 
 Use `${{ }}` for expressions. Available contexts:
-
 | Context | Common Properties |
 |---|---|
 | `github` | `ref`, `sha`, `event_name`, `actor`, `repository`, `run_id`, `workflow`, `event` |
@@ -250,7 +250,6 @@ Artifacts persist across jobs within a workflow run. Default retention: 90 days.
 - Use `hashFiles()` on lockfiles for deterministic keys. `restore-keys` provide fallback partial matches.
 - Cache limit: 10 GB per repo. Entries evicted after 7 days of no access.
 - Many `setup-*` actions have built-in caching (`cache: 'npm'`). Prefer built-in over manual `actions/cache`.
-
 ## Docker Container Actions and Services
 
 ```yaml
@@ -394,6 +393,8 @@ Set at workflow level for baseline, override per job for escalation. For `pull_r
 
 ## Security Best Practices
 
+See [security-guide.md](references/security-guide.md) for comprehensive coverage.
+
 1. **Pin actions to full commit SHA** — tags can be repointed maliciously. Add version comment: `# v4.1.1`.
 2. **Minimal `GITHUB_TOKEN` permissions** — start with `contents: read`, add only what's needed.
 3. **Never interpolate untrusted input in `run:`** — use `env:` mapping to prevent script injection.
@@ -411,16 +412,12 @@ Set at workflow level for baseline, override per job for escalation. For `pull_r
 6. **Avoid `pull_request_target` with fork checkout** — attacker-controlled code runs with write permissions.
 7. **Use environment protection rules** for production deployments.
 8. **Enable secret scanning and push protection** on the repository.
-9. **Audit third-party actions** — prefer `actions/*` (GitHub-maintained) and verified creators.
-10. **Use `--health-cmd`** on service containers to avoid race conditions.
 
 ## Debugging
 
 - Set repo secret `ACTIONS_RUNNER_DEBUG=true` and `ACTIONS_STEP_DEBUG=true` for verbose logs.
-- Re-run failed jobs with "Enable debug logging" in the UI.
-- Use `::debug::`, `::warning::`, `::error::` workflow commands for annotations.
-- Use [`nektos/act`](https://github.com/nektos/act) to run workflows locally. Use [`actionlint`](https://github.com/rhysd/actionlint) to lint YAML before pushing.
-- Print `${{ toJSON(github) }}` to inspect the full event payload.
+- Use `::debug::`, `::warning::`, `::error::` workflow commands. Re-run failed jobs with debug logging in the UI.
+- Use [`nektos/act`](https://github.com/nektos/act) locally and [`actionlint`](https://github.com/rhysd/actionlint) to lint YAML. See [troubleshooting.md](references/troubleshooting.md) for detailed solutions.
 
 ## Performance Optimization
 
@@ -428,22 +425,18 @@ Set at workflow level for baseline, override per job for escalation. For `pull_r
 2. **Matrix parallelism** — split tests across matrix legs.
 3. **Conditional steps** — skip expensive steps with `if:` guards.
 4. **Shallow clones** — `fetch-depth: 1` (default) when full history isn't needed.
-5. **Concurrency groups** — cancel superseded runs.
+5. **Concurrency groups** — cancel superseded runs. **Path filters** — trigger only on relevant changes.
 6. **Larger runners** for CPU/memory-intensive builds (GitHub Team/Enterprise).
-7. **Path filters** — split into focused workflows that only trigger on relevant changes.
 
 ## Common Patterns
 
-### CI Pipeline
+See full production-ready templates in `assets/`. Quick starters:
+
 ```yaml
+# CI — see assets/ci-workflow.yml for full matrix version
 name: CI
-on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-permissions:
-  contents: read
+on: [push, pull_request]
+permissions: { contents: read }
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -451,17 +444,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: npm }
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-```
+      - run: npm ci && npm run lint && npm test && npm run build
 
-### Release with Tag
-```yaml
+# Release — see assets/release-workflow.yml
 on:
-  push:
-    tags: ['v*']
+  push: { tags: ['v*'] }
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -473,28 +460,41 @@ jobs:
         with: { files: 'dist/*', generate_release_notes: true }
 ```
 
-### Scheduled Maintenance
-```yaml
-on:
-  schedule:
-    - cron: '0 6 * * 1'  # Every Monday 6 AM UTC
-jobs:
-  cleanup:
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Weekly cleanup"
-```
-
 ## Common Pitfalls
 
-- **`paths` filter with required status checks**: If a PR only changes excluded paths, the check never runs and blocks merge. Use `paths-ignore` carefully or add a "skip" workflow.
-- **`schedule` only runs on default branch**: Cron workflows on feature branches are ignored.
-- **Missing `shell: bash` in composite actions**: Every `run:` in a composite action requires explicit `shell:`.
-- **`GITHUB_TOKEN` in forks**: Always read-only for `pull_request` events from forks. Use `pull_request_target` with extreme caution.
-- **Artifact name collisions in v4**: `upload-artifact@v4` does not allow multiple uploads with the same name. Use unique names.
-- **Cache key misses**: Over-specific keys cause constant misses. Use `restore-keys` for fallback.
-- **`needs` context availability**: Job outputs are only available to jobs that declare `needs:` on the producing job.
-- **Expression syntax in `if:`**: `if:` conditions are automatically wrapped in `${{ }}` — don't double-wrap. But `env` contexts in `if:` do need explicit `${{ }}`.
-- **`continue-on-error` vs `if: failure()`**: `continue-on-error: true` sets outcome to `success` even on failure. Check `steps.<id>.outcome` for the real result.
-- **Exit code 137**: Out-of-memory kill. Increase runner size or reduce parallelism.
-- **Stale caches**: Caches are immutable once created. Change the key to force a fresh cache.
+See [troubleshooting.md](references/troubleshooting.md) for detailed solutions.
+
+- **`paths` filter + required checks**: PR with only excluded paths → check never runs → blocks merge.
+- **`schedule` only runs on default branch**. **Missing `shell: bash`** in composite `run:` steps.
+- **`GITHUB_TOKEN` in forks**: Always read-only for `pull_request` from forks.
+- **Artifact name collisions in v4**: Requires unique names. **Cache key misses**: Use `restore-keys`.
+- **`needs` context**: Outputs only available to jobs declaring `needs:` on the producer.
+- **`if:` auto-wraps in `${{ }}`** — don't double-wrap. **Exit code 137**: OOM kill.
+
+## Extended References
+
+### Deep-Dive Guides (references/)
+
+| Guide | Topics |
+|---|---|
+| [advanced-patterns.md](references/advanced-patterns.md) | Custom JS/Docker actions, `action.yml` metadata, GitHub API (octokit, `gh` CLI), dynamic matrix generation, `workflow_run` chaining, deployment environments, OIDC (AWS/GCP/Azure), GitHub Packages, release automation (semantic-release, changesets), monorepo strategies (paths filter, Nx, Turborepo), self-hosted runners, ephemeral runners, ARC |
+| [troubleshooting.md](references/troubleshooting.md) | Workflow not triggering, permission denied, `GITHUB_TOKEN` scope limits, cache misses, artifact failures, disk space, Docker caching, secret masking, concurrency conflicts, matrix failures, reusable workflow validation, action pinning, rate limits, self-hosted runner connectivity |
+| [security-guide.md](references/security-guide.md) | Supply chain attacks (typosquatting, action compromise), SHA pinning, minimal permissions, OIDC secretless auth, environment protection rules, branch protection, Dependabot for actions, CodeQL, secret scanning, SARIF upload, attestation/provenance (SLSA), script injection prevention, self-hosted runner hardening |
+
+### Workflow Templates (assets/)
+
+| Template | Use Case |
+|---|---|
+| [ci-workflow.yml](assets/ci-workflow.yml) | Production CI: lint → test (matrix, multi-OS) → build, with caching |
+| [cd-workflow.yml](assets/cd-workflow.yml) | CD: Docker build → staging (OIDC) → smoke test → production (approval gate) |
+| [release-workflow.yml](assets/release-workflow.yml) | Release on tag push: build → GitHub Release with changelog → npm publish → Docker publish |
+| [reusable-workflow.yml](assets/reusable-workflow.yml) | Reusable deploy workflow with typed inputs, outputs, secrets, validation, and caller example |
+| [composite-action/action.yml](assets/composite-action/action.yml) | Composite action: setup → cache → install → build → test, with outputs |
+
+### Scaffolding Scripts (scripts/)
+
+| Script | Purpose |
+|---|---|
+| [workflow-init.sh](scripts/workflow-init.sh) | Detect language and generate CI workflow. Supports Node, Python, Go, Rust, Java, Ruby, PHP, .NET. `./workflow-init.sh [lang]` |
+| [action-init.sh](scripts/action-init.sh) | Scaffold a custom action (JS, Docker, composite) with metadata, source, tests. `./action-init.sh <name> <type>` |
+| [workflow-lint.sh](scripts/workflow-lint.sh) | Lint workflow files with actionlint (auto-installs). `./workflow-lint.sh [file-or-dir]` |
