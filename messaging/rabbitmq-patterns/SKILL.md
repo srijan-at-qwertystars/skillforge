@@ -1,473 +1,433 @@
 ---
 name: rabbitmq-patterns
 description: >
-  Guide for RabbitMQ messaging patterns using AMQP 0-9-1. Use when: implementing RabbitMQ producers/consumers, configuring exchanges (direct, fanout, topic, headers), setting up dead letter queues, publisher confirms, consumer acknowledgments, prefetch/QoS tuning, quorum queues, RabbitMQ streams, clustering for high availability, RabbitMQ in Docker/Kubernetes, Shovel/Federation plugins, TLS/security/vhosts, or monitoring via management API. Do NOT use when: working with Apache Kafka for log streaming or event sourcing, NATS for lightweight pub/sub, AWS SQS/SNS, Google Pub/Sub, Azure Service Bus, Redis Streams, general message queue theory without RabbitMQ specifics, or ZeroMQ/nanomsg for broker-less messaging.
+  Guide for RabbitMQ messaging patterns using AMQP 0-9-1 and 1.0. Use when building message queuing systems, AMQP-based architectures, pub/sub messaging, work queues, RPC over messaging, dead letter exchanges, fan-out routing, topic-based routing, quorum queues, RabbitMQ streams, or priority queues. Covers connections, channels, exchanges, bindings, publisher confirms, consumer acks, clustering, TLS security, and monitoring. Do NOT use for Apache Kafka or event streaming platforms, Redis pub/sub, AWS SQS/SNS managed queues, simple in-process queues or channels (use language-native constructs), or real-time WebSocket communication (use socket.io or ws). Not suitable for event sourcing/log-based architectures where Kafka is the better fit.
 ---
 
 # RabbitMQ Messaging Patterns
 
-## AMQP 0-9-1 Model
+## Installation and Docker Setup
 
-### Connections and Channels
-Open one TCP connection per application instance. Multiplex work over channels (lightweight virtual connections). Use one channel per thread. Never share channels across threads.
+Run RabbitMQ with the management plugin via Docker:
 
-```python
-# Python (pika) — connection and channel setup
-import pika
+```bash
+# Single node with management UI
+docker run -d --name rabbitmq \
+  -p 5672:5672 -p 15672:15672 \
+  -e RABBITMQ_DEFAULT_USER=admin \
+  -e RABBITMQ_DEFAULT_PASS=secret \
+  rabbitmq:4.0-management
 
-credentials = pika.PlainCredentials('user', 'secret')
-params = pika.ConnectionParameters(
-    host='rabbitmq.example.com', port=5672,
-    virtual_host='/production', credentials=credentials,
-    heartbeat=60, blocked_connection_timeout=300
-)
-connection = pika.BlockingConnection(params)
-channel = connection.channel()
+# Docker Compose for development
+cat <<'EOF' > docker-compose.yml
+services:
+  rabbitmq:
+    image: rabbitmq:4.0-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "5552:5552"   # streams port
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: secret
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+volumes:
+  rabbitmq_data:
+EOF
+docker compose up -d
 ```
 
-### Exchanges
-Four exchange types route messages from producers to queues via bindings:
+Install on Linux directly:
 
-| Type | Routing Logic | Use Case |
-|------|--------------|----------|
-| `direct` | Exact routing key match | Task routing by key |
-| `fanout` | Broadcast to all bound queues | Event notifications |
-| `topic` | Wildcard pattern (`*` one word, `#` zero-or-more) | Hierarchical event filtering |
-| `headers` | Match on message headers (x-match: all/any) | Complex multi-attribute routing |
+```bash
+# Ubuntu/Debian (Erlang + RabbitMQ from Cloudsmith)
+sudo apt-get install -y erlang-base rabbitmq-server
+sudo rabbitmq-plugins enable rabbitmq_management
+sudo systemctl start rabbitmq-server
+```
+
+Access management UI at `http://localhost:15672` (admin/secret).
+
+## Core Concepts
+
+**Connection**: TCP connection from client to broker. Expensive to create — reuse across the application lifecycle. One connection per application process is typical.
+
+**Channel**: Lightweight virtual connection multiplexed over a single TCP connection. Use one channel per thread/coroutine. Never share channels across threads.
+
+**Exchange**: Receives messages from producers and routes them to queues based on bindings and routing keys. Messages are never stored in exchanges.
+
+**Queue**: Buffer that stores messages until consumed. Declare queues as durable for persistence across broker restarts.
+
+**Binding**: Rule linking an exchange to a queue with an optional routing key or header match.
+
+**Virtual Host (vhost)**: Logical grouping providing namespace isolation for exchanges, queues, and permissions. Use separate vhosts per application or environment.
+
+## Exchange Types
+
+### Direct Exchange
+Route messages by exact routing key match. Default exchange (`""`) routes to queue matching the routing key name.
 
 ```python
-# Declare exchanges
-channel.exchange_declare(exchange='orders', exchange_type='topic', durable=True)
+# Producer
+channel.exchange_declare(exchange='orders', exchange_type='direct', durable=True)
+channel.basic_publish(exchange='orders', routing_key='order.created',
+                      body=json.dumps(order), properties=pika.BasicProperties(delivery_mode=2))
+
+# Consumer
+channel.queue_declare(queue='order-processor', durable=True)
+channel.queue_bind(exchange='orders', queue='order-processor', routing_key='order.created')
+```
+
+### Fanout Exchange
+Broadcast to all bound queues. Routing key is ignored. Use for event broadcasting.
+
+```python
 channel.exchange_declare(exchange='events', exchange_type='fanout', durable=True)
-
-# Alternate exchange catches unroutable messages
-channel.exchange_declare(exchange='unrouted', exchange_type='fanout', durable=True)
-channel.exchange_declare(
-    exchange='orders', exchange_type='topic', durable=True,
-    arguments={'alternate-exchange': 'unrouted'}
-)
+channel.basic_publish(exchange='events', routing_key='', body=json.dumps(event))
+# Every bound queue receives a copy
 ```
 
-### Queues and Bindings
-Declare queues as durable for production. Bind queues to exchanges with routing keys.
+### Topic Exchange
+Route by routing key pattern with wildcards: `*` matches one word, `#` matches zero or more words.
 
 ```python
-# Classic durable queue
-channel.queue_declare(queue='order.processing', durable=True, arguments={
-    'x-message-ttl': 86400000,          # 24h TTL
-    'x-max-length': 100000,             # max 100k messages
-    'x-overflow': 'reject-publish',     # backpressure on full
+channel.exchange_declare(exchange='logs', exchange_type='topic', durable=True)
+# Bind: queue receives all error logs
+channel.queue_bind(exchange='logs', queue='errors', routing_key='*.error.#')
+# Publish: routing_key='payment.error.timeout' matches the binding
+```
+
+### Headers Exchange
+Route by message header attributes instead of routing key. Set `x-match` to `all` (every header must match) or `any` (at least one).
+
+```python
+channel.queue_bind(exchange='processing', queue='pdf-queue',
+    arguments={'x-match': 'all', 'format': 'pdf', 'type': 'report'})
+```
+
+## Message Patterns
+
+### Work Queues (Competing Consumers)
+Distribute tasks among multiple workers. Set `prefetch_count` to control load per consumer.
+
+```python
+channel.basic_qos(prefetch_count=10)
+channel.basic_consume(queue='tasks', on_message_callback=process_task)
+```
+
+Set prefetch to 1 for expensive tasks (fair dispatch). Set 10–50 for lightweight tasks.
+
+### Publish/Subscribe
+Use fanout exchange. Each subscriber gets its own exclusive queue.
+
+```python
+result = channel.queue_declare(queue='', exclusive=True)
+channel.queue_bind(exchange='events', queue=result.method.queue)
+```
+
+### Routing
+Use direct exchange with multiple bindings per queue to filter by severity/type.
+
+### Topics
+Use topic exchange for flexible multi-criteria routing. Pattern: `<facility>.<severity>.<component>`.
+
+### RPC Over Messaging
+Use `reply_to` and `correlation_id` properties. Client creates an exclusive callback queue.
+
+```python
+# Client
+corr_id = str(uuid.uuid4())
+channel.basic_publish(exchange='', routing_key='rpc_queue',
+    properties=pika.BasicProperties(reply_to=callback_queue, correlation_id=corr_id),
+    body=json.dumps(request))
+
+# Server
+channel.basic_publish(exchange='', routing_key=props.reply_to,
+    properties=pika.BasicProperties(correlation_id=props.correlation_id),
+    body=json.dumps(result))
+channel.basic_ack(delivery_tag=method.delivery_tag)
+```
+
+Set `expiration` on RPC messages to prevent stale requests accumulating.
+
+## Reliability
+
+### Publisher Confirms
+Enable on the channel to get broker acknowledgment that messages were persisted.
+
+```python
+channel.confirm_delivery()
+try:
+    channel.basic_publish(exchange='orders', routing_key='new',
+        body=data, properties=pika.BasicProperties(delivery_mode=2),
+        mandatory=True)
+except pika.exceptions.UnroutableError:
+    handle_unroutable()
+```
+
+For Node.js (amqplib), use `channel.waitForConfirms()` or the confirm channel wrapper.
+
+### Consumer Acknowledgments
+Always use manual acks. Ack after successful processing, nack/reject on failure.
+
+```python
+def callback(ch, method, properties, body):
+    try:
+        process(body)
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception:
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+```
+
+Set `requeue=False` to route failed messages to a dead letter exchange instead of looping.
+
+### Dead Letter Exchanges (DLX)
+Route rejected, expired, or max-length-exceeded messages to a DLX for analysis or retry.
+
+```python
+# Declare main queue with DLX
+channel.queue_declare(queue='orders', durable=True, arguments={
     'x-dead-letter-exchange': 'dlx',
-    'x-dead-letter-routing-key': 'order.failed'
+    'x-dead-letter-routing-key': 'orders.dead',
+    'x-message-ttl': 60000,          # optional: 60s TTL
+    'x-max-length': 100000           # optional: max queue depth
 })
 
-# Bind with topic pattern
-channel.queue_bind(exchange='orders', queue='order.processing',
-                   routing_key='order.created.*')
+# DLX setup
+channel.exchange_declare(exchange='dlx', exchange_type='direct', durable=True)
+channel.queue_declare(queue='orders-dlq', durable=True)
+channel.queue_bind(exchange='dlx', queue='orders-dlq', routing_key='orders.dead')
 ```
 
-## Queue Types
+Implement retry with increasing delays by chaining TTL queues back to the original exchange.
 
-### Quorum Queues (Recommended for HA)
-Raft-based replicated queues. Use for all durable queues requiring fault tolerance. Replace deprecated classic mirrored queues.
+## Quorum Queues vs Classic Queues
+
+Use quorum queues for replicated, highly available workloads. Use classic queues only for non-replicated, transient, or high-throughput ephemeral data.
+
+| Feature | Quorum Queue | Classic Queue |
+|---|---|---|
+| Replication | Raft-based, across nodes | None (CQv2) or removed mirroring |
+| Data safety | Consistent, survives node loss | Single-node persistence only |
+| Poison message handling | Built-in delivery limit (default 20 in 4.0) | Manual via DLX |
+| Priority | 2-level in 4.0 (normal/high) | Up to 255 levels |
+| Performance | Optimized for safety | Higher throughput for transient msgs |
+
+Declare a quorum queue:
 
 ```python
-channel.queue_declare(queue='payments', durable=True, arguments={
+channel.queue_declare(queue='critical-orders', durable=True, arguments={
     'x-queue-type': 'quorum',
-    'x-quorum-initial-group-size': 3,   # replicate across 3 nodes
-    'x-delivery-limit': 5,             # max redeliveries before dead-lettering
+    'x-delivery-limit': 5,
     'x-dead-letter-exchange': 'dlx',
     'x-dead-letter-strategy': 'at-least-once'
 })
 ```
 
-Quorum queue constraints: no exclusive queues, no non-durable mode, no priority, no global QoS. Always durable, always replicated.
+In RabbitMQ 4.0, classic mirrored queues are removed. Migrate all mirrored queues to quorum queues.
 
-### Streams (RabbitMQ 3.9+)
-Append-only log structure for high-throughput fan-out and replay. Non-destructive reads — multiple consumers read independently without removing messages.
+## RabbitMQ Streams
+
+Streams provide a persistent, replicated, append-only log. Use for fan-out to many consumers, replay from offset, and large backlogs. Enable the stream plugin:
+
+```bash
+rabbitmq-plugins enable rabbitmq_stream
+```
+
+Declare and consume a stream:
 
 ```python
-# Declare a stream
-channel.queue_declare(queue='events.log', durable=True, arguments={
+# Declare stream
+channel.queue_declare(queue='events-stream', durable=True, arguments={
     'x-queue-type': 'stream',
-    'x-max-length-bytes': 5_000_000_000,  # 5GB retention
-    'x-max-age': '7D',                    # 7-day retention
-    'x-stream-max-segment-size-bytes': 100_000_000
+    'x-max-length-bytes': 5_000_000_000,   # 5GB retention
+    'x-max-age': '7D'                       # 7-day retention
 })
 
-# Consume from stream — must set QoS and offset
-channel.basic_qos(prefetch_count=100)
-channel.basic_consume(queue='events.log', on_message_callback=handler,
-                      arguments={'x-stream-offset': 'first'})
-# Offset options: 'first', 'last', 'next', timestamp, numeric offset
+# Consume from offset
+channel.basic_consume(queue='events-stream', on_message_callback=handler,
+    arguments={'x-stream-offset': 'first'})  # or 'last', 'next', timestamp, offset int
 ```
 
-Use streams when: multiple consumers need the same data, replay is required, ordering matters. Use quorum queues when: competing consumers must each get unique messages.
+RabbitMQ 3.13+ supports stream filtering — consumers specify a filter to receive only matching messages, reducing bandwidth. Streams are not a Kafka replacement. Use them when you need replay + RabbitMQ's routing model.
 
-## Publishing
+## Priority Queues and TTL
 
-### Publisher Confirms
-Enable confirm mode for reliable publishing. Track delivery tags and handle nacks.
+Declare a priority queue (classic queues only for full range; quorum queues: 2 levels in 4.0):
 
 ```python
-channel.confirm_delivery()
-
-try:
-    channel.basic_publish(
-        exchange='orders', routing_key='order.created.us',
-        body=json.dumps(order),
-        properties=pika.BasicProperties(
-            delivery_mode=2,          # persistent
-            content_type='application/json',
-            message_id=str(uuid4()),
-            timestamp=int(time.time()),
-            headers={'version': '1.0'}
-        ),
-        mandatory=True   # return if unroutable
-    )
-except pika.exceptions.UnroutableError:
-    handle_unroutable(order)
-except pika.exceptions.NackError:
-    handle_nack(order)
+channel.queue_declare(queue='tasks', durable=True,
+    arguments={'x-max-priority': 10})
+channel.basic_publish(exchange='', routing_key='tasks', body=data,
+    properties=pika.BasicProperties(priority=5))
 ```
 
-### Message Properties Reference
-| Property | Purpose |
-|----------|---------|
-| `delivery_mode=2` | Persist to disk |
-| `content_type` | MIME type for deserialization |
-| `message_id` | Idempotency key |
-| `correlation_id` | Request-reply correlation |
-| `reply_to` | Callback queue name |
-| `expiration` | Per-message TTL (ms string) |
-| `priority` | 0-255 (requires x-max-priority on queue) |
-| `timestamp` | Unix epoch seconds |
-| `headers` | Custom key-value metadata |
-
-## Consuming
-
-### Consumer Setup with Manual Acks
-Always use manual acknowledgments in production. Set prefetch to control concurrency.
+Set per-message or per-queue TTL:
 
 ```python
-channel.basic_qos(prefetch_count=10)  # per-consumer limit
-
-def on_message(ch, method, properties, body):
-    try:
-        result = process(json.loads(body))
-        ch.basic_ack(delivery_tag=method.delivery_tag)
-    except TransientError:
-        # Requeue for retry
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
-    except PermanentError:
-        # Reject to DLQ (requeue=False)
-        ch.basic_reject(delivery_tag=method.delivery_tag, requeue=False)
-
-channel.basic_consume(queue='order.processing',
-                      on_message_callback=on_message, auto_ack=False)
-channel.start_consuming()
+# Per-message TTL (milliseconds)
+props = pika.BasicProperties(expiration='30000')
+# Per-queue TTL
+channel.queue_declare(queue='temp', arguments={'x-message-ttl': 60000})
 ```
 
-### Prefetch Tuning
-- `prefetch_count=1`: Maximum fairness, lowest throughput. Use for slow/expensive tasks.
-- `prefetch_count=10-50`: Balance throughput and fairness. Default starting point.
-- `prefetch_count=100-500`: High throughput. Use when processing is fast and uniform.
-- For streams, set prefetch ≥ 50 (streams require QoS to be set).
+Expired messages route to DLX if configured.
 
-### Consumer Patterns
-- **Competing consumers**: Multiple consumers on one queue for horizontal scaling.
-- **Exclusive consumer**: Set `exclusive=True` for single-active-consumer semantics.
-- **Single active consumer** (quorum queue): Set `x-single-active-consumer: true` on queue declaration for ordered processing with automatic failover.
+## Client Libraries
 
-## Dead Letter Queues (DLQ)
-
-Configure DLX on the source queue. Messages route to DLQ on: reject/nack with `requeue=False`, TTL expiry, or queue length overflow.
-
-```python
-# DLX exchange and queue
-channel.exchange_declare(exchange='dlx', exchange_type='direct', durable=True)
-channel.queue_declare(queue='dead.letters', durable=True, arguments={
-    'x-queue-type': 'quorum'
-})
-channel.queue_bind(exchange='dlx', queue='dead.letters',
-                   routing_key='order.failed')
-
-# Retry pattern: DLQ with TTL that republishes back to original exchange
-channel.queue_declare(queue='retry.5min', durable=True, arguments={
-    'x-message-ttl': 300000,              # 5 min delay
-    'x-dead-letter-exchange': 'orders',   # back to source
-    'x-dead-letter-routing-key': 'order.created.retry'
-})
-```
-
-### Retry with Backoff
-Implement escalating retry using chained TTL queues:
-1. Source queue → reject → retry.1min (TTL 60s, DLX→source)
-2. After N failures → retry.5min (TTL 300s, DLX→source)
-3. After max retries → final DLQ for manual inspection
-
-Track retry count via `x-death` header (automatically set by RabbitMQ on dead-lettering).
-
-## Node.js (amqplib) Example
+### Node.js — amqplib
 
 ```javascript
-const amqplib = require('amqplib');
-
-async function setup() {
-  const conn = await amqplib.connect('amqp://user:pass@rabbitmq:5672/prod');
-  const ch = await conn.createConfirmChannel(); // confirm mode
-
-  await ch.assertExchange('tasks', 'direct', { durable: true });
-  await ch.assertQueue('task.process', {
-    durable: true,
-    arguments: { 'x-queue-type': 'quorum', 'x-delivery-limit': 3,
-                 'x-dead-letter-exchange': 'dlx' }
-  });
-  await ch.bindQueue('task.process', 'tasks', 'process');
-
-  // Publish with confirm
-  ch.publish('tasks', 'process', Buffer.from(JSON.stringify(data)),
-    { persistent: true, messageId: uuid() },
-    (err) => { if (err) console.error('Nacked:', err); }
-  );
-
-  // Consume
-  ch.prefetch(20);
-  ch.consume('task.process', async (msg) => {
-    try {
-      await processTask(JSON.parse(msg.content.toString()));
-      ch.ack(msg);
-    } catch (e) {
-      ch.nack(msg, false, false); // to DLQ
-    }
-  });
-}
+const amqp = require('amqplib');
+const conn = await amqp.connect('amqp://admin:secret@localhost');
+const ch = await conn.createConfirmChannel();
+await ch.assertQueue('tasks', { durable: true, arguments: { 'x-queue-type': 'quorum' } });
+ch.sendToQueue('tasks', Buffer.from(JSON.stringify(payload)), { persistent: true });
+await ch.waitForConfirms();
+ch.consume('tasks', (msg) => { process(msg.content); ch.ack(msg); }, { prefetch: 10 });
 ```
 
-## Go (amqp091-go) Example
+### Python — pika
+
+```python
+import pika
+conn = pika.BlockingConnection(pika.ConnectionParameters('localhost',
+    credentials=pika.PlainCredentials('admin', 'secret')))
+ch = conn.channel()
+ch.confirm_delivery()
+ch.queue_declare(queue='tasks', durable=True)
+ch.basic_publish(exchange='', routing_key='tasks', body=data,
+    properties=pika.BasicProperties(delivery_mode=2))
+```
+
+### Go — amqp091-go
 
 ```go
-conn, _ := amqp091.Dial("amqp://user:pass@rabbitmq:5672/prod")
+conn, _ := amqp091.Dial("amqp://admin:secret@localhost:5672/")
 ch, _ := conn.Channel()
-ch.Confirm(false) // enable publisher confirms
-confirms := ch.NotifyPublish(make(chan amqp091.Confirmation, 1))
-
-ch.ExchangeDeclare("events", "topic", true, false, false, false, nil)
-ch.QueueDeclare("event.handler", true, false, false, false, amqp091.Table{
-    "x-queue-type": "quorum",
-    "x-dead-letter-exchange": "dlx",
+ch.Confirm(false)
+ch.QueueDeclare("tasks", true, false, false, false, amqp091.Table{"x-queue-type": "quorum"})
+ch.PublishWithContext(ctx, "", "tasks", false, false, amqp091.Publishing{
+    DeliveryMode: amqp091.Persistent, Body: []byte(data),
 })
-ch.QueueBind("event.handler", "event.#", "events", false, nil)
-ch.Qos(25, 0, false) // prefetch 25
-
-msgs, _ := ch.Consume("event.handler", "", false, false, false, false, nil)
-for msg := range msgs {
-    if err := handle(msg.Body); err != nil {
-        msg.Nack(false, false) // to DLQ
-    } else {
-        msg.Ack(false)
-    }
-}
 ```
+
+### Java — RabbitMQ Java Client
+
+```java
+ConnectionFactory factory = new ConnectionFactory();
+factory.setUri("amqp://admin:secret@localhost");
+Connection conn = factory.newConnection();
+Channel ch = conn.createChannel();
+ch.confirmSelect();
+ch.queueDeclare("tasks", true, false, false, Map.of("x-queue-type", "quorum"));
+ch.basicPublish("", "tasks", MessageProperties.PERSISTENT_TEXT_PLAIN, data);
+ch.waitForConfirmsOrDie(5000);
+```
+
+## Management Plugin and HTTP API
+
+```bash
+# List queues
+curl -u admin:secret http://localhost:15672/api/queues
+
+# Publish a test message
+curl -u admin:secret -X POST http://localhost:15672/api/exchanges/%2F/amq.default/publish \
+  -H 'Content-Type: application/json' \
+  -d '{"properties":{},"routing_key":"tasks","payload":"test","payload_encoding":"string"}'
+
+# Get queue details
+curl -u admin:secret http://localhost:15672/api/queues/%2F/tasks
+```
+
+Use `rabbitmqadmin` CLI for scripting queue/exchange/binding management.
 
 ## Clustering and High Availability
 
-### Cluster Setup
-Deploy odd-number clusters (3 or 5 nodes). All nodes share the Erlang cookie.
+Set up a 3-node cluster (minimum for quorum queues):
 
 ```bash
-# Join node to existing cluster
+# On node2 and node3:
 rabbitmqctl stop_app
-rabbitmqctl reset
 rabbitmqctl join_cluster rabbit@node1
 rabbitmqctl start_app
 rabbitmqctl cluster_status
 ```
 
-### Topology Guidelines
-- Use quorum queues (replicated across majority). Classic mirrored queues are deprecated.
-- Place a TCP load balancer (HAProxy/Nginx) in front of the cluster.
-- Distribute clients across all nodes. Quorum queue leader election is automatic.
-- Set `cluster_partition_handling = pause_minority` for network partition safety.
+Ensure `.erlang.cookie` is identical across all nodes. Use consistent DNS or `/etc/hosts`. In 4.0, Khepri replaces Mnesia as the metadata store, improving partition tolerance.
+
+Set quorum queue replication factor via policy:
+
+```bash
+rabbitmqctl set_policy ha-quorum "^critical\." \
+  '{"queue-type":"quorum","x-quorum-initial-group-size":3}' --apply-to queues
+```
+
+## Monitoring and Alerting
+
+Expose Prometheus metrics:
+
+```bash
+rabbitmq-plugins enable rabbitmq_prometheus
+# Metrics at http://localhost:15692/metrics
+```
+
+Key metrics to monitor:
+- `rabbitmq_queue_messages` — queue depth (alert if growing)
+- `rabbitmq_queue_consumers` — consumer count (alert if zero)
+- `rabbitmq_channel_messages_unacked` — unacked messages (alert if high)
+- `rabbitmq_node_mem_used` / `rabbitmq_node_disk_free` — resource alarms
+
+Set resource alarms in `rabbitmq.conf`:
+
+```ini
+vm_memory_high_watermark.relative = 0.7
+disk_free_limit.absolute = 2GB
+```
 
 ## Security
 
-### TLS Configuration (rabbitmq.conf)
+### TLS Configuration
+
 ```ini
-listeners.tcp = none
+# rabbitmq.conf
 listeners.ssl.default = 5671
-ssl_options.cacertfile = /etc/rabbitmq/ssl/ca.pem
-ssl_options.certfile   = /etc/rabbitmq/ssl/server.pem
-ssl_options.keyfile    = /etc/rabbitmq/ssl/server-key.pem
-ssl_options.verify     = verify_peer
+ssl_options.cacertfile = /certs/ca.pem
+ssl_options.certfile = /certs/server.pem
+ssl_options.keyfile = /certs/server-key.pem
+ssl_options.verify = verify_peer
 ssl_options.fail_if_no_peer_cert = true
-ssl_options.versions.1 = tlsv1.3
-ssl_options.versions.2 = tlsv1.2
 ```
 
 ### Authentication and Authorization
-- Delete default `guest` user. Create per-service accounts with minimal permissions.
-- Use vhosts for tenant isolation. Each vhost has independent exchanges, queues, permissions.
-- Set granular permissions: `configure`, `write`, `read` regex patterns per user per vhost.
 
 ```bash
-rabbitmqctl add_vhost /payments
-rabbitmqctl add_user payment_svc 'strong-password'
-rabbitmqctl set_permissions -p /payments payment_svc "^payment\." "^payment\." "^payment\."
-rabbitmqctl set_user_tags payment_svc monitoring
+# Create user with limited permissions
+rabbitmqctl add_user app_service strong_password
+rabbitmqctl set_permissions -p /production app_service "^app\." "^app\." "^app\."
+# Pattern: configure, write, read regex for resources
+rabbitmqctl delete_user guest  # Remove default user in production
 ```
 
-## Docker Deployment
+Use vhosts to isolate applications: `rabbitmqctl add_vhost /production`.
 
-```yaml
-# docker-compose.yml
-services:
-  rabbitmq:
-    image: rabbitmq:3.13-management-alpine
-    hostname: rabbit1
-    ports:
-      - "5672:5672"    # AMQP
-      - "15672:15672"  # Management UI
-      - "5552:5552"    # Streams
-    environment:
-      RABBITMQ_DEFAULT_USER: admin
-      RABBITMQ_DEFAULT_PASS: "${RABBITMQ_PASSWORD}"
-      RABBITMQ_DEFAULT_VHOST: /production
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
-      - ./rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
-      - ./definitions.json:/etc/rabbitmq/definitions.json:ro
-    deploy:
-      resources:
-        limits: { memory: 2G }
-volumes:
-  rabbitmq_data:
-```
+## Common Pitfalls and Troubleshooting
 
-## Kubernetes Deployment
+**Connection churn**: Reuse connections. Creating a new connection per publish kills performance. Use connection pooling.
 
-Use the RabbitMQ Cluster Operator for production:
+**Channel leaks**: Close channels after use. One channel per thread, not per message.
 
-```yaml
-apiVersion: rabbitmq.com/v1beta1
-kind: RabbitmqCluster
-metadata:
-  name: rabbitmq
-spec:
-  replicas: 3
-  image: rabbitmq:3.13-management
-  persistence:
-    storageClassName: fast-ssd
-    storage: 50Gi
-  resources:
-    requests: { cpu: "500m", memory: 1Gi }
-    limits:   { cpu: "2", memory: 4Gi }
-  rabbitmq:
-    additionalConfig: |
-      cluster_partition_handling = pause_minority
-      default_vhost = /production
-      vm_memory_high_watermark.relative = 0.7
-      disk_free_limit.relative = 1.5
-      queue_leader_locator = balanced
-  tls:
-    secretName: rabbitmq-tls
-```
+**Unbounded queues**: Always set `x-max-length` or `x-max-length-bytes` with DLX for overflow.
 
-## Shovel and Federation
+**Missing acks**: Unacked messages pile up. Set `consumer_timeout` (default 30min in 3.12+) to detect stuck consumers.
 
-### Shovel
-Transfer messages between brokers (local or remote). Use for migration, bridging, cross-DC replication.
+**No prefetch limit**: Without `basic_qos`, RabbitMQ pushes all messages to one consumer. Always set prefetch.
 
-```bash
-rabbitmq-plugins enable rabbitmq_shovel rabbitmq_shovel_management
-# Define dynamic shovel via management API
-rabbitmqctl set_parameter shovel my-shovel \
-  '{"src-protocol":"amqp091","src-uri":"amqp://source","src-queue":"orders",
-    "dest-protocol":"amqp091","dest-uri":"amqp://dest","dest-queue":"orders"}'
-```
+**Publishing without confirms**: Messages silently drop if broker rejects them. Enable publisher confirms.
 
-### Federation
-Loosely couple brokers across WAN. Upstream exchanges/queues subscribe to downstream.
+**Memory alarms**: Publishers block when memory exceeds watermark. Monitor and tune `vm_memory_high_watermark`.
 
-```bash
-rabbitmq-plugins enable rabbitmq_federation rabbitmq_federation_management
-rabbitmqctl set_parameter federation-upstream dc2 \
-  '{"uri":"amqp://user:pass@dc2-rabbit","expires":3600000}'
-rabbitmqctl set_policy federate-orders "^orders$" \
-  '{"federation-upstream-set":"all"}' --apply-to exchanges
-```
+**Network partitions**: Use `cluster_partition_handling = pause_minority`. Khepri in 4.0 improves this.
 
-## Monitoring
-
-### Key Metrics to Track
-- Queue depth, message rates (publish/deliver/ack per second)
-- Consumer count and utilization, unacked message count
-- Memory and disk usage, file descriptor count
-- Erlang process count, connection/channel count
-- Raft term and commit index (quorum queues)
-
-### Management HTTP API
-```bash
-# Queue details
-curl -u admin:pass http://rabbitmq:15672/api/queues/%2Fproduction/order.processing
-
-# Cluster health
-curl -u admin:pass http://rabbitmq:15672/api/health/checks/alarms
-
-# Prometheus metrics (enable rabbitmq_prometheus plugin)
-curl http://rabbitmq:15692/metrics
-```
-
-### Alarms and Flow Control
-- Memory alarm triggers at `vm_memory_high_watermark` (default 0.4 of RAM). Publishers block.
-- Disk alarm triggers at `disk_free_limit`. Publishers block.
-- Flow control: per-connection throttling when broker is overloaded. Monitor via `rabbitmqctl list_connections` state column.
-
-## Performance Tuning Checklist
-
-1. Use quorum queues for durability; classic queues only for transient workloads.
-2. Set `prefetch_count` appropriately — never use unlimited (0) in production.
-3. Keep queues short. Target near-zero depth for latency-sensitive workloads.
-4. Use lazy queues (`x-queue-mode: lazy`) for large backlogs to reduce memory pressure.
-5. Batch publisher confirms (`wait_for_confirms()` after N publishes) for throughput.
-6. Use persistent messages (`delivery_mode=2`) only when durability is required.
-7. Set `heartbeat=60` to detect dead connections. Set `blocked_connection_timeout`.
-8. Size Erlang VM: `RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS="+P 1048576"` for high connection count.
-9. Pin queue leaders across nodes: `queue_leader_locator = balanced`.
-10. Monitor and alert on memory/disk watermarks before they trigger.
-
-## References
-
-In-depth guides in `references/`:
-
-- **[advanced-patterns.md](references/advanced-patterns.md)** — Dead letter exchanges with exponential backoff retry chains, priority queues, delayed message exchange plugin, consistent hash exchange, RPC over RabbitMQ, saga pattern (choreography + orchestration), competing consumers, message deduplication, header-based routing, alternate exchanges, sender confirms with batching (individual, batch, async).
-
-- **[troubleshooting.md](references/troubleshooting.md)** — Diagnosing and resolving: memory alarms and flow control, unacknowledged message buildup, channel churn, connection leaks, split-brain in clusters, network partition handling strategies (autoheal vs pause_minority vs pause_if_all_down), queue length growing unbounded, low consumer utilization, TLS handshake failures, disk alarms. Includes diagnostic command reference.
-
-- **[clustering-guide.md](references/clustering-guide.md)** — Quorum queues (Raft consensus internals, leader placement, disk usage), classic mirrored queue deprecation and migration path, cluster formation, peer discovery backends (DNS, AWS, K8s, Consul, etcd), rolling upgrades with feature flags, cluster sizing guidelines, cross-datacenter replication with Federation and Shovel, stream replication and super streams.
-
-## Scripts
-
-Executable helpers in `scripts/`:
-
-- **[setup-rabbitmq-cluster.sh](scripts/setup-rabbitmq-cluster.sh)** — Generate and optionally start a 3-node RabbitMQ cluster with Docker Compose, HAProxy load balancer, management plugins, and test topology. Usage: `./scripts/setup-rabbitmq-cluster.sh [--start]`
-
-- **[rabbitmq-health-check.sh](scripts/rabbitmq-health-check.sh)** — Comprehensive health check: node status, cluster state, memory/disk usage, alarms, queue depths, consumer counts, connection summary. Supports CLI mode (rabbitmqctl) and remote API mode. Usage: `./scripts/rabbitmq-health-check.sh [--api URL]`
-
-- **[purge-queues.sh](scripts/purge-queues.sh)** — Safely purge queues by vhost and name pattern with confirmation prompt. Supports dry-run, minimum message threshold, and force mode. Usage: `./scripts/purge-queues.sh --vhost /production --pattern "^dead-letter" --dry-run`
-
-## Assets
-
-Templates, configs, and boilerplate in `assets/`:
-
-- **[rabbitmq.conf](assets/rabbitmq.conf)** — Production-ready RabbitMQ configuration with memory/disk limits, TLS (commented, ready to enable), clustering, logging rotation, and tuning parameters.
-
-- **[docker-compose.yml](assets/docker-compose.yml)** — 3-node RabbitMQ cluster with management UI, Prometheus metrics, HAProxy load balancer, health checks, and resource limits.
-
-- **[python-producer-consumer.py](assets/python-producer-consumer.py)** — Python (pika) producer/consumer with publisher confirms, retry logic, manual acks, DLQ setup, and graceful SIGINT/SIGTERM shutdown.
-
-- **[node-producer-consumer.js](assets/node-producer-consumer.js)** — Node.js (amqplib) producer/consumer with confirm channels, channel pooling, exponential backoff reconnection, and graceful shutdown.
-
-- **[definitions.json](assets/definitions.json)** — RabbitMQ definitions export with vhosts (/production, /staging, /test), per-service users with granular permissions, topic permissions, exchanges (orders, payments, notifications, DLX, unrouted), quorum queues with DLX and retry chains, bindings, and policies (TTL, delivery limits).
-
-<!-- tested: pass -->
+**Slow consumers**: Monitor `messages_unacked`. Scale horizontally or use streams for high fan-out.
