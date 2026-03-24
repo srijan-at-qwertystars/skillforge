@@ -1,0 +1,152 @@
+version: "3.8"
+
+# =============================================================================
+# MongoDB 3-Node Replica Set with Authentication
+#
+# USAGE:
+#   docker compose up -d
+#   # Wait ~10 seconds, then initialize the replica set:
+#   docker exec -it mongo1 mongosh --eval 'rs.initiate({
+#     _id: "rs0",
+#     members: [
+#       { _id: 0, host: "mongo1:27017", priority: 3 },
+#       { _id: 1, host: "mongo2:27017", priority: 2 },
+#       { _id: 2, host: "mongo3:27017", priority: 1 }
+#     ]
+#   })'
+#
+#   # Create admin user (run on primary):
+#   docker exec -it mongo1 mongosh --eval '
+#     db.getSiblingDB("admin").createUser({
+#       user: "admin",
+#       pwd: "changeme",
+#       roles: ["root"]
+#     })
+#   '
+#
+#   # Connect with auth:
+#   mongosh "mongodb://admin:changeme@localhost:27017,localhost:27018,localhost:27019/?replicaSet=rs0&authSource=admin"
+#
+# GENERATE KEYFILE (required before first start):
+#   openssl rand -base64 756 > ./mongo-keyfile
+#   chmod 400 ./mongo-keyfile
+#
+# NOTES:
+#   - Priority settings make mongo1 the preferred primary
+#   - Data persisted in named volumes
+#   - Internal auth via shared keyfile
+#   - Healthchecks verify mongosh connectivity
+# =============================================================================
+
+services:
+  mongo1:
+    image: mongo:7
+    container_name: mongo1
+    hostname: mongo1
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: changeme
+    volumes:
+      - mongo1_data:/data/db
+      - mongo1_config:/data/configdb
+      - ./mongo-keyfile:/etc/mongo-keyfile:ro
+    command: >
+      mongod
+        --replSet rs0
+        --bind_ip_all
+        --port 27017
+        --keyFile /etc/mongo-keyfile
+        --wiredTigerCacheSizeGB 1
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - mongo-cluster
+
+  mongo2:
+    image: mongo:7
+    container_name: mongo2
+    hostname: mongo2
+    restart: unless-stopped
+    ports:
+      - "27018:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: changeme
+    volumes:
+      - mongo2_data:/data/db
+      - mongo2_config:/data/configdb
+      - ./mongo-keyfile:/etc/mongo-keyfile:ro
+    command: >
+      mongod
+        --replSet rs0
+        --bind_ip_all
+        --port 27017
+        --keyFile /etc/mongo-keyfile
+        --wiredTigerCacheSizeGB 1
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      - mongo1
+    networks:
+      - mongo-cluster
+
+  mongo3:
+    image: mongo:7
+    container_name: mongo3
+    hostname: mongo3
+    restart: unless-stopped
+    ports:
+      - "27019:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: changeme
+    volumes:
+      - mongo3_data:/data/db
+      - mongo3_config:/data/configdb
+      - ./mongo-keyfile:/etc/mongo-keyfile:ro
+    command: >
+      mongod
+        --replSet rs0
+        --bind_ip_all
+        --port 27017
+        --keyFile /etc/mongo-keyfile
+        --wiredTigerCacheSizeGB 1
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      - mongo1
+    networks:
+      - mongo-cluster
+
+volumes:
+  mongo1_data:
+    driver: local
+  mongo1_config:
+    driver: local
+  mongo2_data:
+    driver: local
+  mongo2_config:
+    driver: local
+  mongo3_data:
+    driver: local
+  mongo3_config:
+    driver: local
+
+networks:
+  mongo-cluster:
+    driver: bridge

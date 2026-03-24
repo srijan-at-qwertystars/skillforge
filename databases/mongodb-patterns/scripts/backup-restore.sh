@@ -1,314 +1,262 @@
 #!/usr/bin/env bash
-# ============================================================================
-# backup-restore.sh — MongoDB Backup & Restore Wrapper
-# ============================================================================
-# Wrapper around mongodump/mongorestore with compression, timestamped backups,
-# and MongoDB Atlas support.
+# =============================================================================
+# backup-restore.sh — MongoDB backup and restore with mongodump/mongorestore
 #
-# Usage:
-#   Backup:
-#     ./backup-restore.sh backup                              # local, all DBs
-#     ./backup-restore.sh backup --db myapp                   # single database
-#     ./backup-restore.sh backup --uri "mongodb+srv://..."    # Atlas
-#     ./backup-restore.sh backup --db myapp --collection users
-#     ./backup-restore.sh backup --gzip --out /backups        # compressed
+# Supports standalone, replica sets, and sharded clusters.
+# Creates compressed, timestamped backups with validation.
 #
-#   Restore:
-#     ./backup-restore.sh restore --from /backups/2024-06-01_120000
-#     ./backup-restore.sh restore --from backup.archive --db myapp
-#     ./backup-restore.sh restore --from dump/ --drop         # drop before restore
-#     ./backup-restore.sh restore --uri "mongodb+srv://..." --from backup.gz
+# USAGE:
+#   ./backup-restore.sh backup  [OPTIONS]
+#   ./backup-restore.sh restore [OPTIONS]
 #
-#   List:
-#     ./backup-restore.sh list                                # list backups
-#     ./backup-restore.sh list --out /backups                 # custom dir
+# BACKUP OPTIONS:
+#   -u, --uri URI          MongoDB connection URI (default: mongodb://localhost:27017)
+#   -d, --db DATABASE      Database to back up (omit for all databases)
+#   -c, --collection COL   Collection to back up (requires --db)
+#   -o, --output DIR       Backup output directory (default: ./backups)
+#   --oplog                Include oplog for point-in-time backup (replica sets)
+#   --gzip                 Compress backup files (default: true)
+#   --parallel N           Number of parallel collections (default: 4)
+#   --retention DAYS       Delete backups older than N days (default: 30)
 #
-# Options:
-#   --uri             MongoDB connection URI
-#   --host            MongoDB host (default: localhost)
-#   --port            MongoDB port (default: 27017)
-#   -u, --user        MongoDB username
-#   -p, --password    MongoDB password
-#   --authdb          Auth database (default: admin)
-#   --db              Database name (all databases if omitted)
-#   --collection      Collection name (requires --db)
-#   --out             Backup output directory (default: ./mongo-backups)
-#   --from            Restore source (directory or archive file)
-#   --gzip            Enable gzip compression
-#   --archive         Use single-file archive format
-#   --drop            Drop collections before restoring
-#   --oplog           Include oplog for point-in-time backup (replica set)
-#   --query           Query filter for backup (JSON string)
-#   --parallel        Parallelism for restore (default: 4)
-#   --dry-run         Show commands without executing
-#   --retention       Number of backups to keep (default: 10)
-#   --help            Show this help
-# ============================================================================
+# RESTORE OPTIONS:
+#   -u, --uri URI          MongoDB connection URI
+#   -d, --db DATABASE      Target database (renames during restore)
+#   -i, --input DIR/FILE   Backup directory or archive to restore (required)
+#   --oplog                Replay oplog during restore
+#   --drop                 Drop existing collections before restore
+#   --parallel N           Number of parallel collections (default: 4)
+#   --dry-run              Show what would be restored without doing it
+#
+# EXAMPLES:
+#   # Backup all databases with oplog
+#   ./backup-restore.sh backup --oplog
+#
+#   # Backup specific database
+#   ./backup-restore.sh backup -d myapp -o /mnt/backups
+#
+#   # Restore from backup
+#   ./backup-restore.sh restore -i ./backups/myapp_2024-11-15_120000 --drop
+#
+#   # Restore to different database
+#   ./backup-restore.sh restore -i ./backups/myapp_2024-11-15_120000 -d myapp_staging
+#
+#   # Backup sharded cluster (connect to mongos)
+#   ./backup-restore.sh backup -u "mongodb://mongos1:27017" -d myapp
+# =============================================================================
 
 set -euo pipefail
 
-# Defaults
-ACTION=""
-URI=""
-HOST="localhost"
-PORT="27017"
-USER=""
-PASS=""
-AUTHDB="admin"
+ACTION="${1:-}"
+shift 2>/dev/null || true
+
+URI="mongodb://localhost:27017"
 DB=""
 COLLECTION=""
-OUT_DIR="./mongo-backups"
-FROM=""
-GZIP=false
-ARCHIVE=false
-DROP=false
-OPLOG=false
-QUERY=""
+OUTPUT_DIR="./backups"
+INPUT_PATH=""
+USE_OPLOG=false
+USE_GZIP=true
 PARALLEL=4
+DROP=false
 DRY_RUN=false
-RETENTION=10
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-log()      { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_ok()   { echo -e "${GREEN}[OK]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_err()  { echo -e "${RED}[ERROR]${NC} $1"; }
+RETENTION_DAYS=30
 
 usage() {
-  head -40 "$0" | grep '^#' | sed 's/^# \?//'
+  head -n 40 "$0" | grep '^#' | sed 's/^# \?//'
   exit 0
 }
 
-# Parse args
-[[ $# -eq 0 ]] && usage
-
-ACTION="$1"
-shift
+if [[ -z "$ACTION" ]] || [[ "$ACTION" == "-h" ]] || [[ "$ACTION" == "--help" ]]; then
+  usage
+fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --uri)         URI="$2"; shift 2 ;;
-    --host)        HOST="$2"; shift 2 ;;
-    --port)        PORT="$2"; shift 2 ;;
-    -u|--user)     USER="$2"; shift 2 ;;
-    -p|--password) PASS="$2"; shift 2 ;;
-    --authdb)      AUTHDB="$2"; shift 2 ;;
-    --db)          DB="$2"; shift 2 ;;
-    --collection)  COLLECTION="$2"; shift 2 ;;
-    --out)         OUT_DIR="$2"; shift 2 ;;
-    --from)        FROM="$2"; shift 2 ;;
-    --gzip)        GZIP=true; shift ;;
-    --archive)     ARCHIVE=true; shift ;;
-    --drop)        DROP=true; shift ;;
-    --oplog)       OPLOG=true; shift ;;
-    --query)       QUERY="$2"; shift 2 ;;
-    --parallel)    PARALLEL="$2"; shift 2 ;;
-    --dry-run)     DRY_RUN=true; shift ;;
-    --retention)   RETENTION="$2"; shift 2 ;;
-    --help)        usage ;;
-    *) log_err "Unknown option: $1"; usage ;;
+    -u|--uri) URI="$2"; shift 2 ;;
+    -d|--db) DB="$2"; shift 2 ;;
+    -c|--collection) COLLECTION="$2"; shift 2 ;;
+    -o|--output) OUTPUT_DIR="$2"; shift 2 ;;
+    -i|--input) INPUT_PATH="$2"; shift 2 ;;
+    --oplog) USE_OPLOG=true; shift ;;
+    --gzip) USE_GZIP=true; shift ;;
+    --no-gzip) USE_GZIP=false; shift ;;
+    --parallel) PARALLEL="$2"; shift 2 ;;
+    --drop) DROP=true; shift ;;
+    --dry-run) DRY_RUN=true; shift ;;
+    --retention) RETENTION_DAYS="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) echo "Unknown option: $1"; usage ;;
   esac
 done
 
-# Build connection args
-build_conn_args() {
-  local args=""
-  if [[ -n "$URI" ]]; then
-    args="--uri=\"$URI\""
-  else
-    args="--host=$HOST --port=$PORT"
-    [[ -n "$USER" ]] && args="$args --username=$USER"
-    [[ -n "$PASS" ]] && args="$args --password=$PASS"
-    [[ -n "$USER" ]] && args="$args --authenticationDatabase=$AUTHDB"
-  fi
-  echo "$args"
-}
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+err() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" >&2; }
 
-run_cmd() {
-  local cmd="$1"
-  if $DRY_RUN; then
-    echo -e "${YELLOW}[DRY-RUN]${NC} $cmd"
-  else
-    log "Running: $cmd"
-    eval "$cmd"
+# Check for required tools
+for cmd in mongodump mongorestore; do
+  if ! command -v "$cmd" &>/dev/null; then
+    err "$cmd not found. Install MongoDB Database Tools."
+    err "See: https://www.mongodb.com/docs/database-tools/installation/"
+    exit 1
   fi
-}
+done
 
-# ---------- BACKUP ----------
 do_backup() {
-  local timestamp
-  timestamp=$(date '+%Y-%m-%d_%H%M%S')
-  local conn
-  conn=$(build_conn_args)
+  local TIMESTAMP
+  TIMESTAMP="$(date '+%Y-%m-%d_%H%M%S')"
+  local BACKUP_NAME="${DB:-all_databases}_${TIMESTAMP}"
+  local BACKUP_PATH="${OUTPUT_DIR}/${BACKUP_NAME}"
 
-  mkdir -p "$OUT_DIR"
+  mkdir -p "$OUTPUT_DIR"
 
-  local cmd="mongodump $conn"
+  log "Starting backup: $BACKUP_NAME"
+  log "URI: ${URI%%@*}@***"  # mask credentials
+  [[ -n "$DB" ]] && log "Database: $DB" || log "All databases"
+  [[ -n "$COLLECTION" ]] && log "Collection: $COLLECTION"
+  log "Output: $BACKUP_PATH"
+  log "Oplog: $USE_OPLOG, Gzip: $USE_GZIP, Parallel: $PARALLEL"
 
-  # Database/collection
-  [[ -n "$DB" ]] && cmd="$cmd --db=$DB"
-  [[ -n "$COLLECTION" ]] && cmd="$cmd --collection=$COLLECTION"
+  # Build mongodump command
+  local CMD=(mongodump
+    --uri="$URI"
+    --out="$BACKUP_PATH"
+    --numParallelCollections="$PARALLEL"
+  )
 
-  # Compression
-  $GZIP && cmd="$cmd --gzip"
+  [[ -n "$DB" ]] && CMD+=(--db="$DB")
+  [[ -n "$COLLECTION" ]] && CMD+=(--collection="$COLLECTION")
+  $USE_OPLOG && CMD+=(--oplog)
+  $USE_GZIP && CMD+=(--gzip)
 
-  # Oplog (point-in-time for replica set)
-  $OPLOG && cmd="$cmd --oplog"
+  # Execute backup
+  local START_TIME
+  START_TIME=$(date +%s)
 
-  # Query filter
-  [[ -n "$QUERY" ]] && cmd="$cmd --query='$QUERY'"
+  if "${CMD[@]}"; then
+    local END_TIME
+    END_TIME=$(date +%s)
+    local DURATION=$((END_TIME - START_TIME))
+    local SIZE
+    SIZE=$(du -sh "$BACKUP_PATH" 2>/dev/null | cut -f1)
 
-  # Output format
-  if $ARCHIVE; then
-    local archive_name="${OUT_DIR}/backup_${timestamp}"
-    [[ -n "$DB" ]] && archive_name="${OUT_DIR}/${DB}_${timestamp}"
-    $GZIP && archive_name="${archive_name}.archive.gz" || archive_name="${archive_name}.archive"
-    cmd="$cmd --archive=$archive_name"
-    log "Backing up to archive: $archive_name"
-  else
-    local dump_dir="${OUT_DIR}/${timestamp}"
-    [[ -n "$DB" ]] && dump_dir="${OUT_DIR}/${DB}_${timestamp}"
-    cmd="$cmd --out=$dump_dir"
-    log "Backing up to directory: $dump_dir"
-  fi
+    log "Backup completed successfully"
+    log "Duration: ${DURATION}s, Size: ${SIZE}"
+    log "Path: $BACKUP_PATH"
 
-  local start_time=$SECONDS
-  run_cmd "$cmd"
-  local duration=$((SECONDS - start_time))
+    # Write metadata
+    cat > "${BACKUP_PATH}/backup_metadata.json" <<EOF
+{
+  "timestamp": "$TIMESTAMP",
+  "uri": "${URI%%@*}@***",
+  "database": "${DB:-all}",
+  "collection": "${COLLECTION:-all}",
+  "oplog": $USE_OPLOG,
+  "gzip": $USE_GZIP,
+  "durationSeconds": $DURATION,
+  "mongodumpVersion": "$(mongodump --version 2>&1 | head -1)"
+}
+EOF
 
-  if ! $DRY_RUN; then
-    log_ok "Backup completed in ${duration}s"
-
-    # Show backup size
-    if $ARCHIVE; then
-      local size
-      size=$(du -sh "$archive_name" 2>/dev/null | cut -f1)
-      log "Backup size: $size"
-    else
-      local size
-      size=$(du -sh "$dump_dir" 2>/dev/null | cut -f1)
-      log "Backup size: $size"
+    # Cleanup old backups
+    if [[ $RETENTION_DAYS -gt 0 ]]; then
+      log "Cleaning backups older than ${RETENTION_DAYS} days..."
+      local CLEANED=0
+      find "$OUTPUT_DIR" -maxdepth 1 -type d -mtime +"$RETENTION_DAYS" -name "*_*_*" | while read -r OLD_DIR; do
+        log "  Removing: $(basename "$OLD_DIR")"
+        rm -rf "$OLD_DIR"
+        CLEANED=$((CLEANED + 1))
+      done
+      [[ $CLEANED -gt 0 ]] && log "Cleaned $CLEANED old backup(s)"
     fi
-
-    # Retention: remove old backups
-    cleanup_old_backups
+  else
+    err "Backup FAILED"
+    exit 1
   fi
 }
 
-# ---------- RESTORE ----------
 do_restore() {
-  if [[ -z "$FROM" ]]; then
-    log_err "--from is required for restore"
+  if [[ -z "$INPUT_PATH" ]]; then
+    err "--input is required for restore"
     exit 1
   fi
 
-  if [[ ! -e "$FROM" ]]; then
-    log_err "Restore source not found: $FROM"
+  if [[ ! -e "$INPUT_PATH" ]]; then
+    err "Input path does not exist: $INPUT_PATH"
     exit 1
   fi
 
-  local conn
-  conn=$(build_conn_args)
-  local cmd="mongorestore $conn"
+  log "Starting restore from: $INPUT_PATH"
+  log "URI: ${URI%%@*}@***"
+  [[ -n "$DB" ]] && log "Target database: $DB"
+  $DROP && log "Mode: DROP existing collections before restore"
+  $USE_OPLOG && log "Oplog replay: enabled"
 
-  # Database
-  [[ -n "$DB" ]] && cmd="$cmd --db=$DB"
-  [[ -n "$COLLECTION" ]] && cmd="$cmd --collection=$COLLECTION"
-
-  # Drop before restore
-  $DROP && cmd="$cmd --drop"
-
-  # Compression
-  $GZIP && cmd="$cmd --gzip"
-
-  # Parallelism
-  cmd="$cmd --numParallelCollections=$PARALLEL"
-
-  # Oplog replay
-  $OPLOG && cmd="$cmd --oplogReplay"
-
-  # Source format
-  if [[ "$FROM" == *.archive* ]]; then
-    cmd="$cmd --archive=$FROM"
-  else
-    cmd="$cmd $FROM"
+  # Show metadata if available
+  if [[ -f "${INPUT_PATH}/backup_metadata.json" ]]; then
+    log "Backup metadata:"
+    cat "${INPUT_PATH}/backup_metadata.json" | while IFS= read -r line; do
+      log "  $line"
+    done
   fi
 
-  log "Restoring from: $FROM"
-  $DROP && log_warn "Collections will be dropped before restore"
+  # Build mongorestore command
+  local CMD=(mongorestore
+    --uri="$URI"
+    --numParallelCollections="$PARALLEL"
+  )
 
-  local start_time=$SECONDS
-  run_cmd "$cmd"
-  local duration=$((SECONDS - start_time))
+  [[ -n "$DB" ]] && CMD+=(--db="$DB")
+  $DROP && CMD+=(--drop)
+  $USE_OPLOG && CMD+=(--oplogReplay)
 
-  $DRY_RUN || log_ok "Restore completed in ${duration}s"
-}
+  # Check for gzip
+  if find "$INPUT_PATH" -name "*.gz" -print -quit 2>/dev/null | grep -q .; then
+    CMD+=(--gzip)
+  fi
 
-# ---------- LIST ----------
-do_list() {
-  log "Backups in: $OUT_DIR"
-  echo ""
-  if [[ -d "$OUT_DIR" ]]; then
-    local count=0
-    for entry in "$OUT_DIR"/*/; do
-      [[ -d "$entry" ]] || continue
-      local size
-      size=$(du -sh "$entry" 2>/dev/null | cut -f1)
-      local name
-      name=$(basename "$entry")
-      printf "  %-35s %s\n" "$name/" "$size"
-      ((count++))
-    done
-    for entry in "$OUT_DIR"/*.archive*; do
-      [[ -f "$entry" ]] || continue
-      local size
-      size=$(du -sh "$entry" 2>/dev/null | cut -f1)
-      local name
-      name=$(basename "$entry")
-      printf "  %-35s %s\n" "$name" "$size"
-      ((count++))
-    done
+  CMD+=("$INPUT_PATH")
+
+  if $DRY_RUN; then
+    log "DRY RUN — would execute:"
+    log "  ${CMD[*]}"
+    log "Contents of backup:"
+    find "$INPUT_PATH" -type f | head -20
+    return 0
+  fi
+
+  # Confirm restore (if interactive)
+  if [[ -t 0 ]]; then
     echo ""
-    log "Total backups: $count"
+    echo "⚠️  WARNING: This will restore data to the target MongoDB instance."
+    $DROP && echo "   Collections will be DROPPED before restore."
+    echo ""
+    read -rp "Continue? [y/N] " CONFIRM
+    if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+      log "Restore cancelled by user"
+      exit 0
+    fi
+  fi
+
+  local START_TIME
+  START_TIME=$(date +%s)
+
+  if "${CMD[@]}"; then
+    local END_TIME
+    END_TIME=$(date +%s)
+    local DURATION=$((END_TIME - START_TIME))
+    log "Restore completed successfully in ${DURATION}s"
   else
-    log_warn "Backup directory not found: $OUT_DIR"
+    err "Restore FAILED"
+    exit 1
   fi
 }
 
-# ---------- CLEANUP ----------
-cleanup_old_backups() {
-  if [[ ! -d "$OUT_DIR" ]]; then return; fi
-
-  local backups=()
-  while IFS= read -r -d '' entry; do
-    backups+=("$entry")
-  done < <(find "$OUT_DIR" -maxdepth 1 \( -type d -o -name "*.archive*" \) ! -path "$OUT_DIR" -print0 | sort -z)
-
-  local count=${#backups[@]}
-  if [[ $count -gt $RETENTION ]]; then
-    local to_remove=$((count - RETENTION))
-    log "Cleaning up $to_remove old backup(s) (retention: $RETENTION)"
-    for ((i = 0; i < to_remove; i++)); do
-      local target="${backups[$i]}"
-      if $DRY_RUN; then
-        echo -e "${YELLOW}[DRY-RUN]${NC} Would remove: $target"
-      else
-        rm -rf "$target"
-        log "Removed: $(basename "$target")"
-      fi
-    done
-  fi
-}
-
-# ---------- MAIN ----------
 case "$ACTION" in
   backup)  do_backup ;;
   restore) do_restore ;;
-  list)    do_list ;;
-  *)       log_err "Unknown action: $ACTION (use backup, restore, or list)"; usage ;;
+  *)
+    err "Unknown action: $ACTION (use 'backup' or 'restore')"
+    usage
+    ;;
 esac

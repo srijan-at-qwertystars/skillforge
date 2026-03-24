@@ -386,3 +386,32 @@ const users = await User.find({ active: true }).lean(); // returns plain objects
 postSchema.index({ author: 1, createdAt: -1 }); // compound index
 postSchema.index({ title: "text", body: "text" }); // text index
 ```
+
+## References
+
+Deep-dive reference documents for advanced topics:
+
+| Reference | Description |
+|-----------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Subset, computed, extended reference, schema versioning, tree structures, attribute & approximation patterns. Aggregation optimization ($lookup tuning, $merge/$out materialized views, Atlas $search). Time-series collections, change stream patterns (pre/post images, exactly-once), queryable encryption & CSFLE, advanced indexing (covered queries, hidden indexes, columnstore). |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Slow query diagnosis (profiler, explain plans), index usage analysis (unused/duplicate/missing), lock contention, WiredTiger cache pressure, replication lag, connection pool exhaustion, oplog sizing, storage engine issues (compaction, checkpoints, journal), upgrade path gotchas & FCV. |
+| [`references/aggregation-reference.md`](references/aggregation-reference.md) | Complete pipeline stage reference ($match through $documents), all expression operators (comparison, arithmetic, string, array, date, conditional, type), accumulator operators (basic, array, statistical with $median/$percentile), window functions ($setWindowFields, ranking, running calculations), Atlas Search integration (operators, scoring, facets, vector search). |
+
+## Scripts
+
+Executable helper scripts in `scripts/`:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [`scripts/index-analyzer.sh`](scripts/index-analyzer.sh) | Find unused, duplicate, and missing indexes across collections. Uses mongosh. | `./scripts/index-analyzer.sh -d mydb` |
+| [`scripts/health-check.sh`](scripts/health-check.sh) | Dashboard: replication, connections, cache, oplog, locks, disk. Configurable thresholds. | `./scripts/health-check.sh -u "mongodb://..."` |
+| [`scripts/backup-restore.sh`](scripts/backup-restore.sh) | Backup/restore with mongodump/mongorestore. Supports replica sets, oplog, compression, retention. | `./scripts/backup-restore.sh backup -d mydb --oplog` |
+
+## Assets
+
+Templates and utilities in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [`assets/docker-compose.yaml`](assets/docker-compose.yaml) | Docker Compose for a 3-node MongoDB 7 replica set with keyfile auth, health checks, and named volumes. |
+| [`assets/mongosh-snippets.js`](assets/mongosh-snippets.js) | Collection of mongosh helper functions: `serverOverview()`, `indexUsage()`, `quickExplain()`, `slowQueries()`, `replStatus()`, `cacheStatus()`, `schemaShape()`, and more. Load with `load('mongosh-snippets.js')`. |

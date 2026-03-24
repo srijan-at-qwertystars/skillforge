@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "Monorepo Base",
+  "compilerOptions": {
+    /* === Type Checking === */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "exactOptionalPropertyTypes": false,
+
+    /* === Language & Environment === */
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "moduleDetection": "force",
+
+    /* === Modules === */
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "allowImportingTsExtensions": false,
+
+    /* === Emit === */
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "incremental": true,
+    "noEmitOnError": true,
+
+    /* === Interop === */
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* === Completeness === */
+    "allowJs": false,
+    "checkJs": false
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "build",
+    "coverage",
+    ".next",
+    ".turbo",
+    "storybook-static"
+  ]
+}

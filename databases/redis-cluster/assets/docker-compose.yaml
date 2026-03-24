@@ -1,0 +1,330 @@
+# =============================================================================
+# Redis Cluster — Docker Compose
+# =============================================================================
+# Deploys a 6-node Redis Cluster: 3 masters + 3 replicas.
+# Nodes listen on ports 7001-7006 (client) and 17001-17006 (cluster bus).
+#
+# Usage:
+#   docker compose up -d
+#
+# The `redis-cluster-init` service automatically creates the cluster once
+# every node reports healthy.
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Node 1 – will become a master after cluster creation
+  # ---------------------------------------------------------------------------
+  redis-node-1:
+    image: redis:7-alpine
+    container_name: redis-node-1
+    # Start Redis with cluster mode enabled and the matching port/bus-port.
+    command: >
+      redis-server
+      --port 7001
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --appendfilename "appendonly.aof"
+      --requirepass "${REDIS_PASSWORD:-changeme}"
+      --masterauth "${REDIS_PASSWORD:-changeme}"
+      --cluster-announce-ip redis-node-1
+      --cluster-announce-port 7001
+      --cluster-announce-bus-port 17001
+    ports:
+      - "7001:7001"    # Client connections
+      - "17001:17001"  # Cluster bus (node-to-node gossip)
+    volumes:
+      - redis-node-1-data:/data
+    networks:
+      - redis-cluster-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7001", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Node 2
+  # ---------------------------------------------------------------------------
+  redis-node-2:
+    image: redis:7-alpine
+    container_name: redis-node-2
+    command: >
+      redis-server
+      --port 7002
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --appendfilename "appendonly.aof"
+      --requirepass "${REDIS_PASSWORD:-changeme}"
+      --masterauth "${REDIS_PASSWORD:-changeme}"
+      --cluster-announce-ip redis-node-2
+      --cluster-announce-port 7002
+      --cluster-announce-bus-port 17002
+    ports:
+      - "7002:7002"
+      - "17002:17002"
+    volumes:
+      - redis-node-2-data:/data
+    networks:
+      - redis-cluster-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7002", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Node 3
+  # ---------------------------------------------------------------------------
+  redis-node-3:
+    image: redis:7-alpine
+    container_name: redis-node-3
+    command: >
+      redis-server
+      --port 7003
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --appendfilename "appendonly.aof"
+      --requirepass "${REDIS_PASSWORD:-changeme}"
+      --masterauth "${REDIS_PASSWORD:-changeme}"
+      --cluster-announce-ip redis-node-3
+      --cluster-announce-port 7003
+      --cluster-announce-bus-port 17003
+    ports:
+      - "7003:7003"
+      - "17003:17003"
+    volumes:
+      - redis-node-3-data:/data
+    networks:
+      - redis-cluster-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7003", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Node 4
+  # ---------------------------------------------------------------------------
+  redis-node-4:
+    image: redis:7-alpine
+    container_name: redis-node-4
+    command: >
+      redis-server
+      --port 7004
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --appendfilename "appendonly.aof"
+      --requirepass "${REDIS_PASSWORD:-changeme}"
+      --masterauth "${REDIS_PASSWORD:-changeme}"
+      --cluster-announce-ip redis-node-4
+      --cluster-announce-port 7004
+      --cluster-announce-bus-port 17004
+    ports:
+      - "7004:7004"
+      - "17004:17004"
+    volumes:
+      - redis-node-4-data:/data
+    networks:
+      - redis-cluster-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7004", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Node 5
+  # ---------------------------------------------------------------------------
+  redis-node-5:
+    image: redis:7-alpine
+    container_name: redis-node-5
+    command: >
+      redis-server
+      --port 7005
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --appendfilename "appendonly.aof"
+      --requirepass "${REDIS_PASSWORD:-changeme}"
+      --masterauth "${REDIS_PASSWORD:-changeme}"
+      --cluster-announce-ip redis-node-5
+      --cluster-announce-port 7005
+      --cluster-announce-bus-port 17005
+    ports:
+      - "7005:7005"
+      - "17005:17005"
+    volumes:
+      - redis-node-5-data:/data
+    networks:
+      - redis-cluster-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7005", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Node 6
+  # ---------------------------------------------------------------------------
+  redis-node-6:
+    image: redis:7-alpine
+    container_name: redis-node-6
+    command: >
+      redis-server
+      --port 7006
+      --cluster-enabled yes
+      --cluster-config-file nodes.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --appendfilename "appendonly.aof"
+      --requirepass "${REDIS_PASSWORD:-changeme}"
+      --masterauth "${REDIS_PASSWORD:-changeme}"
+      --cluster-announce-ip redis-node-6
+      --cluster-announce-port 7006
+      --cluster-announce-bus-port 17006
+    ports:
+      - "7006:7006"
+      - "17006:17006"
+    volumes:
+      - redis-node-6-data:/data
+    networks:
+      - redis-cluster-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "7006", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Cluster initializer
+  # ---------------------------------------------------------------------------
+  # This one-shot service waits for every node to become healthy, then runs
+  # `redis-cli --cluster create` to form the cluster with 1 replica per master.
+  # It exits after the cluster is created and will not restart.
+  # ---------------------------------------------------------------------------
+  redis-cluster-init:
+    image: redis:7-alpine
+    container_name: redis-cluster-init
+    depends_on:
+      redis-node-1:
+        condition: service_healthy
+      redis-node-2:
+        condition: service_healthy
+      redis-node-3:
+        condition: service_healthy
+      redis-node-4:
+        condition: service_healthy
+      redis-node-5:
+        condition: service_healthy
+      redis-node-6:
+        condition: service_healthy
+    networks:
+      - redis-cluster-net
+    # The --cluster-yes flag answers "yes" to the interactive confirmation.
+    # --cluster-replicas 1 assigns one replica to each of the three masters.
+    command: >
+      sh -c "
+        echo 'Waiting 5 seconds for nodes to stabilize...' &&
+        sleep 5 &&
+        echo 'Creating Redis Cluster...' &&
+        redis-cli -a ${REDIS_PASSWORD:-changeme} --cluster create
+          redis-node-1:7001
+          redis-node-2:7002
+          redis-node-3:7003
+          redis-node-4:7004
+          redis-node-5:7005
+          redis-node-6:7006
+          --cluster-replicas 1
+          --cluster-yes &&
+        echo 'Redis Cluster created successfully.' &&
+        echo 'Verifying cluster status...' &&
+        redis-cli -a ${REDIS_PASSWORD:-changeme} -p 7001 -h redis-node-1 cluster info &&
+        echo 'Done.'
+      "
+    restart: "no"
+
+# =============================================================================
+# Volumes — named volumes for data persistence across restarts
+# =============================================================================
+volumes:
+  redis-node-1-data:
+    driver: local
+  redis-node-2-data:
+    driver: local
+  redis-node-3-data:
+    driver: local
+  redis-node-4-data:
+    driver: local
+  redis-node-5-data:
+    driver: local
+  redis-node-6-data:
+    driver: local
+
+# =============================================================================
+# Networks — isolated bridge network for inter-node communication
+# =============================================================================
+networks:
+  redis-cluster-net:
+    driver: bridge
+    # Using a predictable subnet makes firewall rules and debugging easier.
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16

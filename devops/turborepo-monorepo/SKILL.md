@@ -36,14 +36,9 @@ my-monorepo/
 
 ## Initialization
 
-Create new Turborepo monorepo:
 ```bash
-npx create-turbo@latest my-monorepo
-```
-
-Add Turborepo to existing monorepo:
-```bash
-npm install turbo --save-dev   # or pnpm add turbo -Dw / yarn add turbo -DW
+npx create-turbo@latest my-monorepo                     # New monorepo
+npm install turbo --save-dev                              # Add to existing (or pnpm/yarn)
 ```
 
 Root `package.json` must define workspaces:
@@ -162,19 +157,12 @@ export TURBO_TEAM=<team-slug>
 
 ### Self-Hosted Remote Cache
 
-Use `ducktors/turborepo-remote-cache` or implement the Turborepo HTTP cache API.
-
-Configure `.turbo/config.json` or environment variables:
+Use `ducktors/turborepo-remote-cache` or implement the Turborepo HTTP cache API:
 ```bash
 export TURBO_API="https://your-cache-server.com"
 export TURBO_TOKEN="your-api-key"
 export TURBO_TEAM="your-team"
-```
-
-Verify caching works:
-```bash
-turbo run build --summarize
-# Check: "cacheStatus": "HIT" in the summary output
+turbo run build --summarize  # Verify: "cacheStatus": "HIT"
 ```
 
 ### Cache Configuration in turbo.json
@@ -246,18 +234,12 @@ packages:
   - "packages/*"
 ```
 
-### npm
+### npm / Yarn
 ```json
-// root package.json
 { "workspaces": ["apps/*", "packages/*"] }
 ```
+For Yarn v3+ (Berry), set `nodeLinker: node-modules` in `.yarnrc.yml`.
 
-### Yarn (v1 and v3+)
-```json
-// root package.json
-{ "workspaces": ["apps/*", "packages/*"] }
-```
-For Yarn v3+ (Berry), ensure `nodeLinker: node-modules` in `.yarnrc.yml` for best compatibility.
 ### Internal Package Dependencies
 
 In an app's `package.json`, reference internal packages with workspace protocol:
@@ -274,28 +256,15 @@ For npm (no workspace protocol), use `"*"` and let workspace resolution handle i
 ## Environment Variable Handling
 
 ### Task-Level `env` (Cache Key)
-Variables that affect task output. Changing them causes cache miss:
+Variables that affect task output — changing them causes cache miss:
 ```json
-{
-  "tasks": {
-    "build": {
-      "env": ["NODE_ENV", "API_URL", "DATABASE_URL"]
-    }
-  }
-}
+{ "tasks": { "build": { "env": ["NODE_ENV", "API_URL", "DATABASE_URL"] } } }
 ```
 
 ### Task-Level `passThroughEnv` (Available but Not Cached)
 Variables available to the task but NOT part of cache key:
 ```json
-{
-  "tasks": {
-    "deploy": {
-      "passThroughEnv": ["AWS_SECRET_ACCESS_KEY", "DEPLOY_TOKEN"],
-      "cache": false
-    }
-  }
-}
+{ "tasks": { "deploy": { "passThroughEnv": ["AWS_SECRET_ACCESS_KEY"], "cache": false } } }
 ```
 
 ### Global Environment Variables
@@ -305,11 +274,13 @@ Variables available to the task but NOT part of cache key:
   "globalPassThroughEnv": ["GITHUB_TOKEN", "HOME"]
 }
 ```
-- `globalEnv`: changes bust ALL task caches.
-- `globalPassThroughEnv`: available everywhere, no cache impact.
-- Wildcard supported: `"env": ["NEXT_PUBLIC_*"]`.
+- `globalEnv`: changes bust ALL task caches
+- `globalPassThroughEnv`: available everywhere, no cache impact
+- Wildcard supported: `"env": ["NEXT_PUBLIC_*"]`
 
 ## CI/CD Integration (GitHub Actions)
+
+Basic CI setup (see `assets/github-actions.yml` for production-grade template):
 
 ```yaml
 name: CI
@@ -317,7 +288,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    types: [opened, synchronize]
 
 jobs:
   build:
@@ -329,7 +299,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for --filter with git refs
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
         with:
           version: 9
@@ -341,9 +311,9 @@ jobs:
       - run: pnpm turbo run build lint test --summarize
 ```
 
-For affected-only CI:
-```yaml
-      - run: pnpm turbo run build test --filter='...[origin/main...HEAD]'
+Affected-only CI for PRs:
+```bash
+pnpm turbo run build test --filter='...[origin/main...HEAD]'
 ```
 
 ## Internal Packages Pattern
@@ -447,7 +417,6 @@ Key: separate `json/` and `full/` copies to maximize Docker layer caching.
 ```bash
 turbo run build --concurrency=4       # Max 4 parallel tasks
 turbo run build --concurrency=50%     # Use 50% of CPU cores
-turbo run lint test --parallel        # Ignore task dependencies (use cautiously)
 ```
 
 ### Cache Debugging
@@ -462,16 +431,16 @@ turbo run build --force               # Bypass cache
 
 | Anti-Pattern | Fix |
 |---|---|
-| Using `pipeline` key in turbo.json | Rename to `tasks` (Turborepo v2+) |
-| `"dependsOn": ["^build"]` on `dev` task | Use `"cache": false, "persistent": true` with no topological deps for dev |
-| Caching dev/watch tasks | Set `"cache": false` on persistent/long-running tasks |
-| Missing `outputs` on build tasks | Always specify `outputs` so cache restores build artifacts |
-| Not listing env vars in `env` | Explicitly list all env vars that affect task output to avoid stale caches |
-| `fetch-depth: 1` in CI with git-based filters | Use `fetch-depth: 0` for `--filter='[ref]'` to work |
-| Importing between apps directly | Create shared `packages/` instead; apps should never depend on other apps |
-| Publishing internal packages to npm | Mark as `"private": true`; use workspace protocol for resolution |
-| Putting all config in root turbo.json | Use package-level `turbo.json` with `"extends": ["//"]` for overrides |
-| Using `--parallel` for builds | Only use `--parallel` for tasks with no inter-dependencies (lint, format) |
+| Using `pipeline` key | Rename to `tasks` (v2+) |
+| `"dependsOn": ["^build"]` on `dev` | Use `"cache": false, "persistent": true`, no topological deps |
+| Caching dev/watch tasks | `"cache": false` on persistent tasks |
+| Missing `outputs` on build | Always specify `outputs` for cache restore |
+| Unlisted env vars | List all output-affecting env vars in `env` |
+| `fetch-depth: 1` in CI | Use `fetch-depth: 0` for git-based `--filter` |
+| Apps importing other apps | Create shared `packages/` instead |
+| Publishing internal packages | Mark `"private": true`; use `workspace:*` |
+| All config in root turbo.json | Use package-level turbo.json with `"extends": ["//"]` |
+| `--parallel` for builds | Only for independent tasks (lint, format) |
 
 ## Quick Reference
 
@@ -497,3 +466,33 @@ turbo run build --graph                  # Generate graph visualization
 turbo daemon status                      # Check turbo daemon
 turbo daemon stop                        # Stop background daemon
 ```
+
+## Reference Documents
+
+Deep-dive guides for advanced usage and troubleshooting:
+
+| Document | Contents |
+|---|---|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Caching strategies, custom hash inputs, transit nodes, codemods, `turbo gen` generators, boundary enforcement, workspace versioning with Changesets, shared configs (ESLint, TypeScript, Prettier), publishing internal packages, architecture patterns |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Cache miss debugging (`--dry`, `--summarize`), task dependency issues, circular dependencies, env variable leaks, remote cache failures, Docker build problems, pnpm workspace issues, version conflicts, turbo daemon issues, common error messages |
+| [`references/ci-optimization.md`](references/ci-optimization.md) | GitHub Actions matrix strategies, remote caching in CI, artifact caching, parallelization, pruned installs, Docker layer caching with `turbo prune`, Vercel deployment, preview deployments per package, reusable workflows, release pipelines |
+
+## Scripts
+
+Helper scripts in `scripts/` for common monorepo operations:
+
+| Script | Purpose |
+|---|---|
+| [`scripts/init-monorepo.sh`](scripts/init-monorepo.sh) | Scaffold a complete Turborepo monorepo with apps/, packages/, shared configs, turbo.json. Usage: `./init-monorepo.sh my-project --org myorg` |
+| [`scripts/add-package.sh`](scripts/add-package.sh) | Add a new package or app workspace with proper config. Templates: `lib`, `react`, `node-service`. Usage: `./add-package.sh auth --type package --template react` |
+| [`scripts/analyze-cache.sh`](scripts/analyze-cache.sh) | Analyze cache hit rates, identify tasks with poor caching, show diagnostics. Usage: `./analyze-cache.sh --verbose` |
+
+## Assets (Templates)
+
+Production-ready config templates in `assets/`:
+
+| Asset | Description |
+|---|---|
+| [`assets/turbo.json`](assets/turbo.json) | Comprehensive `turbo.json` with tasks for build, lint, typecheck, test, e2e, dev, deploy, db:migrate, storybook, with proper `inputs`, `outputs`, `env`, and `passThroughEnv` |
+| [`assets/github-actions.yml`](assets/github-actions.yml) | GitHub Actions workflow with remote caching, affected-only PR builds, parallel lint/test/build jobs, Docker image build, pnpm store caching |
+| [`assets/tsconfig.base.json`](assets/tsconfig.base.json) | Strict shared TypeScript config for monorepo packages with `bundler` module resolution, `verbatimModuleSyntax`, incremental builds |

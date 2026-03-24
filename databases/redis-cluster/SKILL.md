@@ -430,3 +430,67 @@ cluster-announce-bus-port 17000
 ### 10. Replica Divergence During Network Partition
 **Cause:** Split-brain — clients write to old master while new master is elected.
 **Fix:** Set `min-replicas-to-write 1` and `min-replicas-max-lag 10` to stop accepting writes when replicas are unreachable.
+
+---
+
+## References
+
+In-depth guides for advanced usage, troubleshooting, and operations:
+
+| Document | Path | Covers |
+|---|---|---|
+| **Advanced Patterns** | `references/advanced-patterns.md` | Cluster-aware Lua scripting, cross-slot transactions with hash tags, sharded pub/sub (Redis 7+), Streams in cluster mode, client-side caching with RESP3 tracking, cluster-aware connection pooling, standalone→cluster migration, ACL management |
+| **Troubleshooting** | `references/troubleshooting.md` | Split-brain recovery, slot migration failures, node join/leave issues, memory fragmentation, redirect storms, cluster state inconsistency, replication buffer overflow, slow log analysis, latency diagnosis, network partition recovery |
+| **Operations Guide** | `references/operations-guide.md` | Rolling upgrades, capacity planning, backup strategies (RDB/AOF), adding/removing nodes, rebalancing, monitoring with redis-cli, Prometheus/Grafana dashboards, alerting thresholds, maintenance windows |
+
+---
+
+## Scripts
+
+Executable helper scripts for cluster lifecycle management:
+
+| Script | Path | Purpose |
+|---|---|---|
+| **Setup Cluster** | `scripts/setup-cluster.sh` | Bootstrap a Redis cluster (Docker or bare-metal). Supports configurable masters/replicas, production mode with AUTH, and cleanup. |
+| **Health Check** | `scripts/health-check.sh` | Comprehensive cluster health check: node states, slot coverage, replication, memory, latency, persistence. JSON output option. |
+| **Resharding** | `scripts/resharding.sh` | Automated slot migration with progress tracking, batch control, dry-run mode, audit logging, and rollback capability. |
+
+Usage examples:
+
+```bash
+# Bootstrap a 6-node dev cluster with Docker:
+./scripts/setup-cluster.sh --mode docker --masters 3 --replicas 1
+
+# Check cluster health:
+./scripts/health-check.sh 127.0.0.1:7001 --verbose
+
+# Migrate 1000 slots between nodes:
+./scripts/resharding.sh --host 127.0.0.1:7001 \
+  --from <source-id> --to <target-id> --slots 1000
+
+# Clean up dev cluster:
+./scripts/setup-cluster.sh --cleanup --mode docker
+```
+
+---
+
+## Assets
+
+Production-ready templates and configurations:
+
+| Asset | Path | Purpose |
+|---|---|---|
+| **Docker Compose** | `assets/docker-compose.yaml` | 6-node Redis Cluster (3 masters + 3 replicas) with health checks, volumes, and auto-initialization. |
+| **Cluster Config** | `assets/redis-cluster.conf` | Production `redis.conf` template with cluster, memory, persistence, security, replication, and performance settings. |
+| **Sentinel Config** | `assets/sentinel.conf` | Production Sentinel configuration template. **Note:** Sentinel is for non-cluster HA only — do NOT combine with Redis Cluster. |
+
+```bash
+# Quick start with Docker Compose:
+cd assets/
+docker compose up -d
+# Cluster auto-initializes via the redis-cluster-init service.
+
+# For bare-metal, copy and customize the config template:
+cp assets/redis-cluster.conf /etc/redis/redis-7000.conf
+# Edit: port, cluster-announce-ip, requirepass, maxmemory
+```

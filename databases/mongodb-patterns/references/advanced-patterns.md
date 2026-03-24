@@ -2,1007 +2,852 @@
 
 ## Table of Contents
 
-- [Aggregation Deep Dive](#aggregation-deep-dive)
-  - [$facet — Multi-Faceted Aggregation](#facet--multi-faceted-aggregation)
-  - [$bucket and $bucketAuto](#bucket-and-bucketauto)
-  - [$graphLookup — Recursive Graph Queries](#graphlookup--recursive-graph-queries)
-  - [$merge — Incremental Materialized Views](#merge--incremental-materialized-views)
-  - [$out — Replace Collection Output](#out--replace-collection-output)
-  - [$setWindowFields — Window Functions](#setwindowfields--window-functions)
-  - [Pipeline Optimization Tips](#pipeline-optimization-tips)
-- [Atlas Search](#atlas-search)
-  - [Lucene Analyzers](#lucene-analyzers)
-  - [Autocomplete](#autocomplete)
-  - [Compound Queries](#compound-queries)
-  - [Facets and Counting](#facets-and-counting)
-  - [Custom Scoring](#custom-scoring)
-  - [Search Index Definition](#search-index-definition)
-- [Atlas Vector Search](#atlas-vector-search)
-  - [Index Configuration](#index-configuration)
-  - [Querying Vectors](#querying-vectors)
-  - [Hybrid Search (Vector + Text)](#hybrid-search-vector--text)
-  - [Embedding Strategies](#embedding-strategies)
-- [Queryable Encryption](#queryable-encryption)
-  - [Architecture Overview](#architecture-overview)
-  - [Equality Queries](#equality-queries)
-  - [Range Queries (8.0+)](#range-queries-80)
-  - [Key Management](#key-management)
-  - [Automatic vs Explicit Encryption](#automatic-vs-explicit-encryption)
-- [Time Series Collections](#time-series-collections)
-  - [Creating Time Series Collections](#creating-time-series-collections)
-  - [Querying and Aggregating](#querying-and-aggregating)
-  - [Secondary Indexes on Time Series](#secondary-indexes-on-time-series)
-  - [Performance Considerations](#performance-considerations)
-- [Schema Versioning Patterns](#schema-versioning-patterns)
-  - [Schema Version Field](#schema-version-field)
-  - [Incremental Migration](#incremental-migration)
-  - [Application-Level Versioning](#application-level-versioning)
-- [Capped Collections](#capped-collections)
-  - [Creating Capped Collections](#creating-capped-collections)
-  - [Tailable Cursors](#tailable-cursors)
-  - [Use Cases and Limitations](#use-cases-and-limitations)
+- [Schema Design Patterns](#schema-design-patterns)
+  - [Subset Pattern](#subset-pattern)
+  - [Computed Pattern](#computed-pattern)
+  - [Extended Reference Pattern](#extended-reference-pattern)
+  - [Schema Versioning Pattern](#schema-versioning-pattern)
+  - [Tree Structure Patterns](#tree-structure-patterns)
+  - [Attribute Pattern](#attribute-pattern)
+  - [Approximation Pattern](#approximation-pattern)
+  - [Document Versioning Pattern](#document-versioning-pattern)
+- [Aggregation Optimization](#aggregation-optimization)
+  - [$lookup vs Embedding Trade-offs](#lookup-vs-embedding-trade-offs)
+  - [$merge and $out — Materialized Views](#merge-and-out--materialized-views)
+  - [$search — Atlas Search Integration](#search--atlas-search-integration)
+  - [Pipeline Performance Rules](#pipeline-performance-rules)
+- [Time-Series Collections](#time-series-collections)
+  - [Collection Creation and Configuration](#collection-creation-and-configuration)
+  - [Secondary Indexes](#secondary-indexes)
+  - [Querying Time-Series Data](#querying-time-series-data)
+  - [Migration from Bucket Pattern](#migration-from-bucket-pattern)
+- [Change Stream Advanced Patterns](#change-stream-advanced-patterns)
+  - [Pre/Post Image Capture](#prepost-image-capture)
+  - [Filtering and Transformation](#filtering-and-transformation)
+  - [Distributed Resume Strategy](#distributed-resume-strategy)
+  - [Change Stream with Aggregation](#change-stream-with-aggregation)
+  - [Exactly-Once Processing](#exactly-once-processing)
+- [Queryable Encryption and CSFLE](#queryable-encryption-and-csfle)
+  - [CSFLE (Client-Side Field Level Encryption)](#csfle-client-side-field-level-encryption)
+  - [Queryable Encryption (7.0+)](#queryable-encryption-70)
+  - [Key Management Architecture](#key-management-architecture)
+  - [Encryption Algorithm Selection](#encryption-algorithm-selection)
+- [Advanced Indexing Strategies](#advanced-indexing-strategies)
+  - [Covered Queries](#covered-queries)
+  - [Index Intersection](#index-intersection)
+  - [Hidden Indexes](#hidden-indexes)
+  - [Columnstore Indexes (7.0+)](#columnstore-indexes-70)
 
 ---
 
-## Aggregation Deep Dive
+## Schema Design Patterns
 
-### $facet — Multi-Faceted Aggregation
+### Subset Pattern
 
-`$facet` processes multiple aggregation pipelines on the same input documents in a single stage. Each sub-pipeline receives the same set of input documents and produces independent results.
+Store the most-accessed subset of a related document's data directly in the parent. Reduces `$lookup` for common read paths while full data lives in its own collection.
+
+**When to use:** Parent documents frequently need a few fields from a related document (e.g., product listings showing the 10 most recent reviews, user profiles showing 5 most recent orders).
 
 ```javascript
-db.products.aggregate([
-  { $match: { status: "active" } },
-  { $facet: {
-    // Price distribution
-    priceRanges: [
-      { $bucket: {
-        groupBy: "$price",
-        boundaries: [0, 25, 50, 100, 500, Infinity],
-        default: "Other",
-        output: { count: { $sum: 1 }, avgPrice: { $avg: "$price" } }
-      }}
-    ],
+// products collection — embeds the 10 most recent reviews
+{
+  _id: ObjectId("prod1"),
+  name: "Wireless Mouse",
+  price: 29.99,
+  recentReviews: [
+    { userId: ObjectId("u5"), rating: 5, text: "Great mouse!", date: ISODate("2024-11-10") },
+    { userId: ObjectId("u3"), rating: 4, text: "Good value", date: ISODate("2024-11-09") }
+    // ... up to 10
+  ],
+  reviewCount: 487,
+  avgRating: 4.3
+}
 
-    // Top categories by revenue
-    topCategories: [
-      { $group: { _id: "$category", revenue: { $sum: "$price" } } },
-      { $sort: { revenue: -1 } },
-      { $limit: 5 }
-    ],
+// reviews collection — full review data
+{
+  _id: ObjectId("rev1"),
+  productId: ObjectId("prod1"),
+  userId: ObjectId("u5"),
+  rating: 5,
+  text: "Great mouse!",
+  date: ISODate("2024-11-10"),
+  helpfulVotes: 12,
+  images: ["img1.jpg", "img2.jpg"],
+  verified: true
+}
 
-    // Total stats
-    overview: [
-      { $group: {
-        _id: null,
-        totalProducts: { $sum: 1 },
-        avgPrice: { $avg: "$price" },
-        maxPrice: { $max: "$price" }
-      }}
-    ]
-  }}
-]);
-// Output: single document with priceRanges[], topCategories[], overview[] arrays
+// On new review insert, update the subset:
+db.products.updateOne(
+  { _id: productId },
+  {
+    $push: { recentReviews: { $each: [newReview], $sort: { date: -1 }, $slice: 10 } },
+    $inc: { reviewCount: 1 },
+    $set: { avgRating: newAvgRating }
+  }
+);
 ```
 
-**Key constraints:**
-- Each sub-pipeline output is limited to 16MB (BSON document size limit)
-- Sub-pipelines cannot include `$out`, `$merge`, or `$facet`
-- No indexes used within sub-pipelines (but `$match` before `$facet` uses indexes)
+### Computed Pattern
 
-### $bucket and $bucketAuto
+Pre-compute expensive calculations at write time. Trades more complex writes for dramatically faster reads.
 
-```javascript
-// $bucket — manual boundaries
-db.sales.aggregate([
-  { $bucket: {
-    groupBy: "$amount",
-    boundaries: [0, 100, 500, 1000, 5000],
-    default: "5000+",
-    output: {
-      count: { $sum: 1 },
-      total: { $sum: "$amount" },
-      avgAmount: { $avg: "$amount" },
-      orders: { $push: { id: "$_id", amount: "$amount" } }
-    }
-  }}
-]);
-
-// $bucketAuto — MongoDB determines boundaries for even distribution
-db.sales.aggregate([
-  { $bucketAuto: {
-    groupBy: "$amount",
-    buckets: 5,    // desired number of buckets
-    granularity: "R5",  // Renard series rounding (R5, R10, R20, R40, R80)
-    output: { count: { $sum: 1 }, total: { $sum: "$amount" } }
-  }}
-]);
-```
-
-### $graphLookup — Recursive Graph Queries
-
-Performs recursive search on a collection, following references to build hierarchical or graph-like results.
+**When to use:** Values derived from aggregations read far more often than underlying data changes (running totals, averages, leaderboard scores).
 
 ```javascript
-// Org chart: find all reports under a manager (recursive)
-db.employees.aggregate([
-  { $match: { name: "CEO" } },
-  { $graphLookup: {
-    from: "employees",
-    startWith: "$_id",
-    connectFromField: "_id",
-    connectToField: "managerId",
-    as: "allReports",
-    maxDepth: 5,                    // limit recursion depth
-    depthField: "level",            // adds depth level to each result
-    restrictSearchWithMatch: { status: "active" }  // filter during traversal
-  }}
-]);
+// Store running stats on the document itself
+{
+  _id: ObjectId("movie1"),
+  title: "Inception",
+  ratings: {
+    count: 15420,
+    sum: 63222,
+    average: 4.1,
+    distribution: { 1: 210, 2: 540, 3: 2100, 4: 5200, 5: 7370 }
+  }
+}
 
-// Social graph: find friends-of-friends up to 3 degrees
-db.users.aggregate([
-  { $match: { _id: "user1" } },
-  { $graphLookup: {
-    from: "users",
-    startWith: "$friendIds",
-    connectFromField: "friendIds",
-    connectToField: "_id",
-    as: "network",
-    maxDepth: 2,
-    depthField: "connectionDegree"
-  }},
-  { $project: {
-    network: {
-      $filter: {
-        input: "$network",
-        cond: { $ne: ["$$this._id", "user1"] }  // exclude self
+// On new rating: atomically update computed fields using pipeline update
+db.movies.updateOne(
+  { _id: movieId },
+  [
+    { $set: {
+      "ratings.count": { $add: ["$ratings.count", 1] },
+      "ratings.sum": { $add: ["$ratings.sum", newRating] },
+    }},
+    { $set: {
+      "ratings.average": {
+        $round: [{ $divide: ["$ratings.sum", "$ratings.count"] }, 1]
       }
-    }
+    }}
+  ]
+);
+
+// Rolling window computed pattern: hourly/daily aggregates
+{
+  _id: "sensor-01:2024-11-15",
+  sensorId: "sensor-01",
+  date: ISODate("2024-11-15"),
+  hourly: {
+    "08": { min: 21.2, max: 23.5, avg: 22.3, count: 60 },
+    "09": { min: 22.0, max: 24.1, avg: 23.0, count: 58 }
+  },
+  daily: { min: 20.1, max: 25.8, avg: 22.7, count: 1440 }
+}
+```
+
+### Extended Reference Pattern
+
+Copy frequently accessed fields from a referenced document into the referencing document to avoid costly `$lookup`. Accept eventual consistency for duplicated fields.
+
+**When to use:** Read-heavy workloads where joins are expensive and duplicated data changes infrequently (e.g., order storing customer name/address).
+
+```javascript
+// orders collection — extended reference to customer
+{
+  _id: ObjectId("order1"),
+  customerId: ObjectId("cust1"),
+  // Extended reference: fields read with every order display
+  customerSnapshot: {
+    name: "Alice Johnson",
+    email: "alice@example.com",
+    tier: "gold"
+  },
+  items: [{ sku: "ABC", qty: 2, price: 29.99 }],
+  total: 59.98
+}
+
+// Sync strategy 1: Change stream listener for near-real-time
+const stream = db.customers.watch([
+  { $match: { operationType: "update" } }
+]);
+stream.on("change", async (event) => {
+  const { name, email, tier } = event.fullDocument;
+  await db.orders.updateMany(
+    { customerId: event.documentKey._id },
+    { $set: { "customerSnapshot": { name, email, tier } } }
+  );
+});
+
+// Sync strategy 2: Bulk update on schedule (less time-sensitive data)
+db.customers.find({ updatedAt: { $gte: lastSyncTime } }).forEach(cust => {
+  db.orders.updateMany(
+    { customerId: cust._id },
+    { $set: { customerSnapshot: { name: cust.name, email: cust.email, tier: cust.tier } } }
+  );
+});
+```
+
+### Schema Versioning Pattern
+
+Support multiple document shapes in the same collection during incremental migrations. Each document carries a `schemaVersion` field.
+
+```javascript
+// Version 1: original schema
+{ _id: ObjectId("u1"), schemaVersion: 1, name: "Alice Johnson", address: "123 Main St, Springfield, IL 62701" }
+
+// Version 2: structured address
+{
+  _id: ObjectId("u2"),
+  schemaVersion: 2,
+  firstName: "Bob", lastName: "Smith",
+  address: { street: "456 Oak Ave", city: "Portland", state: "OR", zip: "97201" }
+}
+
+// Application-level migration function
+function normalizeUser(doc) {
+  if (doc.schemaVersion === 1) {
+    const [firstName, ...rest] = doc.name.split(" ");
+    return { ...doc, schemaVersion: 2, firstName, lastName: rest.join(" "), address: parseAddress(doc.address) };
+  }
+  return doc;
+}
+
+// Lazy migration: upgrade on read
+async function getUser(userId) {
+  const user = await db.users.findOne({ _id: userId });
+  if (user.schemaVersion < CURRENT_VERSION) {
+    const upgraded = normalizeUser(user);
+    await db.users.replaceOne({ _id: userId, schemaVersion: user.schemaVersion }, upgraded);
+    return upgraded;
+  }
+  return user;
+}
+
+// Batch migration: process in chunks
+async function migrateUsers(batchSize = 1000) {
+  let processed = 0;
+  while (true) {
+    const batch = await db.users.find({ schemaVersion: 1 }).limit(batchSize).toArray();
+    if (batch.length === 0) break;
+    const ops = batch.map(doc => ({
+      replaceOne: { filter: { _id: doc._id, schemaVersion: 1 }, replacement: normalizeUser(doc) }
+    }));
+    await db.users.bulkWrite(ops, { ordered: false });
+    processed += batch.length;
+  }
+}
+```
+
+### Tree Structure Patterns
+
+MongoDB supports several patterns for hierarchical data:
+
+#### Parent Reference
+
+```javascript
+{ _id: "CEO", parent: null, name: "Alice" }
+{ _id: "VP_Eng", parent: "CEO", name: "Bob" }
+{ _id: "Dev_Lead", parent: "VP_Eng", name: "Dave" }
+
+// Find children: db.org.find({ parent: "CEO" })
+// Index: db.org.createIndex({ parent: 1 })
+```
+
+#### Materialized Path
+
+```javascript
+{ _id: "Dev_Lead", path: ",CEO,VP_Eng,Dev_Lead,", name: "Dave" }
+{ _id: "SRE", path: ",CEO,VP_Eng,Dev_Lead,SRE,", name: "Eve" }
+
+// Find all descendants of VP_Eng:
+db.org.find({ path: /,VP_Eng,/ })
+// Index: db.org.createIndex({ path: 1 })
+```
+
+#### Nested Sets
+
+```javascript
+{ _id: "CEO", left: 1, right: 10 }
+{ _id: "VP_Eng", left: 2, right: 7 }
+{ _id: "Dev_Lead", left: 3, right: 4 }
+
+// Find all descendants of VP_Eng (left=2, right=7):
+db.org.find({ left: { $gt: 2 }, right: { $lt: 7 } })
+// Fast reads, expensive writes (must renumber on insert/delete)
+```
+
+#### $graphLookup for Recursive Traversal
+
+```javascript
+// Find entire reporting chain from employee to CEO
+db.org.aggregate([
+  { $match: { _id: "SRE" } },
+  { $graphLookup: {
+    from: "org",
+    startWith: "$parent",
+    connectFromField: "parent",
+    connectToField: "_id",
+    as: "ancestors",
+    maxDepth: 10,
+    depthField: "level"
   }}
 ]);
 ```
 
-**Performance notes:**
-- Index `connectToField` for efficient lookups
-- Always set `maxDepth` to prevent runaway recursion
-- `restrictSearchWithMatch` filters during traversal, not after
+**Pattern selection guide:**
 
-### $merge — Incremental Materialized Views
+| Pattern | Subtree Query | Ancestor Query | Writes | Best For |
+|---------|--------------|----------------|--------|----------|
+| Parent Ref | Recursive/$graphLookup | Recursive | Fast | Frequent updates |
+| Materialized Path | Regex on path | Parse path | Medium | Read-heavy, moderate updates |
+| Nested Sets | Range query (fastest) | Range query | Slow (renumber) | Read-dominant, rare updates |
+
+### Attribute Pattern
+
+Store varied fields as key-value pairs in an array for uniform indexing.
 
 ```javascript
-// Incremental update: only process new/changed data
+// Without: heterogeneous fields, can't index uniformly
+{ type: "TV", screenSize: 55, resolution: "4K", hdmiPorts: 3 }
+{ type: "Phone", screenSize: 6.1, ram: 8, storage: 256 }
+
+// With attribute pattern:
+{
+  type: "TV",
+  specs: [
+    { k: "screenSize", v: 55, unit: "inches" },
+    { k: "resolution", v: "4K" },
+    { k: "hdmiPorts", v: 3 }
+  ]
+}
+
+// Single compound index covers queries on ANY spec:
+db.products.createIndex({ "specs.k": 1, "specs.v": 1 })
+db.products.find({ specs: { $elemMatch: { k: "screenSize", v: { $gte: 50 } } } })
+```
+
+### Approximation Pattern
+
+Reduce write frequency for high-volume counters using probabilistic updates.
+
+```javascript
+function incrementPageView(pageId) {
+  if (Math.random() < 0.01) {
+    db.pages.updateOne({ _id: pageId }, { $inc: { viewCount: 100 } });
+  }
+}
+
+// Adaptive sampling for accuracy at lower volumes:
+function adaptiveIncrement(pageId, currentCount) {
+  const rate = currentCount < 1000 ? 1.0 : currentCount < 10000 ? 0.1 : 0.01;
+  if (Math.random() < rate) {
+    db.pages.updateOne({ _id: pageId }, { $inc: { viewCount: Math.round(1 / rate) } });
+  }
+}
+```
+
+### Document Versioning Pattern
+
+Track full history of document changes for audit trails.
+
+```javascript
+// Current state in main collection
+{ _id: ObjectId("doc1"), title: "Project Plan", content: "Latest...", version: 3 }
+
+// History in separate collection
+{ docId: ObjectId("doc1"), version: 1, title: "Project Plan", content: "Initial...",
+  changedBy: "alice", changedAt: ISODate("2024-11-01"), changeType: "create" }
+
+// Atomic update with version push
+async function updateWithHistory(collName, docId, updates, userId) {
+  const session = client.startSession();
+  try {
+    session.startTransaction();
+    const current = await db.collection(collName).findOne({ _id: docId }, { session });
+    await db.collection(collName + "_history").insertOne({
+      docId: current._id, version: current.version, ...current,
+      _id: new ObjectId(), changedBy: userId, changedAt: new Date(), changeType: "update"
+    }, { session });
+    await db.collection(collName).updateOne(
+      { _id: docId },
+      { $set: { ...updates, updatedBy: userId, updatedAt: new Date() }, $inc: { version: 1 } },
+      { session }
+    );
+    await session.commitTransaction();
+  } finally { session.endSession(); }
+}
+```
+
+---
+
+## Aggregation Optimization
+
+### $lookup vs Embedding Trade-offs
+
+| Factor | Embed | $lookup |
+|--------|-------|---------|
+| Read latency | Single doc (fastest) | Join at query time |
+| Write amplification | Update parent on child change | Isolated writes |
+| Data consistency | Atomic within document | Eventual if denormalized |
+| Document growth | Risk of unbounded growth | Stable doc sizes |
+| Memory pressure | Large docs waste cache | Smaller working set |
+
+**$lookup optimization strategies:**
+
+```javascript
+// BAD: Unfiltered $lookup
 db.orders.aggregate([
-  { $match: {
-    updatedAt: { $gte: lastRunTimestamp }
-  }},
-  { $group: {
-    _id: { product: "$productId", date: { $dateToString: { format: "%Y-%m-%d", date: "$orderDate" } } },
-    dailySales: { $sum: "$amount" },
-    orderCount: { $sum: 1 }
-  }},
+  { $lookup: { from: "products", localField: "productId", foreignField: "_id", as: "product" } }
+]);
+
+// GOOD: Pipeline form with filter — fetch only needed fields
+db.orders.aggregate([
+  { $match: { status: "pending" } },
+  { $lookup: {
+    from: "products",
+    let: { pid: "$productId" },
+    pipeline: [
+      { $match: { $expr: { $eq: ["$_id", "$$pid"] } } },
+      { $project: { name: 1, price: 1 } }
+    ],
+    as: "product"
+  }}
+]);
+
+// CRITICAL: Always index the foreign field in $lookup
+db.reviews.createIndex({ productId: 1 });
+```
+
+### $merge and $out — Materialized Views
+
+```javascript
+// $out: Replace entire target collection (destructive)
+db.orders.aggregate([
+  { $match: { status: "completed" } },
+  { $group: { _id: "$customerId", totalSpent: { $sum: "$total" }, orderCount: { $sum: 1 } } },
+  { $out: "customer_spending_summary" }
+]);
+
+// $merge: Upsert into existing collection (incremental, preferred)
+db.orders.aggregate([
+  { $match: { status: "completed", createdAt: { $gte: ISODate("2024-11-01") } } },
+  { $group: { _id: "$customerId", monthlySpent: { $sum: "$total" }, monthlyOrders: { $sum: 1 } } },
   { $merge: {
-    into: "daily_sales_summary",
+    into: "customer_monthly_stats",
     on: "_id",
     whenMatched: [
       { $set: {
-        dailySales: { $add: ["$$ROOT.dailySales", "$$new.dailySales"] },
-        orderCount: { $add: ["$$ROOT.orderCount", "$$new.orderCount"] },
-        lastUpdated: "$$NOW"
+        totalSpent: { $add: ["$monthlySpent", "$$ROOT.totalSpent"] },
+        lastUpdated: new Date()
       }}
     ],
     whenNotMatched: "insert"
   }}
 ]);
+
+// Pattern: initial full build with $out, then periodic deltas with $merge
 ```
 
-**$merge vs $out:**
-| Feature | $merge | $out |
-|---|---|---|
-| Target collection | Same or different DB | Same DB only |
-| When matched | merge/replace/keepExisting/fail/pipeline | Replaces entire collection |
-| When not matched | insert/discard/fail | N/A |
-| Incremental updates | ✅ | ❌ |
-| Sharded output | ✅ | ❌ |
-
-### $out — Replace Collection Output
+### $search — Atlas Search Integration
 
 ```javascript
-// $out replaces the entire target collection atomically
-db.logs.aggregate([
-  { $match: { level: "error", ts: { $gte: ISODate("2024-01-01") } } },
-  { $group: { _id: "$service", errorCount: { $sum: 1 } } },
-  { $out: "error_report" }   // replaces error_report collection entirely
-]);
-
-// With database specification (MongoDB 7.0+)
-{ $out: { db: "reporting", coll: "error_report" } }
-```
-
-### $setWindowFields — Window Functions
-
-```javascript
-// Running total and moving average
-db.sales.aggregate([
-  { $setWindowFields: {
-    partitionBy: "$region",
-    sortBy: { date: 1 },
-    output: {
-      // Cumulative sum
-      runningTotal: {
-        $sum: "$amount",
-        window: { documents: ["unbounded", "current"] }
-      },
-      // 7-day moving average
-      movingAvg: {
-        $avg: "$amount",
-        window: { range: [-6, "current"], unit: "day" }
-      },
-      // Rank within partition
-      salesRank: { $rank: {} },
-      // Dense rank (no gaps)
-      denseRank: { $denseRank: {} },
-      // Percentile (MongoDB 7.0+)
-      percentile: {
-        $percentile: { input: "$amount", p: [0.5, 0.9, 0.99], method: "approximate" }
-      },
-      // Lead/lag (peek at adjacent rows)
-      nextDaySales: { $shift: { output: "$amount", by: 1, default: 0 } },
-      prevDaySales: { $shift: { output: "$amount", by: -1, default: 0 } }
-    }
-  }}
-]);
-
-// Row numbering for pagination alternative
-db.products.aggregate([
-  { $setWindowFields: {
-    sortBy: { price: -1 },
-    output: { rowNum: { $documentNumber: {} } }
-  }},
-  { $match: { rowNum: { $gt: 20, $lte: 40 } } }  // page 2 (20 per page)
-]);
-```
-
-### Pipeline Optimization Tips
-
-```javascript
-// 1. $match + $sort + $limit coalescence — MongoDB auto-optimizes
-db.coll.aggregate([
-  { $sort: { score: -1 } },
-  { $limit: 10 },
-  { $match: { status: "active" } }
-]);
-// Optimizer rewrites to: $match → $sort → $limit
-
-// 2. $project/$addFields before $group reduces memory
-db.coll.aggregate([
-  { $project: { category: 1, price: 1 } },  // drop unnecessary fields early
-  { $group: { _id: "$category", total: { $sum: "$price" } } }
-]);
-
-// 3. allowDiskUse for large datasets (>100MB in-memory limit)
-db.coll.aggregate([...], { allowDiskUse: true });
-
-// 4. $match early to leverage indexes
-// BAD: { $project } → { $match }
-// GOOD: { $match } → { $project }
-
-// 5. Use $expr and $let for complex computed comparisons in $match
-db.orders.aggregate([
-  { $match: {
-    $expr: {
-      $gt: [
-        { $multiply: ["$qty", "$price"] },
-        1000
-      ]
-    }
-  }}
-]);
-```
-
----
-
-## Atlas Search
-
-### Lucene Analyzers
-
-```json
-{
-  "analyzers": [
-    {
-      "name": "custom_english",
-      "charFilters": [
-        { "type": "mapping", "mappings": { "&": "and", "@": "at" } }
-      ],
-      "tokenizer": { "type": "standard" },
-      "tokenFilters": [
-        { "type": "lowercase" },
-        { "type": "stopword", "tokens": ["the", "a", "an", "is", "are"] },
-        { "type": "snowballStemming", "stemmerName": "english" },
-        { "type": "synonym", "synonyms": [
-          { "input": ["laptop", "notebook"], "synonyms": ["laptop", "notebook", "portable computer"] }
-        ]}
-      ]
-    },
-    {
-      "name": "autocomplete_analyzer",
-      "tokenizer": {
-        "type": "edgeGram",
-        "minGram": 2,
-        "maxGram": 15
-      },
-      "tokenFilters": [{ "type": "lowercase" }]
-    }
-  ],
-  "mappings": {
-    "dynamic": false,
-    "fields": {
-      "title": { "type": "string", "analyzer": "custom_english" },
-      "description": { "type": "string", "analyzer": "custom_english" },
-      "name": { "type": "autocomplete", "analyzer": "autocomplete_analyzer" },
-      "price": { "type": "number" },
-      "location": { "type": "geo" },
-      "createdAt": { "type": "date" }
-    }
-  }
-}
-```
-
-**Built-in analyzers:** `lucene.standard`, `lucene.simple`, `lucene.whitespace`, `lucene.keyword`, `lucene.english` (and other languages).
-
-### Autocomplete
-
-```javascript
-// Search index definition for autocomplete
-{
-  "mappings": {
-    "fields": {
-      "productName": {
-        "type": "autocomplete",
-        "tokenization": "edgeGram",  // or "rightEdgeGram", "nGram"
-        "minGrams": 2,
-        "maxGrams": 15,
-        "foldDiacritics": true
-      }
-    }
-  }
-}
-
-// Query
+// Full-text search with scoring, fuzzy matching, highlighting
 db.products.aggregate([
   { $search: {
-    index: "autocomplete_index",
-    autocomplete: {
-      query: "mon",
-      path: "productName",
-      tokenOrder: "sequential",  // or "any"
-      fuzzy: { maxEdits: 1, prefixLength: 2 }
-    }
-  }},
-  { $limit: 10 },
-  { $project: { productName: 1, score: { $meta: "searchScore" } } }
-]);
-```
-
-### Compound Queries
-
-```javascript
-db.movies.aggregate([
-  { $search: {
-    index: "movies_search",
-    compound: {
-      // All must match
-      must: [
-        { text: { query: "adventure", path: "genres" } }
-      ],
-      // At least one should match (boosts score)
-      should: [
-        { text: { query: "epic", path: "plot", score: { boost: { value: 3 } } } },
-        { range: { path: "imdb.rating", gte: 8.0, score: { boost: { value: 2 } } } }
-      ],
-      // Must not match (excluded)
-      mustNot: [
-        { text: { query: "horror", path: "genres" } }
-      ],
-      // Must match but doesn't affect score
-      filter: [
-        { range: { path: "year", gte: 2000 } },
-        { equals: { path: "rated", value: "PG-13" } }
-      ],
-      minimumShouldMatch: 1
-    },
-    highlight: { path: ["plot", "title"] }
-  }},
-  { $project: {
-    title: 1, year: 1, plot: 1,
-    score: { $meta: "searchScore" },
-    highlights: { $meta: "searchHighlights" }
-  }},
-  { $limit: 20 }
-]);
-```
-
-### Facets and Counting
-
-```javascript
-db.products.aggregate([
-  { $searchMeta: {
     index: "product_search",
-    facet: {
-      operator: {
-        compound: {
-          must: [{ text: { query: "laptop", path: "description" } }]
-        }
-      },
-      facets: {
-        brandFacet: { type: "string", path: "brand", numBuckets: 10 },
-        priceFacet: {
-          type: "number", path: "price",
-          boundaries: [0, 500, 1000, 2000, 5000]
-        },
-        dateFacet: {
-          type: "date", path: "createdAt",
-          boundaries: [
-            ISODate("2023-01-01"), ISODate("2024-01-01"), ISODate("2025-01-01")
-          ]
-        }
-      }
-    }
-  }}
-]);
-// Returns: { count: { total: N }, facet: { brandFacet: {...}, priceFacet: {...} } }
-```
-
-### Custom Scoring
-
-```javascript
-{ $search: {
-  compound: {
-    should: [
-      { text: {
-        query: "mongodb",
-        path: "title",
-        score: { boost: { value: 5 } }  // static boost
-      }},
-      { text: {
-        query: "mongodb",
-        path: "body",
-        score: { function: {
-          multiply: [
-            { score: "relevance" },
-            { path: { value: "popularity", undefined: 1 } }  // field-based boost
-          ]
-        }}
-      }}
-    ]
-  }
-}}
-```
-
-### Search Index Definition
-
-```javascript
-// Create via mongosh (Atlas)
-db.runCommand({
-  createSearchIndexes: "products",
-  indexes: [
-    {
-      name: "product_search",
-      definition: {
-        analyzer: "lucene.english",
-        searchAnalyzer: "lucene.english",
-        mappings: {
-          dynamic: false,
-          fields: {
-            name: { type: "string", analyzer: "lucene.english" },
-            description: { type: "string", analyzer: "lucene.english" },
-            category: { type: "stringFacet" },
-            price: { type: "number" },
-            tags: { type: "token" }
-          }
-        },
-        storedSource: { include: ["name", "price"] }  // return stored fields
-      }
-    }
-  ]
-});
-```
-
----
-
-## Atlas Vector Search
-
-### Index Configuration
-
-```json
-{
-  "fields": [
-    {
-      "type": "vector",
-      "path": "embedding",
-      "numDimensions": 1536,
-      "similarity": "cosine"
+    compound: {
+      must: [{ text: { query: "wireless bluetooth", path: "title", fuzzy: { maxEdits: 1 } } }],
+      should: [{ text: { query: "premium", path: "description", score: { boost: { value: 2 } } } }],
+      filter: [{ range: { path: "price", gte: 10, lte: 100 } }]
     },
-    {
-      "type": "filter",
-      "path": "category"
-    },
-    {
-      "type": "filter",
-      "path": "status"
-    }
-  ]
-}
-```
-
-**Similarity metrics:** `cosine` (normalized), `dotProduct` (pre-normalized, fastest), `euclidean` (absolute distance).
-
-**MongoDB 8.0 enhancements:** Scalar and binary quantization reduce memory by up to 32x with minimal accuracy loss.
-
-### Querying Vectors
-
-```javascript
-db.documents.aggregate([
-  { $vectorSearch: {
-    index: "vector_index",
-    path: "embedding",
-    queryVector: embeddingVector,    // float array from embedding model
-    numCandidates: 200,              // HNSW candidates (higher = more accurate, slower)
-    limit: 10,
-    filter: {
-      $and: [
-        { category: { $eq: "technology" } },
-        { status: { $eq: "published" } }
-      ]
-    }
+    highlight: { path: ["title", "description"] }
   }},
+  { $limit: 20 },
+  { $project: { title: 1, price: 1, score: { $meta: "searchScore" }, highlights: { $meta: "searchHighlights" } } }
+]);
+
+// Autocomplete
+db.products.aggregate([
+  { $search: { autocomplete: { query: "wire", path: "title", tokenOrder: "sequential" } } },
+  { $limit: 10 },
+  { $project: { title: 1, _id: 0 } }
+]);
+```
+
+### Pipeline Performance Rules
+
+1. **$match first** — Enables index usage. Adjacent $match stages auto-merge.
+2. **$project before $group** — Reduce field count before blocking stages.
+3. **Avoid $unwind on large arrays** — Use `$filter` or `$reduce` instead.
+4. **$sort + $limit coalesce** — Adjacent pair uses top-k algorithm (low memory).
+5. **$lookup subpipeline** — Always filter inside, not after $unwind.
+6. **allowDiskUse: true** — For pipelines exceeding 100MB memory limit.
+7. **$facet caveat** — Each sub-pipeline processes ALL input. No index use inside $facet.
+
+```javascript
+// Efficient: $filter instead of $unwind + $match + $group
+db.orders.aggregate([
   { $project: {
-    title: 1,
-    content: 1,
-    score: { $meta: "vectorSearchScore" }  // 0.0-1.0 for cosine
+    expensiveItems: { $filter: { input: "$items", cond: { $gte: ["$$this.price", 100] } } }
   }}
 ]);
 ```
 
-### Hybrid Search (Vector + Text)
-
-```javascript
-// Combine vector search with Atlas Search using $unionWith or reciprocal rank fusion
-db.documents.aggregate([
-  // Vector search results
-  { $vectorSearch: {
-    index: "vector_idx",
-    path: "embedding",
-    queryVector: queryEmbedding,
-    numCandidates: 100,
-    limit: 20
-  }},
-  { $addFields: { vs_score: { $meta: "vectorSearchScore" } } },
-  { $unionWith: {
-    coll: "documents",
-    pipeline: [
-      // Full-text search results
-      { $search: { index: "text_idx", text: { query: "mongodb patterns", path: "content" } } },
-      { $limit: 20 },
-      { $addFields: { ts_score: { $meta: "searchScore" } } }
-    ]
-  }},
-  // Reciprocal Rank Fusion (RRF) to combine scores
-  { $group: {
-    _id: "$_id",
-    doc: { $first: "$$ROOT" },
-    vs_score: { $max: "$vs_score" },
-    ts_score: { $max: "$ts_score" }
-  }},
-  { $addFields: {
-    rrf_score: {
-      $add: [
-        { $divide: [1, { $add: [60, { $ifNull: ["$vs_score", 0] }] }] },
-        { $divide: [1, { $add: [60, { $ifNull: ["$ts_score", 0] }] }] }
-      ]
-    }
-  }},
-  { $sort: { rrf_score: -1 } },
-  { $limit: 10 }
-]);
-```
-
-### Embedding Strategies
-
-```javascript
-// 1. Store embeddings at document creation
-async function insertWithEmbedding(doc) {
-  const embedding = await openai.embeddings.create({
-    model: "text-embedding-3-small",  // 1536 dimensions
-    input: `${doc.title} ${doc.description}`
-  });
-  doc.embedding = embedding.data[0].embedding;
-  await collection.insertOne(doc);
-}
-
-// 2. Chunk large documents for better retrieval
-function chunkText(text, chunkSize = 500, overlap = 50) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += chunkSize - overlap) {
-    chunks.push(text.slice(i, i + chunkSize));
-  }
-  return chunks;
-}
-
-// 3. Use Atlas triggers to auto-generate embeddings on insert/update
-// (Configure in Atlas UI: Database Triggers → Function)
-```
-
 ---
 
-## Queryable Encryption
+## Time-Series Collections
 
-### Architecture Overview
-
-Queryable Encryption (QE) encrypts sensitive fields client-side before sending to the server. The server processes queries on encrypted data without ever decrypting it.
-
-**Components:**
-- **Client:** Encrypts/decrypts data; holds encryption keys
-- **Key Vault:** Collection storing encrypted data encryption keys (DEKs)
-- **KMS:** External key management (AWS KMS, Azure Key Vault, GCP KMS, or local)
-- **Server:** Stores and queries encrypted data; never sees plaintext
-
-### Equality Queries
+### Collection Creation and Configuration
 
 ```javascript
-const autoEncryptionOpts = {
-  keyVaultNamespace: "encryption.__keyVault",
-  kmsProviders: {
-    aws: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-    }
-  },
-  encryptedFieldsMap: {
-    "medical.patients": {
-      fields: [
-        {
-          path: "ssn",
-          bsonType: "string",
-          queries: { queryType: "equality" }
-        },
-        {
-          path: "insurance.policyNumber",
-          bsonType: "string",
-          queries: { queryType: "equality" }
-        },
-        {
-          path: "bloodType",
-          bsonType: "string"
-          // no queries = encrypted but not queryable
-        }
-      ]
-    }
-  }
-};
-
-const client = new MongoClient(uri, { autoEncryption: autoEncryptionOpts });
-const patients = client.db("medical").collection("patients");
-
-// Insert — automatically encrypted client-side
-await patients.insertOne({
-  name: "Jane Doe",
-  ssn: "123-45-6789",
-  bloodType: "O+",
-  insurance: { policyNumber: "POL-12345" }
-});
-
-// Query — equality on encrypted field works transparently
-const patient = await patients.findOne({ ssn: "123-45-6789" });
-```
-
-### Range Queries (8.0+)
-
-```javascript
-// MongoDB 8.0 adds range query support for Queryable Encryption
-{
-  path: "billing.amount",
-  bsonType: "int",
-  queries: {
-    queryType: "range",
-    sparsity: 2,          // trade-off: lower = more precise, higher = faster
-    trimFactor: 6,
-    contention: 4
-  }
-}
-
-// Range queries work transparently
-await invoices.find({
-  "billing.amount": { $gte: 1000, $lte: 5000 }
-});
-```
-
-### Key Management
-
-```javascript
-const { ClientEncryption } = require("mongodb-client-encryption");
-
-const encryption = new ClientEncryption(client, {
-  keyVaultNamespace: "encryption.__keyVault",
-  kmsProviders: { aws: { accessKeyId: "...", secretAccessKey: "..." } }
-});
-
-// Create a data encryption key (DEK)
-const dataKeyId = await encryption.createDataKey("aws", {
-  masterKey: {
-    key: "arn:aws:kms:us-east-1:123456:key/abcd-1234",
-    region: "us-east-1"
-  },
-  keyAltNames: ["patient-data-key"]
-});
-```
-
-### Automatic vs Explicit Encryption
-
-```javascript
-// Explicit encryption — manual control per field
-const encrypted = await encryption.encrypt(
-  "123-45-6789",
-  {
-    algorithm: "Indexed",       // or "Unindexed" for non-queryable
-    keyId: dataKeyId,
-    contentionFactor: 4         // higher = more secure, slower writes
-  }
-);
-await collection.insertOne({ ssn: encrypted });
-
-// Automatic encryption (recommended) — driven by encryptedFieldsMap
-// See equality queries section above; fields encrypted/decrypted transparently
-```
-
----
-
-## Time Series Collections
-
-### Creating Time Series Collections
-
-```javascript
-db.createCollection("sensor_data", {
+// Native time-series collection (5.0+)
+db.createCollection("sensor_readings", {
   timeseries: {
-    timeField: "timestamp",           // required: field containing time
-    metaField: "metadata",            // optional: identifies data source
-    granularity: "seconds"            // "seconds" | "minutes" | "hours"
-    // MongoDB 7.0+: use bucketMaxSpanSeconds/bucketRoundingSeconds instead
+    timeField: "timestamp",
+    metaField: "metadata",
+    granularity: "seconds"  // seconds | minutes | hours
   },
-  expireAfterSeconds: 2592000         // optional TTL: 30 days
+  expireAfterSeconds: 86400 * 90  // auto-delete after 90 days
 });
 
-// MongoDB 7.0+ granularity control
+// MongoDB 6.3+: fine-grained bucketing
 db.createCollection("metrics", {
   timeseries: {
     timeField: "ts",
     metaField: "source",
-    bucketMaxSpanSeconds: 3600,       // max time span per bucket
-    bucketRoundingSeconds: 3600       // bucket boundary alignment
+    bucketMaxSpanSeconds: 3600,
+    bucketRoundingSeconds: 3600
   }
 });
 
-// Insert data — MongoDB handles bucketing automatically
-db.sensor_data.insertMany([
-  { timestamp: new Date(), metadata: { sensorId: "temp-01", location: "floor1" }, value: 22.5 },
-  { timestamp: new Date(), metadata: { sensorId: "temp-01", location: "floor1" }, value: 22.7 },
-  { timestamp: new Date(), metadata: { sensorId: "humidity-01", location: "floor1" }, value: 45.2 }
+// Insert (same as any collection)
+db.sensor_readings.insertMany([
+  { timestamp: ISODate("2024-11-15T10:30:00Z"),
+    metadata: { sensorId: "temp-01", location: "warehouse-A" },
+    temperature: 22.5, humidity: 45.2 }
 ]);
 ```
 
-### Querying and Aggregating
+### Secondary Indexes
 
 ```javascript
-// Time-based aggregation — automatically optimized for bucket structure
-db.sensor_data.aggregate([
-  { $match: {
-    "metadata.sensorId": "temp-01",
-    timestamp: { $gte: ISODate("2024-06-01"), $lt: ISODate("2024-07-01") }
-  }},
+// Compound on metadata + time (most common)
+db.sensor_readings.createIndex({ "metadata.sensorId": 1, timestamp: 1 });
+
+// Measurement field for range queries
+db.sensor_readings.createIndex({ "metadata.location": 1, temperature: 1 });
+
+// NOTE: auto-created clustered index on (metaField, timeField)
+// — explicit timeField-only index is usually redundant
+```
+
+### Querying Time-Series Data
+
+```javascript
+// Hourly aggregation with window function
+db.sensor_readings.aggregate([
+  { $match: { timestamp: { $gte: ISODate("2024-11-15"), $lt: ISODate("2024-11-16") } } },
   { $group: {
-    _id: {
-      day: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } }
-    },
-    avgValue: { $avg: "$value" },
-    minValue: { $min: "$value" },
-    maxValue: { $max: "$value" },
-    readings: { $sum: 1 }
+    _id: { sensorId: "$metadata.sensorId", hour: { $dateTrunc: { date: "$timestamp", unit: "hour" } } },
+    avgTemp: { $avg: "$temperature" }, maxTemp: { $max: "$temperature" }, readings: { $sum: 1 }
   }},
-  { $sort: { "_id.day": 1 } }
+  { $sort: { "_id.sensorId": 1, "_id.hour": 1 } }
 ]);
 
-// Window function for rolling averages on time series
-db.sensor_data.aggregate([
+// Moving average with $setWindowFields
+db.sensor_readings.aggregate([
+  { $match: { "metadata.sensorId": "temp-01" } },
   { $setWindowFields: {
-    partitionBy: "$metadata.sensorId",
     sortBy: { timestamp: 1 },
-    output: {
-      rollingAvg: {
-        $avg: "$value",
-        window: { range: [-1, 0], unit: "hour" }
-      }
-    }
+    output: { movingAvg: { $avg: "$temperature", window: { range: [-1, 0], unit: "hour" } } }
   }}
 ]);
 ```
 
-### Secondary Indexes on Time Series
+### Migration from Bucket Pattern
 
 ```javascript
-// Compound index on metaField subfields + timeField
-db.sensor_data.createIndex({ "metadata.sensorId": 1, timestamp: -1 });
-
-// Partial index for specific sensors
-db.sensor_data.createIndex(
-  { timestamp: -1 },
-  { partialFilterExpression: { "metadata.location": "critical-zone" } }
-);
+// Unwind existing manual buckets into native time-series
+db.old_buckets.aggregate([
+  { $unwind: "$readings" },
+  { $project: { _id: 0, timestamp: "$readings.ts", metadata: { sensorId: "$sensorId" }, value: "$readings.val" } },
+  { $merge: { into: "ts_readings" } }
+]);
+// Benefits: auto bucketing, columnar compression (~10x), optimized aggregation, built-in TTL
 ```
-
-### Performance Considerations
-
-- **Batch inserts:** Insert many documents at once; MongoDB optimizes bucket packing
-- **metaField design:** Keep metaField values consistent per source; changing meta creates new buckets
-- **Granularity:** Match to your insert frequency. Finer granularity = more buckets = more overhead
-- **Memory:** Time series uses ~1KB per active bucket in WiredTiger cache
-- **MongoDB 8.0:** 200% faster aggregations on time series via columnar scanning
 
 ---
 
-## Schema Versioning Patterns
+## Change Stream Advanced Patterns
 
-### Schema Version Field
+### Pre/Post Image Capture
 
 ```javascript
-// Add version field to every document
-{ _id: 1, schemaVersion: 1, name: "Alice", email: "alice@example.com" }
+// Enable pre/post images (6.0+)
+db.runCommand({ collMod: "orders", changeStreamPreAndPostImages: { enabled: true } });
 
-// After adding address field in v2
-{ _id: 2, schemaVersion: 2, name: "Bob", email: "bob@example.com",
-  address: { street: "123 Main", city: "NYC", zip: "10001" } }
+const stream = db.orders.watch([], {
+  fullDocument: "updateLookup",
+  fullDocumentBeforeChange: "required"  // "required" or "whenAvailable"
+});
 
-// Application reads both versions
-function normalizeUser(doc) {
-  switch (doc.schemaVersion) {
-    case 1:
-      return { ...doc, address: null, schemaVersion: 2 };
-    case 2:
-      return doc;
-    default:
-      throw new Error(`Unknown schema version: ${doc.schemaVersion}`);
+stream.on("change", (event) => {
+  const before = event.fullDocumentBeforeChange;
+  const after = event.fullDocument;
+  if (before.status !== after.status) {
+    console.log(`Order ${event.documentKey._id}: ${before.status} -> ${after.status}`);
   }
+});
+```
+
+### Filtering and Transformation
+
+```javascript
+const pipeline = [
+  { $match: {
+    $or: [
+      { operationType: "insert" },
+      { operationType: "update", "updateDescription.updatedFields.status": { $exists: true } }
+    ]
+  }},
+  { $project: { operationType: 1, documentKey: 1, "fullDocument.status": 1, "fullDocument.total": 1 } }
+];
+const stream = db.orders.watch(pipeline);
+```
+
+### Distributed Resume Strategy
+
+```javascript
+async function processChangeStream(collName) {
+  const saved = await db.collection("change_stream_tokens").findOne({ _id: collName });
+  const options = saved?.resumeToken
+    ? { resumeAfter: saved.resumeToken }
+    : { startAtOperationTime: Timestamp(Math.floor(Date.now() / 1000), 0) };
+
+  const stream = db.collection(collName).watch([], { ...options, fullDocument: "updateLookup" });
+
+  stream.on("change", async (event) => {
+    try {
+      await handleEvent(event);
+      await db.collection("change_stream_tokens").updateOne(
+        { _id: collName },
+        { $set: { resumeToken: event._id, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    } catch (err) {
+      stream.close();
+      setTimeout(() => processChangeStream(collName), 5000);
+    }
+  });
 }
 ```
 
-### Incremental Migration
+### Change Stream with Aggregation
 
 ```javascript
-// Lazy migration: upgrade on read/write
-async function findUser(id) {
-  const user = await db.users.findOne({ _id: id });
-  if (user.schemaVersion < CURRENT_VERSION) {
-    const migrated = migrateToLatest(user);
-    await db.users.replaceOne({ _id: id }, migrated);
-    return migrated;
-  }
-  return user;
-}
+// Database-level: watch multiple collections
+const dbStream = db.watch([
+  { $match: { "ns.coll": { $in: ["orders", "payments", "shipments"] } } }
+]);
 
-// Background migration: batch update in chunks
-async function batchMigrate(batchSize = 1000) {
-  let processed = 0;
-  while (true) {
-    const docs = await db.users
-      .find({ schemaVersion: { $lt: CURRENT_VERSION } })
-      .limit(batchSize)
-      .toArray();
-    if (docs.length === 0) break;
-
-    const ops = docs.map(doc => ({
-      replaceOne: {
-        filter: { _id: doc._id, schemaVersion: doc.schemaVersion },
-        replacement: migrateToLatest(doc)
-      }
-    }));
-    await db.users.bulkWrite(ops);
-    processed += docs.length;
-  }
-  return processed;
-}
+// Enrich events inline
+const enriched = db.orders.watch([
+  { $match: { operationType: { $in: ["insert", "update"] } } },
+  { $addFields: {
+    priority: { $switch: {
+      branches: [
+        { case: { $gte: ["$fullDocument.total", 1000] }, then: "high" },
+        { case: { $gte: ["$fullDocument.total", 100] }, then: "medium" }
+      ],
+      default: "low"
+    }}
+  }}
+]);
 ```
 
-### Application-Level Versioning
+### Exactly-Once Processing
 
 ```javascript
-// Using MongoDB's $jsonSchema validation with versioning
-db.runCommand({
-  collMod: "users",
-  validator: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["schemaVersion", "name", "email"],
-      properties: {
-        schemaVersion: { bsonType: "int", minimum: 1, maximum: 3 },
-        name: { bsonType: "string" },
-        email: { bsonType: "string" }
+async function processEventExactlyOnce(event) {
+  const eventId = event._id._data;
+  const session = client.startSession();
+  try {
+    session.startTransaction();
+    const exists = await db.collection("processed_events").findOne({ _id: eventId }, { session });
+    if (exists) { await session.abortTransaction(); return; }
+    await applyBusinessLogic(event, session);
+    await db.collection("processed_events").insertOne({ _id: eventId, processedAt: new Date() }, { session });
+    await session.commitTransaction();
+  } catch (err) { await session.abortTransaction(); throw err; }
+  finally { session.endSession(); }
+}
+
+// TTL cleanup for dedup records
+db.processed_events.createIndex({ processedAt: 1 }, { expireAfterSeconds: 86400 * 7 });
+```
+
+---
+
+## Queryable Encryption and CSFLE
+
+### CSFLE (Client-Side Field Level Encryption)
+
+Encrypts fields client-side before sending to the server. Server never sees plaintext. Available since 4.2.
+
+```javascript
+const schemaMap = {
+  "mydb.patients": {
+    bsonType: "object",
+    encryptMetadata: { keyId: [UUID("...")] },
+    properties: {
+      ssn: {
+        encrypt: {
+          bsonType: "string",
+          algorithm: "AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic"
+          // Deterministic: allows equality queries on encrypted field
+        }
+      },
+      medicalRecords: {
+        encrypt: {
+          bsonType: "array",
+          algorithm: "AEAD_AES_256_CBC_HMAC_SHA_512-Random"
+          // Random: more secure, no querying
+        }
       }
     }
-  },
-  validationLevel: "moderate",  // only validate inserts and updates (not existing docs)
-  validationAction: "warn"      // log warnings instead of rejecting
+  }
+};
+
+const secureClient = new MongoClient(uri, {
+  autoEncryption: {
+    keyVaultNamespace: "encryption.__keyVault",
+    kmsProviders: { aws: { accessKeyId: "...", secretAccessKey: "..." } },
+    schemaMap
+  }
 });
+
+// Usage is transparent
+await db.collection("patients").insertOne({ name: "Alice", ssn: "123-45-6789", medicalRecords: [{}] });
+await db.collection("patients").findOne({ ssn: "123-45-6789" }); // works (deterministic)
+```
+
+### Queryable Encryption (7.0+)
+
+Supports equality AND range queries on encrypted data using structured encryption.
+
+```javascript
+const encryptedFieldsMap = {
+  "mydb.patients": {
+    fields: [
+      { path: "ssn", bsonType: "string", queries: [{ queryType: "equality" }] },
+      { path: "age", bsonType: "int",
+        queries: [{ queryType: "range", min: 0, max: 150, sparsity: 2, precision: 0 }] }, // 8.0+
+      { path: "medicalNotes", bsonType: "string" } // encrypted, not queryable
+    ]
+  }
+};
+
+const client = new MongoClient(uri, {
+  autoEncryption: {
+    keyVaultNamespace: "encryption.__keyVault",
+    kmsProviders: { aws: { accessKeyId: "...", secretAccessKey: "..." } },
+    encryptedFieldsMap
+  }
+});
+
+// Both work on encrypted data:
+await db.collection("patients").findOne({ ssn: "123-45-6789" });
+await db.collection("patients").find({ age: { $gte: 21, $lte: 65 } });
+```
+
+### Key Management Architecture
+
+```javascript
+// Hierarchy: CMK (in KMS) -> DEK (encrypted in __keyVault) -> field data
+const clientEncryption = new ClientEncryption(client, {
+  keyVaultNamespace: "encryption.__keyVault",
+  kmsProviders: { aws: { accessKeyId: "...", secretAccessKey: "..." } }
+});
+
+// Create DEK
+const dekId = await clientEncryption.createDataKey("aws", {
+  masterKey: { key: "arn:aws:kms:us-east-1:123456789:key/abcd-1234", region: "us-east-1" },
+  keyAltNames: ["patient-data-key"]
+});
+
+// Rotate DEK (re-wraps with new CMK, does not re-encrypt all data)
+await clientEncryption.rewrapManyDataKey(
+  { keyAltNames: "patient-data-key" },
+  { provider: "aws", masterKey: { key: "arn:aws:kms:...:new-key", region: "us-east-1" } }
+);
+
+// Required unique index on key vault
+db.getSiblingDB("encryption").getCollection("__keyVault")
+  .createIndex({ keyAltNames: 1 }, { unique: true,
+    partialFilterExpression: { keyAltNames: { $exists: true } } });
+```
+
+### Encryption Algorithm Selection
+
+```
+Deterministic (AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic):
+  + Supports equality queries ($eq, $in, $ne)
+  + Can be used in unique indexes
+  - Same plaintext -> same ciphertext (frequency analysis possible)
+  Best for: SSN, email, account number
+
+Random (AEAD_AES_256_CBC_HMAC_SHA_512-Random):
+  + Same plaintext -> different ciphertext each time
+  - No queries possible
+  Best for: Medical records, notes, PII not used in queries
+
+Queryable Encryption (Structured Encryption, 7.0+):
+  + Equality queries (7.0+), range queries (8.0+)
+  - ~2-3x storage overhead for queryable fields
+  Best for: New applications needing queries on encrypted data
 ```
 
 ---
 
-## Capped Collections
+## Advanced Indexing Strategies
 
-### Creating Capped Collections
+### Covered Queries
+
+Query is "covered" when the index contains all needed fields — no document fetch.
 
 ```javascript
-// Fixed-size collection — oldest documents automatically removed
-db.createCollection("logs", {
-  capped: true,
-  size: 104857600,    // 100MB max size (required)
-  max: 100000         // optional max document count
-});
+db.users.createIndex({ email: 1, name: 1, status: 1 });
 
-// Verify collection is capped
-db.logs.isCapped();  // true
+// Covered (all fields in index + projection, _id excluded):
+db.users.find({ email: "alice@example.com" }, { _id: 0, name: 1, status: 1 }).explain("executionStats");
+// Look for: totalDocsExamined: 0
 
-// Convert existing collection to capped (blocks writes)
-db.runCommand({ convertToCapped: "oldLogs", size: 52428800 });
+// NOT covered (address not in index):
+db.users.find({ email: "alice@example.com" }, { name: 1, address: 1 });
 ```
 
-### Tailable Cursors
+### Index Intersection
 
 ```javascript
-// Tailable cursor — like Unix `tail -f`
-const cursor = db.logs.find({}, {
-  tailable: true,
-  awaitData: true,      // block for new data instead of returning immediately
-  maxAwaitTimeMS: 1000
-});
-
-while (await cursor.hasNext()) {
-  const doc = await cursor.next();
-  console.log(doc);
-  // Cursor stays open, waiting for new inserts
-}
-
-// Node.js driver equivalent
-const cursor = collection.find({}, {
-  tailable: true,
-  awaitData: true,
-  maxAwaitTimeMS: 1000
-});
-
-for await (const doc of cursor) {
-  processLog(doc);
-}
+// Two separate indexes CAN be combined, but compound is almost always faster
+db.orders.createIndex({ status: 1 });
+db.orders.createIndex({ customerId: 1 });
+// Query may use intersection — verify with explain() (look for AND_SORTED stage)
+// Recommendation: prefer compound { status: 1, customerId: 1 } over intersection
 ```
 
-### Use Cases and Limitations
+### Hidden Indexes
 
-**Good for:** Logging, event streaming, circular buffers, recent activity feeds.
-
-**Limitations:**
-- Cannot delete individual documents (only drop the collection)
-- Cannot update documents to increase their size
-- No sharding support
-- No `$out` or `$merge` aggregation target
-- Inserts maintain natural insertion order (FIFO)
-- Consider change streams or time series collections as modern alternatives
+Test impact of dropping an index without actually dropping it (4.4+).
 
 ```javascript
-// Common pattern: capped collection as event bus
-db.createCollection("events", { capped: true, size: 10485760 });
+db.orders.hideIndex("status_1_createdAt_-1");
+// Monitor performance — if no degradation, safe to drop
+db.orders.dropIndex("status_1_createdAt_-1");
+// Or unhide if queries degraded:
+db.orders.unhideIndex("status_1_createdAt_-1");
+```
 
-// Producer
-db.events.insertOne({ type: "order_created", orderId: "abc", ts: new Date() });
+### Columnstore Indexes (7.0+)
 
-// Consumer (tailable cursor)
-const stream = db.events.find(
-  { ts: { $gte: new Date() } },
-  { tailable: true, awaitData: true }
+Efficient for analytics scanning many docs but few fields.
+
+```javascript
+db.events.createIndex({ "$**": "columnstore" });
+
+// Selective: index only specific fields
+db.events.createIndex(
+  { "$**": "columnstore" },
+  { columnstoreProjection: { eventType: 1, duration: 1, timestamp: 1 } }
 );
 ```

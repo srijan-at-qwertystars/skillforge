@@ -1,363 +1,329 @@
-// ============================================================================
-// mongosh-snippets.js — Useful mongosh Helper Functions
-// ============================================================================
-// Load in mongosh:  load("mongosh-snippets.js")
-// Or add to ~/.mongoshrc.js for automatic loading.
-// ============================================================================
+// =============================================================================
+// mongosh-snippets.js — Useful mongosh commands for administration & debugging
+//
+// USAGE:
+//   mongosh < mongosh-snippets.js           (run all)
+//   mongosh --eval "load('mongosh-snippets.js')"
+//   Or copy-paste individual snippets into a mongosh session.
+// =============================================================================
 
-// ---------------------------------------------------------------------------
-// Collection Helpers
-// ---------------------------------------------------------------------------
+// ─── SERVER INFO ──────────────────────────────────────────────────────────────
 
-/**
- * Show all collections with document counts and sizes (sorted by size desc).
- */
-function collStats() {
-  const results = [];
-  db.getCollectionNames().forEach((name) => {
-    try {
-      const stats = db.getCollection(name).stats();
-      results.push({
-        collection: name,
-        docs: stats.count,
-        sizeMB: (stats.size / 1048576).toFixed(2),
-        indexSizeMB: (stats.totalIndexSize / 1048576).toFixed(2),
-        avgDocBytes: stats.count > 0 ? Math.round(stats.avgObjSize) : 0,
-        indexes: stats.nindexes,
-      });
-    } catch (e) {
-      results.push({ collection: name, error: e.message });
-    }
-  });
-  results.sort((a, b) => parseFloat(b.sizeMB || 0) - parseFloat(a.sizeMB || 0));
-  console.table(results);
-  return results;
+// Quick server overview
+function serverOverview() {
+  const ss = db.serverStatus();
+  const info = {
+    version: ss.version,
+    uptime: `${Math.floor(ss.uptime / 3600)}h ${Math.floor((ss.uptime % 3600) / 60)}m`,
+    connections: `${ss.connections.current} / ${ss.connections.current + ss.connections.available}`,
+    opcounters: ss.opcounters,
+    storageEngine: ss.storageEngine.name
+  };
+  printjson(info);
 }
 
-/**
- * Show the schema shape of a collection by sampling documents.
- * @param {string} collName - Collection name
- * @param {number} sampleSize - Number of documents to sample
- */
-function schemaShape(collName, sampleSize = 100) {
-  const fields = {};
-  db.getCollection(collName)
-    .aggregate([{ $sample: { size: sampleSize } }])
-    .forEach((doc) => {
-      function traverse(obj, prefix = "") {
-        for (const [key, val] of Object.entries(obj)) {
-          const path = prefix ? `${prefix}.${key}` : key;
-          const type = Array.isArray(val)
-            ? "array"
-            : val === null
-              ? "null"
-              : typeof val;
-          if (!fields[path]) fields[path] = {};
-          fields[path][type] = (fields[path][type] || 0) + 1;
-        }
-      }
-      traverse(doc);
+// ─── DATABASE & COLLECTION STATS ──────────────────────────────────────────────
+
+// All database sizes
+function dbSizes() {
+  const dbs = db.adminCommand({ listDatabases: 1 });
+  dbs.databases
+    .sort((a, b) => b.sizeOnDisk - a.sizeOnDisk)
+    .forEach(d => {
+      print(`${d.name.padEnd(25)} ${(d.sizeOnDisk / 1024 / 1024).toFixed(2).padStart(10)} MB`);
     });
-
-  const result = Object.entries(fields)
-    .map(([path, types]) => ({
-      field: path,
-      types: Object.entries(types)
-        .map(([t, c]) => `${t}(${c})`)
-        .join(", "),
-      coverage: `${Math.round(
-        (Object.values(types).reduce((a, b) => a + b, 0) / sampleSize) * 100
-      )}%`,
-    }))
-    .sort((a, b) => a.field.localeCompare(b.field));
-
-  console.table(result);
-  return result;
+  print(`${"TOTAL".padEnd(25)} ${(dbs.totalSize / 1024 / 1024).toFixed(2).padStart(10)} MB`);
 }
 
-// ---------------------------------------------------------------------------
-// Index Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Show index usage stats for a collection.
- * @param {string} collName - Collection name
- */
-function indexUsage(collName) {
-  const stats = db.getCollection(collName).aggregate([{ $indexStats: {} }]).toArray();
-  const result = stats.map((s) => ({
-    name: s.name,
-    key: JSON.stringify(s.key),
-    ops: s.accesses.ops,
-    since: s.accesses.since.toISOString().slice(0, 19),
-  }));
-  result.sort((a, b) => a.ops - b.ops);
-  console.table(result);
-  return result;
+// Collection sizes for current database
+function collectionSizes() {
+  const results = [];
+  db.getCollectionNames().forEach(coll => {
+    try {
+      const stats = db[coll].stats();
+      results.push({
+        name: coll,
+        docs: stats.count,
+        dataMB: (stats.size / 1024 / 1024).toFixed(2),
+        storageMB: (stats.storageSize / 1024 / 1024).toFixed(2),
+        indexMB: (stats.totalIndexSize / 1024 / 1024).toFixed(2),
+        indexes: stats.nindexes,
+        avgDocBytes: stats.count > 0 ? Math.round(stats.size / stats.count) : 0
+      });
+    } catch (e) { /* skip views */ }
+  });
+  results.sort((a, b) => parseFloat(b.dataMB) - parseFloat(a.dataMB));
+  console.table(results);
 }
 
-/**
- * Find duplicate/redundant indexes across all collections.
- */
-function findRedundantIndexes() {
-  const issues = [];
-  db.getCollectionNames().forEach((collName) => {
-    const indexes = db.getCollection(collName).getIndexes();
-    for (let i = 0; i < indexes.length; i++) {
-      for (let j = 0; j < indexes.length; j++) {
-        if (i === j) continue;
+// ─── INDEX ANALYSIS ───────────────────────────────────────────────────────────
+
+// All indexes with usage stats for current database
+function indexUsage() {
+  db.getCollectionNames().forEach(coll => {
+    print(`\n=== ${coll} ===`);
+    try {
+      const indexes = db[coll].getIndexes();
+      const stats = db[coll].aggregate([{ $indexStats: {} }]).toArray();
+      const statsMap = {};
+      stats.forEach(s => { statsMap[s.name] = s.accesses.ops; });
+
+      indexes.forEach(idx => {
+        const ops = statsMap[idx.name] || 0;
+        const flag = (idx.name !== "_id_" && ops === 0) ? " ⚠️  UNUSED" : "";
+        print(`  ${idx.name.padEnd(40)} ops: ${String(ops).padStart(8)}  key: ${JSON.stringify(idx.key)}${flag}`);
+      });
+    } catch (e) { print(`  (skipped: ${e.message})`); }
+  });
+}
+
+// Find redundant indexes (prefix of another index)
+function redundantIndexes() {
+  db.getCollectionNames().forEach(coll => {
+    try {
+      const indexes = db[coll].getIndexes();
+      for (let i = 0; i < indexes.length; i++) {
         const keysI = Object.keys(indexes[i].key);
-        const keysJ = Object.keys(indexes[j].key);
-        if (keysI.length < keysJ.length) {
-          const isPrefix = keysI.every(
-            (k, idx) =>
-              k === keysJ[idx] && indexes[i].key[k] === indexes[j].key[k]
+        for (let j = 0; j < indexes.length; j++) {
+          if (i === j) continue;
+          const keysJ = Object.keys(indexes[j].key);
+          if (keysI.length >= keysJ.length) continue;
+          const isPrefix = keysI.every((k, idx) =>
+            k === keysJ[idx] && indexes[i].key[k] === indexes[j].key[k]
           );
-          if (isPrefix && !indexes[i].unique && !indexes[i].sparse) {
-            issues.push({
-              collection: collName,
-              redundant: `${indexes[i].name} ${JSON.stringify(indexes[i].key)}`,
-              coveredBy: `${indexes[j].name} ${JSON.stringify(indexes[j].key)}`,
-            });
+          if (isPrefix) {
+            print(`[${coll}] "${indexes[i].name}" is prefix of "${indexes[j].name}" — consider dropping`);
           }
         }
       }
-    }
+    } catch (e) { /* skip */ }
   });
-  if (issues.length === 0) {
-    print("No redundant indexes found.");
-  } else {
-    console.table(issues);
-  }
-  return issues;
 }
 
-// ---------------------------------------------------------------------------
-// Query Analysis
-// ---------------------------------------------------------------------------
+// ─── QUERY DEBUGGING ──────────────────────────────────────────────────────────
 
-/**
- * Show recent slow queries from the profiler.
- * @param {number} limit - Number of queries to show
- * @param {number} minMs - Minimum duration in ms
- */
-function slowQueries(limit = 10, minMs = 100) {
-  const queries = db.system.profile
-    .find({ millis: { $gt: minMs } })
+// Quick explain helper
+function quickExplain(collection, query, projection) {
+  const explain = db[collection].find(query, projection || {}).explain("executionStats");
+  const es = explain.executionStats;
+  const qp = explain.queryPlanner;
+  return {
+    plan: qp.winningPlan.stage || qp.winningPlan.inputStage?.stage,
+    index: qp.winningPlan.inputStage?.indexName || "none",
+    nReturned: es.nReturned,
+    docsExamined: es.totalDocsExamined,
+    keysExamined: es.totalKeysExamined,
+    timeMs: es.executionTimeMillis,
+    ratio: es.totalDocsExamined > 0 ? (es.nReturned / es.totalDocsExamined).toFixed(3) : "N/A"
+  };
+}
+
+// Show slow queries from profiler
+function slowQueries(minMs, limit) {
+  minMs = minMs || 100;
+  limit = limit || 20;
+  return db.system.profile.find({ millis: { $gt: minMs } })
     .sort({ ts: -1 })
     .limit(limit)
-    .toArray();
-
-  const result = queries.map((q) => ({
-    op: q.op,
-    ns: q.ns,
-    millis: q.millis,
-    docsExamined: q.docsExamined || 0,
-    nReturned: q.nreturned || 0,
-    planSummary: q.planSummary || "N/A",
-    ts: q.ts.toISOString().slice(0, 19),
-  }));
-
-  console.table(result);
-  return result;
+    .toArray()
+    .map(q => ({
+      ts: q.ts,
+      op: q.op,
+      ns: q.ns,
+      ms: q.millis,
+      plan: q.planSummary,
+      docsExamined: q.docsExamined,
+      nReturned: q.nreturned,
+      command: JSON.stringify(q.command || q.query).substring(0, 120)
+    }));
 }
 
-/**
- * Quick explain helper — returns key metrics.
- * @param {object} cursor - A find cursor
- */
-function quickExplain(cursor) {
-  const explain = cursor.explain("executionStats");
-  const stats = explain.executionStats;
-  const plan = explain.queryPlanner.winningPlan;
+// Enable/disable profiler
+function profilerOn(slowms) { db.setProfilingLevel(1, { slowms: slowms || 100 }); print(`Profiler ON (slowms: ${slowms || 100})`); }
+function profilerOff() { db.setProfilingLevel(0); print("Profiler OFF"); }
 
-  const result = {
-    planStage: plan.stage || plan.inputStage?.stage || "unknown",
-    nReturned: stats.nReturned,
-    totalKeysExamined: stats.totalKeysExamined,
-    totalDocsExamined: stats.totalDocsExamined,
-    executionTimeMs: stats.executionTimeMillis,
-    efficiency: stats.nReturned > 0
-      ? (stats.nReturned / stats.totalDocsExamined).toFixed(3)
-      : "N/A",
-    indexUsed: plan.inputStage?.indexName || plan.indexName || "none",
-  };
+// ─── REPLICATION ──────────────────────────────────────────────────────────────
 
-  print("\n--- Quick Explain ---");
-  for (const [k, v] of Object.entries(result)) {
-    print(`  ${k}: ${v}`);
-  }
-  print("---\n");
-  return result;
-}
-
-// ---------------------------------------------------------------------------
-// Replica Set Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Show replica set lag for all secondaries.
- */
-function rsLag() {
+// Compact replica set status
+function replStatus() {
   try {
     const status = rs.status();
-    const primary = status.members.find((m) => m.stateStr === "PRIMARY");
-    if (!primary) { print("No primary found"); return; }
-
-    const result = status.members.map((m) => ({
-      name: m.name,
-      state: m.stateStr,
-      health: m.health === 1 ? "OK" : "DOWN",
-      lagSeconds:
-        m.stateStr === "SECONDARY"
-          ? Math.floor((primary.optimeDate - m.optimeDate) / 1000)
-          : 0,
-    }));
-    console.table(result);
-    return result;
+    print(`Replica Set: ${status.set}`);
+    status.members.forEach(m => {
+      let lag = "";
+      if (m.stateStr === "SECONDARY") {
+        const primary = status.members.find(p => p.stateStr === "PRIMARY");
+        if (primary && primary.optimeDate && m.optimeDate) {
+          lag = ` (lag: ${((primary.optimeDate - m.optimeDate) / 1000).toFixed(1)}s)`;
+        }
+      }
+      print(`  ${m.stateStr.padEnd(12)} ${m.name.padEnd(25)} health: ${m.health}${lag}`);
+    });
   } catch (e) {
-    print("Not a replica set: " + e.message);
+    print("Not a replica set member");
   }
 }
 
-// ---------------------------------------------------------------------------
-// Data Helpers
-// ---------------------------------------------------------------------------
+// ─── CONNECTIONS ──────────────────────────────────────────────────────────────
 
-/**
- * Count documents matching common patterns across a collection.
- * @param {string} collName - Collection name
- * @param {string} field - Field to analyze
- */
-function fieldDistribution(collName, field, limit = 20) {
-  const result = db
-    .getCollection(collName)
-    .aggregate([
-      { $group: { _id: `$${field}`, count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-      { $limit: limit },
-    ])
-    .toArray();
-
-  const total = db.getCollection(collName).estimatedDocumentCount();
-  const formatted = result.map((r) => ({
-    value: r._id,
-    count: r.count,
-    percentage: ((r.count / total) * 100).toFixed(1) + "%",
-  }));
-
-  console.table(formatted);
-  return formatted;
-}
-
-/**
- * Find documents with the largest BSON size.
- * @param {string} collName - Collection name
- * @param {number} limit - Number of results
- */
-function largestDocs(collName, limit = 10) {
-  const result = db
-    .getCollection(collName)
-    .aggregate([
-      { $addFields: { _docSize: { $bsonSize: "$$ROOT" } } },
-      { $sort: { _docSize: -1 } },
-      { $limit: limit },
-      { $project: { _id: 1, _docSize: 1 } },
-    ])
-    .toArray();
-
-  const formatted = result.map((r) => ({
-    _id: r._id,
-    sizeKB: (r._docSize / 1024).toFixed(1),
-    sizeBytes: r._docSize,
-  }));
-
-  console.table(formatted);
-  return formatted;
-}
-
-/**
- * Export query results as JSON lines (one doc per line).
- * @param {string} collName - Collection name
- * @param {object} query - Query filter
- * @param {number} limit - Max docs
- */
-function exportJsonl(collName, query = {}, limit = 1000) {
-  const docs = db.getCollection(collName).find(query).limit(limit).toArray();
-  docs.forEach((doc) => print(JSON.stringify(doc)));
-  print(`\n--- Exported ${docs.length} documents ---`);
-}
-
-// ---------------------------------------------------------------------------
-// Operational Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Kill all operations running longer than N seconds.
- * @param {number} seconds - Threshold
- * @param {boolean} dryRun - If true, only lists without killing
- */
-function killLongOps(seconds = 60, dryRun = true) {
-  const ops = db.currentOp({
-    active: true,
-    secs_running: { $gte: seconds },
-    op: { $ne: "none" },
-  }).inprog;
-
-  if (ops.length === 0) {
-    print(`No operations running longer than ${seconds}s`);
-    return;
-  }
-
-  ops.forEach((op) => {
-    print(
-      `opid=${op.opid} | ${op.op} | ${op.ns || "?"} | ${op.secs_running}s`
-    );
-    if (!dryRun) {
-      db.killOp(op.opid);
-      print(`  → Killed`);
-    }
+// Connection details
+function connectionInfo() {
+  const ss = db.serverStatus();
+  const conn = ss.connections;
+  printjson({
+    current: conn.current,
+    available: conn.available,
+    totalCreated: conn.totalCreated,
+    usagePct: ((conn.current / (conn.current + conn.available)) * 100).toFixed(1) + "%"
   });
+}
 
-  if (dryRun) {
-    print(`\n${ops.length} operations found. Run killLongOps(${seconds}, false) to kill.`);
+// Connections grouped by client application
+function connectionsByApp() {
+  const ops = db.currentOp(true).inprog;
+  const apps = {};
+  ops.forEach(op => {
+    const app = op.appName || "unknown";
+    apps[app] = (apps[app] || 0) + 1;
+  });
+  Object.entries(apps)
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([app, count]) => print(`  ${app.padEnd(40)} ${count}`));
+}
+
+// ─── WIREDTIGER CACHE ─────────────────────────────────────────────────────────
+
+// Cache status
+function cacheStatus() {
+  const cache = db.serverStatus().wiredTiger.cache;
+  const maxGB = cache["maximum bytes configured"] / 1073741824;
+  const usedGB = cache["bytes currently in the cache"] / 1073741824;
+  const dirtyGB = cache["tracked dirty bytes in the cache"] / 1073741824;
+  printjson({
+    maxGB: maxGB.toFixed(2),
+    usedGB: usedGB.toFixed(2),
+    dirtyGB: dirtyGB.toFixed(2),
+    usedPct: ((usedGB / maxGB) * 100).toFixed(1) + "%",
+    dirtyPct: ((dirtyGB / maxGB) * 100).toFixed(1) + "%"
+  });
+}
+
+// ─── CURRENT OPERATIONS ───────────────────────────────────────────────────────
+
+// Long-running operations
+function longRunningOps(minSeconds) {
+  minSeconds = minSeconds || 5;
+  return db.currentOp({
+    active: true,
+    secs_running: { $gt: minSeconds }
+  }).inprog.map(op => ({
+    opId: op.opid,
+    op: op.op,
+    ns: op.ns,
+    secs: op.secs_running,
+    plan: op.planSummary,
+    client: op.client,
+    app: op.appName,
+    desc: (op.command ? JSON.stringify(op.command) : "").substring(0, 100)
+  }));
+}
+
+// Kill long-running ops (use with caution)
+function killLongOps(minSeconds) {
+  minSeconds = minSeconds || 60;
+  const ops = db.currentOp({ active: true, secs_running: { $gt: minSeconds } }).inprog;
+  ops.forEach(op => {
+    print(`Killing opId ${op.opid}: ${op.op} on ${op.ns} (${op.secs_running}s)`);
+    db.killOp(op.opid);
+  });
+  print(`Killed ${ops.length} operation(s)`);
+}
+
+// ─── OPLOG ────────────────────────────────────────────────────────────────────
+
+// Oplog summary
+function oplogInfo() {
+  try {
+    const stats = db.getSiblingDB("local").oplog.rs.stats();
+    const first = db.getSiblingDB("local").oplog.rs.find().sort({ $natural: 1 }).limit(1).next();
+    const last = db.getSiblingDB("local").oplog.rs.find().sort({ $natural: -1 }).limit(1).next();
+    const windowSec = last.ts.getTime() - first.ts.getTime();
+    printjson({
+      sizeMB: (stats.maxSize / 1048576).toFixed(0),
+      usedMB: (stats.size / 1048576).toFixed(0),
+      entries: stats.count,
+      windowHours: (windowSec / 3600).toFixed(1),
+      firstEntry: first.ts,
+      lastEntry: last.ts
+    });
+  } catch (e) {
+    print("Cannot read oplog (not a replica set or not authorized)");
   }
 }
 
-/**
- * Show current lock status summary.
- */
-function lockStatus() {
-  const wt = db.serverStatus().wiredTiger.concurrentTransactions;
-  print("\n--- WiredTiger Tickets ---");
-  print(`  Read:  ${wt.read.available} available / ${wt.read.totalTickets} total`);
-  print(`  Write: ${wt.write.available} available / ${wt.write.totalTickets} total`);
+// ─── DATA MANAGEMENT ──────────────────────────────────────────────────────────
 
-  const ops = db.currentOp({ waitingForLock: true }).inprog;
-  if (ops.length > 0) {
-    print(`\n  ⚠ ${ops.length} operations waiting for locks`);
-  } else {
-    print("  ✓ No operations waiting for locks");
-  }
+// Sample documents from a collection
+function sampleDocs(collName, n) {
+  return db[collName].aggregate([{ $sample: { size: n || 5 } }]).toArray();
 }
 
-// ---------------------------------------------------------------------------
-// Print available functions on load
-// ---------------------------------------------------------------------------
+// Schema shape analysis (field names and types from sample)
+function schemaShape(collName, sampleSize) {
+  const docs = db[collName].aggregate([{ $sample: { size: sampleSize || 100 } }]).toArray();
+  const fields = {};
+  docs.forEach(doc => {
+    function scan(obj, prefix) {
+      Object.entries(obj).forEach(([key, val]) => {
+        const path = prefix ? `${prefix}.${key}` : key;
+        const type = Array.isArray(val) ? "array" : typeof val;
+        if (!fields[path]) fields[path] = new Set();
+        fields[path].add(val === null ? "null" : type);
+        if (type === "object" && val !== null && !Array.isArray(val)) {
+          scan(val, path);
+        }
+      });
+    }
+    scan(doc, "");
+  });
+  Object.entries(fields)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([path, types]) => {
+      print(`  ${path.padEnd(40)} ${[...types].join(", ")}`);
+    });
+}
 
-print("\n╔══════════════════════════════════════════════╗");
-print("║  mongosh-snippets loaded                     ║");
-print("╠══════════════════════════════════════════════╣");
-print("║  collStats()             - Collection sizes   ║");
-print("║  schemaShape(coll)       - Schema analysis    ║");
-print("║  indexUsage(coll)        - Index usage stats  ║");
-print("║  findRedundantIndexes()  - Redundant indexes  ║");
-print("║  slowQueries(n, ms)      - Recent slow ops    ║");
-print("║  quickExplain(cursor)    - Explain summary    ║");
-print("║  rsLag()                 - Replica set lag    ║");
-print("║  fieldDistribution(c,f)  - Value distribution ║");
-print("║  largestDocs(coll)       - Largest documents  ║");
-print("║  exportJsonl(coll, q, n) - Export as JSONL    ║");
-print("║  killLongOps(secs, dry)  - Kill long ops      ║");
-print("║  lockStatus()            - Lock/ticket info   ║");
-print("╚══════════════════════════════════════════════╝\n");
+// ─── USER & ROLE MANAGEMENT ──────────────────────────────────────────────────
+
+// List all users with roles
+function listUsers() {
+  const users = db.adminCommand({ usersInfo: 1 }).users;
+  users.forEach(u => {
+    const roles = u.roles.map(r => `${r.role}@${r.db}`).join(", ");
+    print(`  ${u.user.padEnd(25)} ${u.db.padEnd(15)} ${roles}`);
+  });
+}
+
+// ─── QUICK COMMANDS ───────────────────────────────────────────────────────────
+
+print("=== mongosh-snippets loaded ===");
+print("Available functions:");
+print("  serverOverview()          — Quick server info");
+print("  dbSizes()                 — All database sizes");
+print("  collectionSizes()         — Collection sizes for current db");
+print("  indexUsage()              — Index stats with usage counts");
+print("  redundantIndexes()        — Find prefix-redundant indexes");
+print("  quickExplain(coll, query) — Compact explain output");
+print("  slowQueries(minMs, limit) — Slow queries from profiler");
+print("  profilerOn(slowms)        — Enable profiler");
+print("  profilerOff()             — Disable profiler");
+print("  replStatus()              — Replica set status");
+print("  connectionInfo()          — Connection pool stats");
+print("  connectionsByApp()        — Connections by app name");
+print("  cacheStatus()             — WiredTiger cache stats");
+print("  longRunningOps(minSecs)   — Find long ops");
+print("  killLongOps(minSecs)      — Kill long ops (caution!)");
+print("  oplogInfo()               — Oplog size and window");
+print("  sampleDocs(coll, n)       — Random sample from collection");
+print("  schemaShape(coll, n)      — Infer schema from sample");
+print("  listUsers()               — All users and roles");

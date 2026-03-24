@@ -1,0 +1,181 @@
+# =============================================================================
+# GitHub Actions CI/CD for Turborepo Monorepo
+# =============================================================================
+# Features:
+#   - Remote caching via Vercel
+#   - Affected-only testing on PRs
+#   - Full build on main branch
+#   - Parallel lint/test/build jobs
+#   - pnpm store caching
+#   - Docker image build (optional)
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Lint & Type Check (fast, no build deps)
+  # ---------------------------------------------------------------------------
+  lint:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (affected)
+        if: github.event_name == 'pull_request'
+        run: pnpm turbo run lint typecheck --filter='...[origin/main...HEAD]'
+
+      - name: Lint (all)
+        if: github.event_name == 'push'
+        run: pnpm turbo run lint typecheck
+
+  # ---------------------------------------------------------------------------
+  # Test
+  # ---------------------------------------------------------------------------
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test (affected)
+        if: github.event_name == 'pull_request'
+        run: pnpm turbo run test --filter='...[origin/main...HEAD]'
+
+      - name: Test (all)
+        if: github.event_name == 'push'
+        run: pnpm turbo run test
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: "**/coverage/lcov.info"
+          if-no-files-found: ignore
+          retention-days: 5
+
+  # ---------------------------------------------------------------------------
+  # Build
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build (affected)
+        if: github.event_name == 'pull_request'
+        run: pnpm turbo run build --filter='...[origin/main...HEAD]' --summarize
+
+      - name: Build (all)
+        if: github.event_name == 'push'
+        run: pnpm turbo run build --summarize
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            apps/*/dist
+            apps/*/.next
+            packages/*/dist
+          if-no-files-found: ignore
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Docker Build (only on main, only if Dockerfile exists)
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker Build
+    needs: [lint, test, build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [api]  # Add more apps as needed
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/${{ matrix.app }}:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/${{ matrix.app }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
