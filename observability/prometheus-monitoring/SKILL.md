@@ -414,3 +414,4 @@ Production-ready configs in `assets/`:
 | `alerting-rules.yml` | SLO burn-rate, infrastructure, disk, target health, Prometheus self-monitoring alerts |
 | `recording-rules.yml` | Precomputed CPU, memory, disk, network, HTTP, and SLO burn-rate metrics |
 | `alertmanager.yml` | Alertmanager with PagerDuty, Slack, email routing and inhibition rules |
+<!-- tested: pass -->

@@ -1,131 +1,82 @@
-# QA Review: prometheus-monitoring
+# Review: prometheus-monitoring
 
-**Skill path:** `~/skillforge/observability/prometheus-monitoring/`
-**Reviewed:** 2026-03-24
-**Reviewer:** Copilot QA
+Accuracy: 5/5
+Completeness: 5/5
+Actionability: 5/5
+Trigger quality: 4/5
+Overall: 4.8/5
 
----
+Issues:
+
+- **Minor: Unlisted script.** `scripts/setup-prometheus-stack.sh` exists but is not documented in the SKILL.md Helper Scripts table. Only `setup-prometheus.sh` is listed. The two scripts overlap in functionality (both deploy Prometheus stacks via Docker Compose), which could confuse an AI choosing between them.
+- **Minor: Trigger description could mention Prometheus Operator / ServiceMonitor / PodMonitor CRDs** as positive triggers, since these are common Kubernetes-era query topics covered extensively in `references/kubernetes-monitoring.md`.
 
 ## A. Structure Check
 
 | Criterion | Status | Notes |
 |-----------|--------|-------|
 | YAML frontmatter `name` | ✅ | `prometheus-monitoring` |
-| YAML frontmatter `description` | ✅ | Present, multi-line |
-| Positive triggers | ✅ | Lists PromQL, prometheus.yml, alertmanager.yml, client libraries, etc. |
-| Negative triggers | ✅ | Excludes Datadog, New Relic, CloudWatch, Splunk, vendor APM, general logging, Grafana-only |
-| Body under 500 lines | ✅ | 496 lines (tight but passing) |
-| Imperative voice, no filler | ✅ | Direct and concise throughout |
-| Examples with input/output | ✅ | PromQL examples, YAML configs, Go/Python/Node.js instrumentation |
-| `references/` linked | ✅ | 3 files referenced: promql-cookbook.md, troubleshooting.md, alerting-patterns.md |
-| `scripts/` linked | ✅ | 3 scripts referenced: setup-prometheus-stack.sh, check-cardinality.sh, validate-rules.sh |
-| `assets/` linked | ✅ | 5 asset files referenced with descriptions |
+| YAML frontmatter `description` | ✅ | Multi-line with clear scope |
+| Positive triggers | ✅ | PromQL, alerting rules, scrape config, recording rules, service discovery, relabeling, histogram_quantile, Alertmanager routing |
+| Negative triggers | ✅ | Datadog/New Relic/Splunk, log aggregation (ELK/Loki), distributed tracing (Jaeger/Tempo), Grafana-without-Prometheus |
+| Body under 500 lines | ✅ | 416 lines |
+| Imperative voice | ✅ | Direct throughout ("Use for:", "Default to histograms", "Always use rate", "Never use unbounded label values") |
+| Examples with input/output | ✅ | PromQL queries, YAML configs, Go/Python/Java/Node.js instrumentation code |
+| `references/` linked | ✅ | All 5 reference docs listed in table with topic descriptions |
+| `scripts/` linked | ⚠️ | 4 of 5 scripts listed; `setup-prometheus-stack.sh` undocumented |
+| `assets/` linked | ✅ | All 5 asset templates listed with descriptions |
 
-## B. Content Check — Accuracy Issues
+## B. Content Check (web-verified)
 
-### Issue 1 (ERROR): `rate()` vs `irate()` guidance is inverted
+All key technical claims verified against current Prometheus documentation and community sources:
 
-**Line 181:**
-> Set range ≥ 4× scrape interval for `rate()`. Use `rate()` for dashboards, `irate()` for volatile alerting.
-
-The second sentence is **wrong**. Per Prometheus best practices and community consensus:
-- `rate()` → use for **both** dashboards **and** alerting (stable, smoothed)
-- `irate()` → use for **volatile dashboards** needing spike visibility; **avoid for alerting** (causes flapping due to sensitivity to last two samples)
-
-Recommended fix:
-> Use `rate()` for dashboards and alerting. Use `irate()` only when instantaneous spike visibility matters (e.g., high-resolution dashboards). Avoid `irate()` in alert expressions — it causes flapping.
-
-### Issue 2 (ERROR): Kubernetes relabel_configs replacement pattern is broken
-
-**Lines 397–406:**
-```yaml
-relabel_configs:
-  - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_port]
-    action: replace
-    target_label: __address__
-    regex: (.+)
-    replacement: ${1}:$1
-```
-
-This is **incorrect**. The replacement `${1}:$1` references only the port, losing the host entirely. The correct pattern requires **two source labels** and a semicolon-separated regex:
-
-```yaml
-- source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
-  action: replace
-  regex: ([^:]+)(?::\d+)?;(\d+)
-  replacement: $1:$2
-  target_label: __address__
-```
-
-An SRE copying this config would get broken pod scraping.
-
-### Issue 3 (WARNING): Alertmanager uses deprecated `match`/`source_match` syntax
-
-**Lines 300–306 and 326–330** use `match:` and `source_match:`/`target_match:` which are deprecated since Alertmanager 0.22+. The current recommended syntax uses `matchers:`, `source_matchers:`, and `target_matchers:` with string-based matcher lists.
-
-Deprecated:
-```yaml
-match:
-  severity: critical
-```
-Current:
-```yaml
-matchers:
-  - severity = critical
-```
-
-### Items verified as correct
-
-- ✅ `predict_linear(node_filesystem_avail_bytes[1h], 4 * 3600) < 0` — correct syntax and semantics
-- ✅ `histogram_quantile` usage — correct `by (le)` grouping
-- ✅ Counter/Gauge/Histogram/Summary descriptions — accurate
+- ✅ Metric types — counter (monotonically increasing), gauge (up/down), histogram (buckets, aggregatable), summary (client-side quantiles, NOT aggregatable)
+- ✅ TSDB storage — 15-day default retention, 2-hour blocks, compaction into larger blocks
+- ✅ rate() vs irate() — rate averages over window (use for alerting), irate uses last two points (volatile dashboards). "Always use rate in alert rules" — correct
+- ✅ histogram_quantile — must rate() buckets first, must include `le` in `by` clause — correct
+- ✅ Exporter ports — node:9100, blackbox:9115, mysqld:9104, postgres:9187, redis:9121 — all confirmed
+- ✅ 14.4x burn rate = budget exhausted in ~2h for 99.9% SLO — confirmed per Google SRE Workbook
 - ✅ Recording rule naming convention `level:metric:operations` — correct
-- ✅ `rate()` range ≥ 4× scrape interval advice — correct
-- ✅ Naming conventions (`_total`, `_seconds`, `_bytes`) — correct
-- ✅ Federation config with `honor_labels` — correct
-- ✅ Remote write/read config structure — correct
-- ✅ Apdex score formula — correct
-- ✅ Instrumentation code (Go, Python, Node.js) — all runnable
+- ✅ relabel_configs (before scrape) vs metric_relabel_configs (after scrape) — correct
+- ✅ K8s relabel_configs for pod annotation-based discovery — correct two-source-label pattern with semicolon regex
+- ✅ Alertmanager uses current `matchers:` / `source_matchers:` syntax in assets
+- ✅ `absent()` covered in PromQL Fundamentals section
+- ✅ Native histograms covered in `references/advanced-patterns.md`
+- ✅ All instrumentation code (Go, Python, Java, Node.js) is syntactically correct and runnable
+- ✅ Docker Compose, alerting rules, recording rules, and Alertmanager configs are production-quality
+- ✅ Scripts have proper error handling, dependency checks, and usage documentation
 
-### Missing gotchas an SRE would hit
-
-1. **No mention of `absent()` in main body** — critical for detecting disappeared metrics. Covered in `references/promql-cookbook.md` but deserves at least a one-liner in the main PromQL section.
-2. **No staleness timeout mention** — Prometheus marks series stale after 5 minutes with no scrape. This trips up many users with intermittent targets.
-3. **No `promtool test rules` mention** — the skill mentions `promtool check rules` and `promtool check config` but not unit testing alerting rules with `promtool test rules`, which is essential for CI pipelines.
-4. **No native histograms** — newer Prometheus (2.40+) supports native histograms. Not critical but worth a brief mention for forward-compatibility.
+No factual errors found. Previous review's issues (rate/irate inversion, broken K8s relabel, deprecated Alertmanager syntax) have all been fixed.
 
 ## C. Trigger Check
 
-| Question | Assessment |
-|----------|------------|
-| Triggers for Prometheus queries? | ✅ Yes — description lists PromQL, prometheus.yml, alertmanager.yml, scrape targets, client libraries |
-| False trigger for Datadog? | ✅ No — explicitly excluded |
-| False trigger for CloudWatch? | ✅ No — explicitly excluded |
-| False trigger for general monitoring? | ✅ No — scoped to Prometheus context, excludes general logging |
-| False trigger for Grafana-only work? | ✅ No — explicitly excluded Grafana-only dashboard design |
-
-The description is well-crafted with specific positive and negative triggers. No false-trigger risk identified.
+| Query | Triggers? | Correct? |
+|-------|-----------|----------|
+| "Write a PromQL query for error rate" | ✅ Yes | ✅ |
+| "Set up Prometheus monitoring for K8s" | ✅ Yes | ✅ |
+| "Configure Alertmanager routing" | ✅ Yes | ✅ |
+| "Instrument Go app with Prometheus metrics" | ✅ Yes | ✅ |
+| "histogram_quantile help" | ✅ Yes | ✅ |
+| "Set up Datadog monitoring" | ❌ No | ✅ (correctly excluded) |
+| "ELK stack for log aggregation" | ❌ No | ✅ (correctly excluded) |
+| "Set up Jaeger tracing" | ❌ No | ✅ (correctly excluded) |
+| "Create a ServiceMonitor CRD" | ⚠️ Maybe | Could be stronger — not in trigger description but covered in references |
 
 ## D. Scoring
 
 | Dimension | Score | Rationale |
 |-----------|-------|-----------|
-| **Accuracy** | 3 | Two factual errors: inverted rate/irate guidance (line 181) and broken K8s relabel_configs (lines 397–406). Deprecated Alertmanager syntax is a minor concern. |
-| **Completeness** | 4 | Excellent breadth: architecture, metric types, instrumentation (3 languages), PromQL, recording/alerting rules, Alertmanager, service discovery, storage, federation, Grafana. References (2,936 lines) provide deep coverage. Minor gaps: absent(), staleness, promtool test rules. |
-| **Actionability** | 4 | Most examples are copy-paste ready and correct. Go/Python/Node.js instrumentation is runnable. K8s relabel_configs would break in production. Scripts and assets add significant practical value. |
-| **Trigger quality** | 5 | Precise positive triggers covering all Prometheus contexts. Clear negative triggers for vendor tools, logging, and Grafana-only work. No false-trigger risk. |
+| **Accuracy** | 5 | All claims verified correct. No factual errors. All previous issues resolved. |
+| **Completeness** | 5 | Exceptional breadth: architecture, 4 metric types, instrumentation in 4 languages, PromQL fundamentals+advanced, 6 service discovery methods, relabeling, recording/alerting rules, Alertmanager, storage+remote write, K8s monitoring, RED/USE/SLO patterns, exporters, best practices. 3,928 lines of reference docs, 1,741 lines of scripts, production asset templates. |
+| **Actionability** | 5 | All examples are copy-paste ready. Production configs, runnable scripts with Docker/local modes, Helm chart guidance, CI-ready validation. An AI could execute any Prometheus task from this skill. |
+| **Trigger quality** | 4 | Strong positive and negative triggers with low false-trigger risk. Deducted 1 point: missing Prometheus Operator/ServiceMonitor/PodMonitor in trigger keywords; undocumented overlapping script could cause confusion. |
 
-**Overall: 4.0** (average)
+**Overall: 4.8/5**
 
 ## E. Verdict
 
-**`needs-fix`** — Two errors must be corrected before the skill is production-ready:
-
-1. Fix rate/irate guidance (line 181) — misleading advice causes alert flapping
-2. Fix Kubernetes relabel_configs (lines 397–406) — broken replacement pattern
-3. (Recommended) Update Alertmanager config to use `matchers:` syntax
-4. (Recommended) Add one-liner for `absent()` in PromQL section
+**`pass`** — Skill is production-ready. All previous issues have been resolved. Content is accurate, comprehensive, and highly actionable. Only minor documentation gaps remain (unlisted script, trigger keywords).
 
 ## F. GitHub Issues
 
-No GitHub issues filed — overall score is 4.0 (not < 4.0) and no dimension ≤ 2.
+No issues filed — overall 4.8 ≥ 4.0 and no dimension ≤ 2.

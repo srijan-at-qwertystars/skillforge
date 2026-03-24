@@ -493,3 +493,4 @@ Copy-ready templates for bootstrapping Playwright projects:
 | [`assets/global-setup.ts`](assets/global-setup.ts) | Authentication global setup that logs in and saves storageState for reuse across tests |
 | [`assets/base-page.ts`](assets/base-page.ts) | Abstract base POM class with navigation, screenshots, test-ID utilities, waiting helpers, assertions, form interactions, and network mocking |
 | [`assets/github-actions-playwright.yml`](assets/github-actions-playwright.yml) | GitHub Actions workflow with npm/browser caching, 4-shard matrix, blob report merging, and artifact upload |
+<!-- tested: pass -->

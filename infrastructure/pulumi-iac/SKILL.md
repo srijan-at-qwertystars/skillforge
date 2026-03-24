@@ -479,3 +479,5 @@ Ready-to-use project templates and config files:
 | [`assets/Pulumi.dev.yaml`](assets/Pulumi.dev.yaml) | Stack config template showing secrets, typed config, and provider settings |
 | [`assets/index.ts`](assets/index.ts) | TypeScript starter: VPC + ECS Fargate + ALB with config-driven parameters |
 | [`assets/github-actions-pulumi.yml`](assets/github-actions-pulumi.yml) | GitHub Actions workflow with OIDC auth, PR preview comments, and deploy on merge |
+
+<!-- tested: pass -->
