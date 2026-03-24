@@ -1,500 +1,499 @@
 ---
 name: packer-images
 description: >
-  HashiCorp Packer machine image automation with HCL2 templates. Use when: creating/editing
-  .pkr.hcl files, building AMIs/VM images, configuring builders (amazon-ebs, docker, azure-arm,
-  googlecompute, vmware-iso, vagrant), provisioners (shell, file, ansible, puppet, chef,
-  powershell), post-processors (manifest, docker-tag, docker-push, vagrant, compress),
-  packer variables/locals/data sources, plugins/required_plugins, multi-build templates,
-  HCP Packer registry/channels/iterations, golden image pipelines, image hardening/CIS,
-  security scanning (Trivy/Grype), CI/CD for image builds, packer CLI commands, immutable
-  infrastructure, or SSH/WinRM communicator troubleshooting.
-  Do NOT use for: Terraform-only IaC without image building, Docker Compose, Ansible playbooks
-  without Packer, Vagrant-only dev environments, or general cloud CLI unrelated to images.
+  Build and maintain HashiCorp Packer HCL2 templates for creating machine images.
+  Triggers: "Packer template", "Packer build", "machine image", "AMI builder",
+  "packer init", "HCL2 packer", "packer provisioner", "golden image", "image pipeline".
+  Does NOT trigger for: "Docker image build", "Dockerfile", "Terraform infrastructure",
+  "Vagrant VM", "cloud-init only". Covers builders (Amazon EBS, Azure, GCP, Docker,
+  VMware, VirtualBox, QEMU), provisioners (shell, file, Ansible, Chef, Puppet,
+  PowerShell), post-processors (manifest, compress, docker-push, vagrant),
+  variables, locals, data sources, multi-build parallel patterns, CI/CD integration,
+  image testing, and production anti-patterns.
 ---
 
-# HashiCorp Packer — Machine Image Automation
+# HashiCorp Packer — HCL2 Skill Reference
 
-## HCL2 Template Structure
-Use `.pkr.hcl` files. Split into: `variables.pkr.hcl`, `sources.pkr.hcl`, `builds.pkr.hcl`.
+## File Organization
 
-### Packer Block — plugins and constraints:
+Use `.pkr.hcl` extension for all templates. Split configs by concern:
+
+```
+project/
+├── variables.pkr.hcl      # All variable and local blocks
+├── sources.pkr.hcl         # All source (builder) blocks
+├── build.pkr.hcl           # Build, provisioner, post-processor blocks
+├── data.pkr.hcl            # Data source blocks
+├── plugins.pkr.hcl         # Packer block with required_plugins
+└── *.auto.pkrvars.hcl      # Auto-loaded variable values
+```
+
+Run `packer init .` to install plugins before any build.
+
+## Core Blocks
+
+### packer block — declare required plugins and version constraints
+
 ```hcl
 packer {
-  required_version = ">= 1.10.0"
+  required_version = ">= 1.9.0"
   required_plugins {
-    amazon = { version = ">= 1.3.0", source = "github.com/hashicorp/amazon" }
-    docker = { version = ">= 1.1.0", source = "github.com/hashicorp/docker" }
+    amazon        = { version = ">= 1.3.0", source = "github.com/hashicorp/amazon" }
+    azure         = { version = ">= 2.0.0", source = "github.com/hashicorp/azure" }
+    googlecompute = { version = ">= 1.1.0", source = "github.com/hashicorp/googlecompute" }
+    docker        = { version = ">= 1.0.0", source = "github.com/hashicorp/docker" }
+    ansible       = { version = ">= 1.1.0", source = "github.com/hashicorp/ansible" }
   }
 }
 ```
 
-### Source Block — builder configuration:
-```hcl
-source "amazon-ebs" "ubuntu" {
-  ami_name      = "app-{{timestamp}}"
-  instance_type = "t3.micro"
-  region        = var.aws_region
-  source_ami_filter {
-    filters = {
-      name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
-      root-device-type    = "ebs"
-      virtualization-type = "hvm"
-    }
-    most_recent = true
-    owners      = ["099720109477"]
-  }
-  ssh_username = "ubuntu"
-  tags         = { Name = "app-base", Builder = "packer" }
-}
-```
+Always pin plugin versions. Run `packer init -upgrade .` to update.
 
-### Build Block — orchestrates sources, provisioners, post-processors:
-```hcl
-build {
-  sources = ["source.amazon-ebs.ubuntu"]
-  provisioner "shell" {
-    inline = ["sudo apt-get update -y && sudo apt-get upgrade -y"]
-  }
-  provisioner "file" {
-    source      = "configs/app.conf"
-    destination = "/tmp/app.conf"
-  }
-  provisioner "shell" { script = "scripts/setup.sh" }
-  post-processor "manifest" { output = "manifest.json", strip_path = true }
-}
-```
+### variable block — parameterize templates
 
-## Builders
-
-### Amazon EBS (AMI)
-Key fields: `region`, `source_ami`/`source_ami_filter`, `instance_type`, `ami_name`, `ssh_username`, `vpc_id`, `subnet_id`, `encrypt_boot`, `kms_key_id`, `launch_block_device_mappings`.
-Use `source_ami_filter` over hardcoded AMI IDs. Set `force_deregister = true` and `force_delete_snapshot = true` to overwrite.
-
-### Docker
-```hcl
-source "docker" "app" {
-  image  = "ubuntu:22.04"
-  commit = true
-  changes = ["EXPOSE 8080", "ENTRYPOINT [\"/app/start.sh\"]"]
-}
-```
-Use `commit = true` for image commit or `export_path` for tarball. Pair with `docker-tag`/`docker-push`.
-
-### Azure (azure-arm)
-Key fields: `subscription_id`, `client_id`, `client_secret`, `tenant_id`, `managed_image_resource_group_name`, `managed_image_name`, `os_type`, `image_publisher`, `image_offer`, `image_sku`, `vm_size`.
-Use `shared_image_gallery_destination` for gallery publishing. Always deprovision last: `/usr/sbin/waagent -force -deprovision+user && export HISTSIZE=0 && sync`.
-
-### GCP (googlecompute)
-Key fields: `project_id`, `source_image_family`, `zone`, `machine_type`, `image_name`, `image_family`, `ssh_username`. Set `image_family` for automatic latest-image resolution in Terraform.
-
-### VMware (vmware-iso)
-Key fields: `iso_url`, `iso_checksum`, `ssh_username`, `disk_size`, `guest_os_type`, `vmx_data`, `boot_command`, `http_directory`. Serve kickstart/preseed via `http_directory`.
-
-### Vagrant
-```hcl
-source "vagrant" "ubuntu" {
-  communicator = "ssh"
-  source_path  = "ubuntu/jammy64"
-  provider     = "virtualbox"
-  add_force    = true
-}
-```
-
-## Provisioners
-
-### Shell
-```hcl
-provisioner "shell" {
-  inline           = ["sudo apt-get install -y nginx"]
-  environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
-  execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E sh '{{ .Path }}'"
-  expect_disconnect = true   # if script triggers reboot
-  pause_before      = "10s"
-  valid_exit_codes  = [0, 2]
-}
-```
-
-### File
-```hcl
-provisioner "file" {
-  source      = "app/"
-  destination = "/tmp/app/"
-  direction   = "upload"
-}
-```
-Files land as build user — follow up with `shell` to `sudo mv/chown` to final path.
-
-### Ansible
-```hcl
-provisioner "ansible" {
-  playbook_file    = "ansible/harden.yml"
-  user             = "ubuntu"
-  extra_arguments  = ["--extra-vars", "env=production", "--scp-extra-args", "'-O'"]
-  ansible_env_vars = ["ANSIBLE_HOST_KEY_CHECKING=False"]
-}
-```
-Use `ansible-local` to run directly on instance (avoids SSH overhead).
-
-### PowerShell (Windows)
-```hcl
-provisioner "powershell" {
-  inline = ["Install-WindowsFeature -Name Web-Server", "Set-Service -Name wuauserv -StartupType Disabled"]
-  elevated_user     = "Administrator"
-  elevated_password = var.admin_password
-}
-```
-
-### Puppet / Chef
-Use `puppet-masterless` or `chef-solo`. Provide `manifest_file`/`run_list` and `staging_directory`.
-
-## Post-Processors
-
-### Manifest
-```hcl
-post-processor "manifest" {
-  output      = "packer-manifest.json"
-  strip_path  = true
-  custom_data = { build_date = timestamp() }
-}
-```
-
-### Docker Tag + Push
-```hcl
-post-processor "docker-tag" {
-  repository = "registry.example.com/myapp"
-  tags       = ["latest", var.version]
-}
-post-processor "docker-push" {
-  login = true
-  login_server = "registry.example.com"
-  login_username = var.registry_user
-  login_password = var.registry_pass
-}
-```
-
-### Vagrant / Compress
-```hcl
-post-processor "vagrant" {
-  output = "builds/{{.Provider}}-{{.BuildName}}.box"
-  compression_level = 9
-}
-post-processor "compress" { output = "output/{{.BuildName}}.tar.gz" }
-```
-
-### Chained Post-Processors — sequential execution:
-```hcl
-build {
-  sources = ["source.docker.app"]
-  post-processors {
-    post-processor "docker-tag" { repository = "myapp" tags = ["latest"] }
-    post-processor "docker-push" {}
-  }
-}
-```
-Use `post-processors` (plural) for sequential chains. Separate `post-processor` blocks run in parallel.
-
-## Variables, Locals, and Data Sources
-
-### Variables with validation:
 ```hcl
 variable "aws_region" {
-  type    = string
-  default = "us-east-1"
+  type        = string
+  default     = "us-east-1"
+  description = "AWS region for AMI build"
   validation {
-    condition     = can(regex("^(us|eu|ap)-", var.aws_region))
-    error_message = "Region must start with us-, eu-, or ap-."
+    condition     = can(regex("^(us|eu|ap|sa|ca|me|af)-", var.aws_region))
+    error_message = "Must be a valid AWS region."
   }
 }
-```
 
-### Precedence (lowest → highest):
-1. Default values → 2. `.pkrvars.hcl`/`.auto.pkrvars.hcl` → 3. `-var-file=` → 4. `-var` → 5. `PKR_VAR_*` env vars
+variable "base_tags" {
+  type = map(string)
+  default = {
+    Team      = "platform"
+    ManagedBy = "packer"
+  }
+}
 
-### Locals:
-```hcl
-locals {
-  timestamp   = formatdate("YYYYMMDD-hhmm", timestamp())
-  ami_name    = "app-${var.env}-${local.timestamp}"
-  common_tags = { Environment = var.env, ManagedBy = "packer" }
+variable "ssh_username" {
+  type    = string
+  default = "ubuntu"
 }
 ```
 
-### Data sources:
+Supply values via `-var`, `-var-file`, `*.auto.pkrvars.hcl`, or `PKR_VAR_*` env vars. Mark secrets with `sensitive = true`.
+
+### locals block — computed values
+
 ```hcl
-data "amazon-ami" "base" {
-  filters     = { name = "ubuntu/images/hvm-ssd/ubuntu-jammy-*" }
+locals {
+  timestamp  = formatdate("YYYYMMDD-hhmm", timestamp())
+  image_name = "golden-${var.os_family}-${local.timestamp}"
+  common_tags = merge(var.base_tags, {
+    BuildDate = local.timestamp
+    SourceAMI = "{{ .SourceAMI }}"
+  })
+}
+```
+
+### data source block — dynamic lookups
+
+```hcl
+data "amazon-ami" "ubuntu" {
+  filters = {
+    name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
+    root-device-type    = "ebs"
+    virtualization-type = "hvm"
+  }
   most_recent = true
   owners      = ["099720109477"]
   region      = var.aws_region
 }
-source "amazon-ebs" "app" { source_ami = data.amazon-ami.base.id }
 ```
 
-## Plugin Management
-- **Install**: `packer init .` — reads `required_plugins`, downloads, verifies checksums
-- **Custom**: `packer plugins install --path ./custom-binary` (v1.10+)
-- **List**: `packer plugins required .`
-- **Directory**: `~/.config/packer/plugins` (Linux), `%APPDATA%\packer.d\` (Windows)
-- **v1.11+**: SHA256SUM files required for all plugins
-- Pin exact versions in CI; use `>=` only for local dev
+Reference as `data.amazon-ami.ubuntu.id` in source blocks.
 
-## Multi-Build Templates
+### source blocks — builders
+
+#### Amazon EBS
+
+```hcl
+source "amazon-ebs" "ubuntu" {
+  region        = var.aws_region
+  source_ami    = data.amazon-ami.ubuntu.id
+  instance_type = "t3.micro"
+  ssh_username  = var.ssh_username
+  ami_name      = local.image_name
+  ami_regions   = ["us-west-2", "eu-west-1"]
+  tags          = local.common_tags
+  launch_block_device_mappings {
+    device_name = "/dev/sda1"
+    volume_size = 20
+    volume_type = "gp3"
+    delete_on_termination = true
+  }
+}
+```
+
+#### Azure ARM
+
+```hcl
+source "azure-arm" "ubuntu" {
+  subscription_id                   = var.azure_subscription_id
+  managed_image_resource_group_name = var.azure_rg
+  managed_image_name                = local.image_name
+  os_type         = "Linux"
+  image_publisher = "Canonical"
+  image_offer     = "0001-com-ubuntu-server-jammy"
+  image_sku       = "22_04-lts"
+  location        = "eastus"
+  vm_size         = "Standard_B1s"
+  ssh_username    = var.ssh_username
+  azure_tags      = local.common_tags
+}
+```
+
+#### GCP
+
+```hcl
+source "googlecompute" "ubuntu" {
+  project_id          = var.gcp_project_id
+  source_image_family = "ubuntu-2204-lts"
+  zone         = "us-central1-a"
+  machine_type = "e2-micro"
+  ssh_username = var.ssh_username
+  image_name   = local.image_name
+  image_family = "golden-ubuntu"
+  image_labels = local.common_tags
+}
+```
+
+#### Docker
+
+```hcl
+source "docker" "ubuntu" { image = "ubuntu:22.04"; commit = true }
+```
+
+#### VMware ISO
+
+```hcl
+source "vmware-iso" "ubuntu" {
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
+  ssh_username = var.ssh_username
+  ssh_password = var.ssh_password
+  shutdown_command = "sudo shutdown -P now"
+  guest_os_type = "ubuntu-64"
+  cpus = 2
+  memory = 2048
+  disk_size = 20480
+  headless = true
+  boot_command = ["<esc><wait>", "autoinstall ds=nocloud-net", "<enter>"]
+}
+```
+
+#### VirtualBox ISO
+
+```hcl
+source "virtualbox-iso" "ubuntu" {
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
+  guest_os_type = "Ubuntu_64"
+  ssh_username = var.ssh_username
+  ssh_password = var.ssh_password
+  shutdown_command = "sudo shutdown -P now"
+  disk_size  = 20480
+  headless   = true
+  vboxmanage = [["modifyvm", "{{.Name}}", "--memory", "2048"]]
+}
+```
+
+#### QEMU
+
+```hcl
+source "qemu" "ubuntu" {
+  iso_url      = var.iso_url
+  iso_checksum = var.iso_checksum
+  output_directory = "output-qemu"
+  disk_size    = "20G"
+  format       = "qcow2"
+  accelerator  = "kvm"
+  ssh_username = var.ssh_username
+  ssh_password = var.ssh_password
+  shutdown_command = "sudo shutdown -P now"
+  headless     = true
+}
+```
+
+### build block — orchestrate sources, provisioners, post-processors
+
 ```hcl
 build {
-  sources = [
-    "source.amazon-ebs.ubuntu",
-    "source.azure-arm.ubuntu",
-    "source.googlecompute.ubuntu"
-  ]
-  provisioner "ansible" { playbook_file = "ansible/common.yml" }
+  name    = "golden-image"
+  sources = ["source.amazon-ebs.ubuntu", "source.azure-arm.ubuntu", "source.googlecompute.ubuntu"]
+  # Provisioners execute in declared order, on every source in parallel.
+```
+
+### Provisioners
+
+#### shell — run inline commands or scripts
+
+```hcl
+  provisioner "shell" {
+    inline           = ["sudo apt-get update -y", "sudo apt-get install -y curl jq unzip"]
+    environment_vars = ["DEBIAN_FRONTEND=noninteractive"]
+    execute_command  = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E sh '{{ .Path }}'"
+  }
+  provisioner "shell" {
+    scripts = ["scripts/harden.sh", "scripts/monitoring.sh"]
+  }
+```
+
+#### file — upload files or directories
+
+```hcl
+  provisioner "file" {
+    source      = "configs/sshd_config"
+    destination = "/tmp/sshd_config"
+  }
+```
+
+Follow with a shell provisioner to move files requiring sudo.
+
+#### ansible — run Ansible playbooks
+
+```hcl
+  provisioner "ansible" {
+    playbook_file    = "ansible/site.yml"
+    extra_arguments  = ["--extra-vars", "env=production", "--scp-extra-args", "'-O'"]
+    ansible_env_vars = ["ANSIBLE_HOST_KEY_CHECKING=False"]
+    user             = var.ssh_username
+  }
+```
+
+#### PowerShell — Windows provisioning
+
+```hcl
+  provisioner "powershell" {
+    inline = [
+      "Install-WindowsFeature -Name Web-Server",
+      "Set-Service -Name wuauserv -StartupType Disabled",
+    ]
+  }
+```
+
+#### Chef, Puppet
+
+```hcl
+  provisioner "chef-solo" {
+    cookbook_paths = ["cookbooks"]
+    run_list      = ["recipe[base::default]"]
+  }
+  provisioner "puppet-masterless" {
+    manifest_file = "manifests/site.pp"
+    module_paths  = ["modules"]
+  }
+```
+
+#### override — per-source provisioner config
+
+```hcl
+  provisioner "shell" {
+    inline = ["echo 'cloud-specific setup'"]
+    override = {
+      "amazon-ebs.ubuntu" = {
+        inline = ["echo 'AWS-specific setup'", "sudo snap install amazon-ssm-agent"]
+      }
+    }
+  }
+```
+
+### Post-processors
+
+#### manifest — emit build metadata to JSON
+
+```hcl
+  post-processor "manifest" {
+    output     = "build-manifest.json"
+    strip_path = true
+  }
+```
+
+#### compress — create tar.gz or zip of output
+
+```hcl
+  post-processor "compress" {
+    output = "output/{{.BuildName}}.tar.gz"
+  }
+```
+
+#### docker-tag + docker-push
+
+```hcl
+  post-processor "docker-tag" {
+    repository = "myregistry.example.com/golden-ubuntu"
+    tags       = ["latest", local.timestamp]
+  }
+  post-processor "docker-push" {}
+```
+
+#### vagrant
+
+```hcl
+  post-processor "vagrant" { output = "boxes/{{.BuildName}}-{{.Provider}}.box" }
+```
+
+#### shell-local — run local commands after build
+
+```hcl
+  post-processor "shell-local" { inline = ["echo 'Artifact: {{.ArtifactId}}'"] }
+```
+
+#### Chained post-processors — sequential pipeline
+
+```hcl
+  post-processors {
+    post-processor "docker-tag" { repository = "myregistry.example.com/app"; tags = ["latest"] }
+    post-processor "docker-push" {}
+  }
+}
+```
+
+## Multi-Build Parallel Patterns
+
+List multiple sources in one build block — Packer runs them in parallel. Use `only`/`except` to restrict provisioners to specific sources:
+
+```hcl
+build {
+  sources = ["source.amazon-ebs.ubuntu", "source.azure-arm.ubuntu", "source.googlecompute.ubuntu"]
   provisioner "shell" {
     only   = ["amazon-ebs.ubuntu"]
-    inline = ["sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a start"]
-  }
-  provisioner "shell" {
-    except = ["googlecompute.ubuntu"]
-    inline = ["echo 'Runs on AWS and Azure only'"]
+    inline = ["sudo /usr/sbin/amazon-linux-extras install epel"]
   }
 }
 ```
-Use `only`/`except` to scope provisioners to specific builds. Builds run in parallel by default; `-parallel-builds=1` to serialize.
 
-## HCP Packer Registry
+Use `-parallel-builds=N` to limit concurrency. Use `-only` to target one builder.
 
-### Enable in template:
-```hcl
-build {
-  hcp_packer_registry {
-    bucket_name   = "ubuntu-base"
-    description   = "Ubuntu 22.04 base image"
-    bucket_labels = { os = "ubuntu", team = "platform" }
-    build_labels  = { build_source = "ci" }
-  }
-  sources = ["source.amazon-ebs.ubuntu"]
-}
+## Variables — Passing Values
+
+```bash
+packer build -var 'aws_region=us-west-2' .            # CLI flag
+packer build -var-file=prod.pkrvars.hcl .              # Var file
+export PKR_VAR_aws_region=us-west-2 && packer build .  # Env var; *.auto.pkrvars.hcl auto-loads
 ```
-- **Bucket**: logical container for related images across clouds
-- **Version**: each `packer build` creates a new version with fingerprint
-- **Channel**: named pointer (dev/staging/production) to a specific version
 
-### Consume in Terraform:
-```hcl
-data "hcp_packer_artifact" "ubuntu" {
-  bucket_name  = "ubuntu-base"
-  channel_name = "production"
-  platform     = "aws"
-  region       = "us-east-1"
-}
-resource "aws_instance" "app" {
-  ami = data.hcp_packer_artifact.ubuntu.external_identifier
-}
+## CLI Workflow
+
+```bash
+packer init .                        # Install plugins
+packer fmt -check .                  # Check formatting (CI gate)
+packer fmt .                         # Auto-format
+packer validate .                    # Validate config
+packer build .                       # Build all sources
+packer build -only='amazon-ebs.*' .  # Build one source
+packer build -on-error=ask .         # Debug: pause on error
+PACKER_LOG=1 packer build -force .   # Debug logging + overwrite
 ```
-Set `HCP_CLIENT_ID`/`HCP_CLIENT_SECRET` env vars. Promote via channels: dev → staging → production. HCP Packer Run Tasks in TFC block deploys of revoked images.
 
-## CLI Reference
+## CI/CD Integration (GitHub Actions)
 
-| Command | Purpose |
-|---------|---------|
-| `packer init .` | Install required plugins |
-| `packer fmt -recursive .` | Format all HCL files |
-| `packer validate .` | Validate template syntax/config |
-| `packer build .` | Execute build |
-| `packer build -only='amazon-ebs.ubuntu' .` | Build specific source |
-| `packer build -var 'region=eu-west-1' .` | Pass variable |
-| `packer build -var-file=prod.pkrvars.hcl .` | Use variable file |
-| `packer build -on-error=ask .` | Pause on error for debug |
-| `packer build -parallel-builds=1 .` | Serialize parallel builds |
-| `packer inspect .` | Show template components |
-| `packer console .` | Interactive expression evaluator |
-
-Debug: `PACKER_LOG=1 PACKER_LOG_PATH=packer.log packer build .`
-
-## Image Hardening
-
-### CIS Benchmarks with Ansible:
-```hcl
-provisioner "ansible" {
-  playbook_file   = "ansible/cis-hardening.yml"
-  extra_arguments = ["--extra-vars", "cis_level=1", "--tags", "scored"]
-}
-```
-Community roles: `ansible-lockdown/UBUNTU22-CIS`, `dev-sec/linux-hardening`.
-
-### Security scanning in-build:
-```hcl
-provisioner "shell" {
-  inline = [
-    "curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin",
-    "trivy rootfs --severity HIGH,CRITICAL --exit-code 1 /",
-    "sudo rm /usr/local/bin/trivy"
-  ]
-}
-```
-Containers: `trivy image myapp:latest --exit-code 1`. Alternative: `grype dir:/ --fail-on high`.
-
-### Hardening checklist:
-- Remove default users/SSH keys; disable root login and password auth
-- Configure unattended-upgrades for automatic security patches
-- Set filesystem permissions (tmp noexec, var nosuid); enable auditd
-- Remove unnecessary packages/services; harden sysctl (ip_forward=0)
-
-**Deep dive**: see `references/security-hardening.md` for CIS benchmark implementation (Ubuntu/Amazon Linux/Windows), STIG compliance, automated scanning with Trivy/Grype/Anchore, SSH hardening, audit logging, image signing with cosign/notation, SBOM generation, and supply chain security.
-
-## CI/CD Integration
-
-### GitHub Actions:
 ```yaml
-name: Build Golden Image
-on:
-  push: { branches: [main], paths: ['packer/**'] }
-  schedule: [{ cron: '0 6 * * 1' }]
+name: Build Golden Images
+on: { push: { paths: ['packer/**'] } }
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hashicorp/setup-packer@v3
-      - run: packer init packer/
-      - run: packer validate -var-file=packer/prod.pkrvars.hcl packer/
-      - run: packer build -var-file=packer/prod.pkrvars.hcl -color=false packer/
+      - uses: hashicorp/setup-packer@main
+      - run: packer init . && packer fmt -check . && packer validate .
+        working-directory: packer/
+      - run: packer build -color=false -timestamp-ui .
+        working-directory: packer/
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          HCP_CLIENT_ID: ${{ secrets.HCP_CLIENT_ID }}
-          HCP_CLIENT_SECRET: ${{ secrets.HCP_CLIENT_SECRET }}
-      - uses: actions/upload-artifact@v4
-        with: { name: manifest, path: packer-manifest.json }
 ```
 
-## Optimization
-- **Parallel builds**: multi-source builds run concurrently by default; limit with `-parallel-builds=N`
-- **Minimal base**: use cloud-optimized minimal images, not full ISOs
-- **Batch provisioners**: combine shell commands into single scripts; each provisioner opens new SSH session
-- **Caching**: Docker `pull = false` if local; use data sources to skip AMI rebuilds when base unchanged
-- **Layered images**: base OS monthly → platform weekly → app per-deploy; reference prior via data source
-- **Fast instances**: use compute-optimized (c5.xlarge) — higher hourly cost, lower total cost
+Pipeline stages: init → fmt → validate → build → test → promote.
+
+## Image Testing and Validation
+
+Add smoke tests as the last provisioner; post-build, launch instance and run InSpec/Goss/Serverspec:
+
+```hcl
+  provisioner "shell" {
+    inline = ["set -e", "systemctl is-active --quiet sshd", "test -f /etc/security/limits.conf", "echo 'Smoke tests passed'"]
+  }
+```
 
 ## Common Patterns
 
-### Golden image pipeline:
-1. Base OS image (monthly) — patches, hardening, monitoring agents
-2. Platform image (weekly) — runtime, middleware (Java, Node, nginx)
-3. App image (per deploy) — code, config; references platform image via `source_ami_filter`
+1. **Timestamp naming**: Include timestamp or git-sha in image names for uniqueness.
+2. **Data sources over hardcoded IDs**: Use `data "amazon-ami"` to auto-resolve latest base.
+3. **Layered builds**: Base image → app image. Rebuild base weekly, app image per deploy.
+4. **Cleanup provisioner**: Remove caches, logs, SSH keys before finalization.
+5. **`sensitive = true`**: Mark secret variables to prevent log leakage.
+6. **HCP Packer Registry**: Push metadata for Terraform consumption and tracking.
 
-### Immutable infrastructure:
-Bake all config into image. No config management at boot. Deploy by replacing instances. Instance-specific data in metadata/user-data only.
+## Anti-Patterns — Avoid
 
-### Multi-region:
-```hcl
-source "amazon-ebs" "app" {
-  ami_regions = ["us-west-2", "eu-west-1", "ap-southeast-1"]
-}
-```
+1. **Hardcoded credentials**: Use env vars or IAM roles, never inline secrets.
+2. **No validation step**: Always `packer validate` before `packer build`.
+3. **Mutable images**: Never SSH-patch running images; rebuild from template.
+4. **Missing cleanup**: Leftover apt caches, SSH host keys, bash history leak into images.
+5. **Single monolithic file**: Split templates into logical files.
+6. **JSON templates**: Migrate to HCL2; JSON lacks expressions and modularity.
+7. **Skipping `packer init`**: Causes missing plugin errors at build time.
+8. **No image tagging**: Always tag and version images for manageability.
 
-## Common Gotchas
-- **SSH timeout**: increase `ssh_timeout` (default 5m); set `ssh_handshake_attempts`; use `ssh_interface = "session_manager"` for private instances
-- **WinRM**: configure listener in userdata/autounattend.xml; port 5985 (HTTP)/5986 (HTTPS); set `winrm_use_ntlm = true` if needed
-- **File perms**: files upload as build user, not root — follow with `sudo mv/chown` via shell provisioner
-- **Cleanup on failure**: `-on-error=cleanup` (default) destroys resources; use `-on-error=ask` for debug; check for orphaned EBS volumes/security groups
-- **AMI naming**: must be unique per region — use `{{timestamp}}` or `force_deregister = true`
-- **API rate limits**: reduce `-parallel-builds` or add retry logic for AWS/Azure/GCP throttling
-- **Plugin drift**: pin versions in CI; run `packer init -upgrade .` only intentionally
-- **Azure**: always run waagent deprovision as last step or image fails to boot
-- **Cloud-init**: add `cloud-init status --wait` as first provisioner to avoid race conditions
-- **v1.11+ plugins**: SHA256SUM files required — run `packer plugins install` to regenerate
+## Example: Input → Output
+**User**: "Create a Packer template that builds an Ubuntu 22.04 AMI with nginx"
 
-**Deep dive**: see `references/troubleshooting.md` for detailed debugging steps, SSH/WinRM fixes, AMI copy issues, HCL2 migration guide, and plugin conflict resolution.
-
-## References
-
-| Document | Description |
-|----------|-------------|
-| `references/advanced-patterns.md` | Multi-stage builds, data sources, HCP Packer channels, custom plugins, Terraform integration, builder optimizations, Windows/WinRM, Ansible patterns, multi-region |
-| `references/troubleshooting.md` | SSH/WinRM timeouts, AMI copy hangs, Docker issues, provisioner debugging, cleanup, HCL2 migration, variable errors, plugin conflicts, rate limiting |
-| `references/security-hardening.md` | CIS benchmarks (Ubuntu/AL2023/Windows), Trivy/Grype/Anchore scanning, STIG compliance, SSH hardening, firewalls, audit logging, credential cleanup, image signing, SBOM |
-
-## Scripts
-
-Executable helper scripts in `scripts/`:
-
-| Script | Purpose |
-|--------|---------|
-| `scripts/init-packer-project.sh` | Initialize a new Packer project with directory structure, starter templates, Makefile, and plugin install |
-| `scripts/build-ami.sh` | Build, validate, tag, list, and cleanup AMIs with retention policies |
-| `scripts/scan-image.sh` | Launch instance from AMI, run CIS benchmarks and Trivy scans, generate reports |
-
-## Assets (Copy-Paste Templates)
-
-Production-ready templates in `assets/`:
-
-| File | Description |
-|------|-------------|
-| `assets/aws-base.pkr.hcl` | AWS AMI template with spot pricing, shell + Ansible provisioners, manifest post-processor |
-| `assets/docker-base.pkr.hcl` | Docker image template with multi-stage provisioners, tag + push post-processors |
-| `assets/variables.pkr.hcl` | Variables file with validation rules, descriptions, defaults for AWS region/instance/VPC |
-| `assets/github-actions.yml` | GitHub Actions workflow: validate → build → scan → promote pipeline |
-| `assets/Makefile` | Project Makefile with init, validate, build, fmt, scan, clean, debug targets |
-
-## Example: Multi-Cloud Golden Image
-
-Prompt: "Create a Packer template for hardened Ubuntu 22.04 on AWS and Azure"
+**Generated**:
 
 ```hcl
-variable "aws_region" { type = string default = "us-east-1" }
-variable "azure_rg"   { type = string default = "packer-images" }
-variable "env"        { type = string default = "production" }
-
-locals {
-  ts   = formatdate("YYYYMMDD-hhmm", timestamp())
-  name = "ubuntu-hardened-${var.env}-${local.ts}"
-}
-
-source "amazon-ebs" "ubuntu" {
-  region            = var.aws_region
-  instance_type     = "t3.micro"
-  ami_name          = local.name
-  source_ami_filter {
-    filters     = { name = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*" }
-    most_recent = true
-    owners      = ["099720109477"]
+packer {
+  required_plugins {
+    amazon = { version = ">= 1.3.0", source = "github.com/hashicorp/amazon" }
   }
-  ssh_username            = "ubuntu"
-  force_deregister        = true
-  force_delete_snapshot   = true
 }
 
-source "azure-arm" "ubuntu" {
-  os_type                           = "Linux"
-  image_publisher                   = "Canonical"
-  image_offer                       = "0001-com-ubuntu-server-jammy"
-  image_sku                         = "22_04-lts"
-  location                          = "eastus"
-  vm_size                           = "Standard_B1s"
-  managed_image_name                = local.name
-  managed_image_resource_group_name = var.azure_rg
+variable "aws_region" { type = string; default = "us-east-1" }
+
+data "amazon-ami" "ubuntu" {
+  filters = {
+    name                = "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
+    virtualization-type = "hvm"
+    root-device-type    = "ebs"
+  }
+  most_recent = true
+  owners      = ["099720109477"]
+  region      = var.aws_region
+}
+
+locals { ts = formatdate("YYYYMMDDhhmm", timestamp()) }
+
+source "amazon-ebs" "nginx" {
+  region        = var.aws_region
+  source_ami    = data.amazon-ami.ubuntu.id
+  instance_type = "t3.micro"
+  ssh_username  = "ubuntu"
+  ami_name      = "nginx-ubuntu-${local.ts}"
+  tags          = { Name = "nginx-ubuntu" }
 }
 
 build {
-  sources = ["source.amazon-ebs.ubuntu", "source.azure-arm.ubuntu"]
-  provisioner "shell" { inline = ["cloud-init status --wait"] }
-  provisioner "shell" {
-    script          = "scripts/harden.sh"
-    execute_command = "chmod +x {{ .Path }}; {{ .Vars }} sudo -E bash '{{ .Path }}'"
-  }
+  sources = ["source.amazon-ebs.nginx"]
   provisioner "shell" {
     inline = [
-      "curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin",
-      "sudo trivy rootfs --severity HIGH,CRITICAL --exit-code 1 /",
-      "sudo rm /usr/local/bin/trivy"
+      "sudo apt-get update -y",
+      "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx",
+      "sudo systemctl enable nginx",
+      "sudo apt-get clean && sudo rm -rf /var/lib/apt/lists/* /tmp/*",
     ]
   }
-  provisioner "shell" {
-    only   = ["azure-arm.ubuntu"]
-    inline = ["/usr/sbin/waagent -force -deprovision+user && export HISTSIZE=0 && sync"]
-  }
-  post-processor "manifest" { output = "manifest.json" strip_path = true }
+  post-processor "manifest" { output = "manifest.json" }
 }
 ```
 
-<!-- tested: pass -->
+```bash
+packer init . && packer validate . && packer build .
+# → ami-0abc123def456 written to manifest.json
+```

@@ -1,465 +1,492 @@
 ---
 name: nats-messaging
 description: >
-  Guide for building systems with NATS messaging. Use when: implementing NATS pub/sub,
-  request/reply patterns, JetStream streams and consumers, NATS KV store, NATS object store,
-  queue groups for load balancing, lightweight cloud-native messaging, NATS clustering,
-  NATS security with TLS/NKeys/JWTs, NATS on Kubernetes, or comparing NATS vs alternatives.
-  Do NOT use when: implementing Kafka for log aggregation or stream processing pipelines,
-  RabbitMQ for complex routing with exchanges and bindings, general pub/sub systems without
-  NATS specifics, AMQP/MQTT/STOMP protocol work, or Redis Streams for caching-adjacent messaging.
+  Use when working with NATS messaging, NATS JetStream, NATS pub/sub,
+  nats-server configuration, NATS cluster setup, NATS key-value store,
+  NATS object store, or the nats CLI tool. Covers core messaging, streaming,
+  persistence, authentication, clustering, and client libraries for Go,
+  Python, Node.js, and Rust. Do NOT use for RabbitMQ, Kafka, Redis pub/sub,
+  AWS SQS/SNS, or gRPC streaming — those are different messaging systems
+  with distinct APIs and semantics.
 ---
 
-# NATS Messaging System
+# NATS Messaging
 
-## When to Choose NATS
+## Subject-Based Addressing
 
-Choose NATS for low-latency (<1ms), high-throughput (8M+ msgs/sec) cloud-native messaging.
-Choose Kafka for durable log-based event streaming, long-term replay, and analytics pipelines.
-Choose RabbitMQ for complex routing, dead-letter exchanges, and legacy AMQP protocol support.
+Subjects are dot-delimited tokens: `orders.us.east`. Max 16 tokens recommended.
 
-NATS strengths: single binary, zero external dependencies, built-in clustering, multi-tenancy,
-request/reply, and optional persistence via JetStream. Ideal for microservice communication,
-IoT/edge, control planes, and service mesh data planes.
+**Wildcards (subscribers only):**
+- `*` matches exactly one token: `orders.*.created` matches `orders.us.created`, not `orders.us.east.created`.
+- `>` matches one or more tokens at the tail: `orders.>` matches `orders.us`, `orders.us.east.created`.
+- `>` alone matches everything.
 
-## Core Concepts
+**Rules:** Publishers must use fully-qualified subjects. Never use wildcards in publish subjects.
 
-### Subjects
-Use dot-separated hierarchical naming. Wildcards: `*` matches one token, `>` matches one or more.
-```
-orders.us.new     # specific subject
-orders.*.new      # matches orders.us.new, orders.eu.new
-orders.>          # matches orders.us.new, orders.eu.shipped.confirmed
-```
+**Naming conventions:** Use lowercase dot-separated hierarchy: `{domain}.{entity}.{action}`. Example: `billing.invoice.created`.
+
+## Core NATS (Pub/Sub, Request/Reply, Queue Groups)
 
 ### Publish/Subscribe
-Fire-and-forget fan-out. All subscribers receive every message. No persistence by default.
+Fire-and-forget broadcast. No persistence. If no subscriber is listening, message is dropped.
+
+```go
+// Go — publish
+nc, _ := nats.Connect("nats://localhost:4222")
+defer nc.Drain()
+nc.Publish("events.user.signup", []byte(`{"id":"u1"}`))
+
+// Go — subscribe
+nc.Subscribe("events.user.*", func(m *nats.Msg) {
+    fmt.Printf("Received on %s: %s\n", m.Subject, string(m.Data))
+})
+// Input:  publish to "events.user.signup" with {"id":"u1"}
+// Output: "Received on events.user.signup: {"id":"u1"}"
+```
+
+```python
+# Python — pub/sub
+import nats
+
+async def main():
+    nc = await nats.connect("nats://localhost:4222")
+    sub = await nc.subscribe("events.>")
+    await nc.publish("events.order.placed", b'{"order":1}')
+    msg = await sub.next_msg(timeout=1)
+    print(f"{msg.subject}: {msg.data.decode()}")
+    await nc.drain()
+# Output: events.order.placed: {"order":1}
+```
 
 ### Request/Reply
-Synchronous RPC-like pattern. Client publishes with an auto-generated inbox reply subject.
-Server subscribes, processes, and replies. First response wins; others are discarded.
+Synchronous RPC pattern. Client publishes with a reply inbox; responder replies.
+
+```go
+// Responder
+nc.Subscribe("svc.auth.validate", func(m *nats.Msg) {
+    nc.Publish(m.Reply, []byte(`{"valid":true}`))
+})
+// Requester
+resp, err := nc.Request("svc.auth.validate", []byte(`{"token":"abc"}`), 2*time.Second)
+// Input:  {"token":"abc"}
+// Output: {"valid":true}
+```
 
 ### Queue Groups
-Load-balance messages across subscribers sharing a queue group name. Only one member per
-group receives each message. No server-side configuration needed—subscribers declare the
-group name on subscribe.
+Load-balance messages across subscribers. Only one member per group receives each message.
 
-## Server Configuration
-
-### Minimal Server (`nats-server.conf`)
-```
-listen: 0.0.0.0:4222
-server_name: nats-1
-
-jetstream {
-  store_dir: /data/jetstream
-  max_memory_store: 1GB
-  max_file_store: 100GB
-}
-
-# Monitoring
-http_port: 8222
+```go
+nc.QueueSubscribe("tasks.process", "workers", func(m *nats.Msg) {
+    // Only one worker in "workers" group receives this message
+})
 ```
 
-### Clustering (3-Node)
-```
-cluster {
-  name: production
-  listen: 0.0.0.0:6222
-  routes: [
-    nats-route://nats-1:6222
-    nats-route://nats-2:6222
-    nats-route://nats-3:6222
-  ]
+```typescript
+// Node.js
+const nc = await connect({ servers: "nats://localhost:4222" });
+const sub = nc.subscribe("tasks.process", { queue: "workers" });
+for await (const msg of sub) {
+    console.log(msg.string());
 }
 ```
-Set `jetstream` with `replicas: 3` on streams for HA. Minimum 3 nodes for quorum.
-
-### TLS Configuration
-```
-tls {
-  cert_file: "/etc/nats/server-cert.pem"
-  key_file:  "/etc/nats/server-key.pem"
-  ca_file:   "/etc/nats/ca-cert.pem"
-  verify:    true   # enforce mutual TLS
-}
-```
-
-### Authentication & Authorization
-
-**NKey auth** (preferred — Ed25519 challenge/response, no shared secrets):
-```
-authorization {
-  users = [
-    {
-      nkey: "UABC..."
-      permissions = {
-        publish = ["orders.>", "events.>"]
-        subscribe = ["replies.>"]
-      }
-    }
-  ]
-}
-```
-Generate keys: `nk -gen user -pubout` → seed (`SU...`) + public key (`U...`).
-
-**JWT/Credentials auth** for multi-tenant production:
-```
-operator: /etc/nats/operator.jwt
-resolver: {
-  type: full
-  dir: /etc/nats/jwt
-}
-```
-Clients use `.creds` files containing JWT + NKey seed. Manage with `nsc` CLI.
 
 ## JetStream
 
-### Create a Stream
-Streams capture messages on subjects for persistence, replay, and durable delivery.
-```
-# CLI
-nats stream add ORDERS \
-  --subjects "orders.>" \
-  --retention limits \
-  --max-msgs 1000000 \
-  --max-age 72h \
-  --storage file \
-  --replicas 3 \
-  --max-msg-size 1MB
-```
+Enable with `nats-server -js` or config `jetstream: { store_dir: "/data/jetstream" }`.
 
-Retention policies:
-- `limits`: retain until limits (count/size/age) are hit (default)
-- `interest`: retain only while active consumers exist
-- `workqueue`: delete after acknowledgment (each message delivered once)
+### Streams
+Persistent, append-only log of messages captured by subject filter.
 
-### Create a Consumer
-```
-# Durable pull consumer
-nats consumer add ORDERS order-processor \
-  --filter "orders.us.>" \
-  --deliver all \
-  --ack explicit \
-  --max-deliver 5 \
-  --ack-wait 30s \
-  --pull
+**Stream config fields:**
+- `Name`: unique identifier
+- `Subjects`: array of subject filters (e.g., `["orders.>"]`)
+- `Retention`: `LimitsPolicy` (default) | `WorkQueuePolicy` | `InterestPolicy`
+- `MaxMsgs`, `MaxBytes`, `MaxAge`: retention limits
+- `MaxMsgSize`: reject messages exceeding this size
+- `Storage`: `FileStorage` (default, durable) | `MemoryStorage` (fast, volatile)
+- `Replicas`: 1-5 for HA in clustered mode (use odd numbers: 1, 3, 5)
+- `Duplicates`: deduplication window duration
+- `Discard`: `DiscardOld` (drop oldest) | `DiscardNew` (reject new)
+
+```bash
+# nats CLI — create stream
+nats stream add ORDERS --subjects="orders.>" --retention=limits \
+  --max-msgs=1000000 --max-bytes=1GiB --max-age=72h \
+  --storage=file --replicas=3 --discard=old --dupe-window=2m
 ```
 
-Consumer types:
-- **Pull**: client explicitly fetches batches. Use for services that control throughput.
-- **Push**: server delivers messages to a subject. Use for real-time event handlers.
-
-### Exactly-Once Delivery
-Enable message deduplication with publish-time message IDs:
 ```go
-js.Publish("orders.new", data, nats.MsgId("order-12345"))
-// Server deduplicates within the dedup window (default 2min)
-```
-Combine with `ack explicit` and idempotent consumers for end-to-end exactly-once.
-
-## KV Store
-
-Built on JetStream. Use for configuration, feature flags, session state, leader election.
-
-```
-# CLI
-nats kv add CONFIG --replicas 3 --history 5 --ttl 24h
-nats kv put CONFIG app.timeout "30s"
-nats kv get CONFIG app.timeout
-# Output: app.timeout > 30s (revision 1)
-nats kv watch CONFIG  # real-time change notifications
+js, _ := nc.JetStream()
+js.AddStream(&nats.StreamConfig{
+    Name:       "ORDERS",
+    Subjects:   []string{"orders.>"},
+    Retention:  nats.LimitsPolicy,
+    MaxMsgs:    1_000_000,
+    MaxBytes:   1 << 30,
+    MaxAge:     72 * time.Hour,
+    Duplicates: 2 * time.Minute,
+    Storage:    nats.FileStorage,
+    Replicas:   3,
+})
 ```
 
-Operations: `put`, `get`, `delete`, `purge`, `watch`, `keys`, `history`.
-Each key supports revision tracking and CAS (Compare-And-Swap) updates via revision number.
+### Consumers
+Named views into a stream with delivery tracking and ack management.
+
+**Consumer types:**
+- **Durable**: survives disconnects; server tracks ack state. Use for production workloads.
+- **Ephemeral**: deleted on disconnect. Use for temporary/debugging reads.
+
+**Key consumer config:**
+- `AckPolicy`: `AckExplicit` (recommended) | `AckAll` | `AckNone`
+- `DeliverPolicy`: `DeliverAll` | `DeliverNew` | `DeliverLast` | `DeliverByStartSequence` | `DeliverByStartTime`
+- `FilterSubject`: consume only matching subjects from the stream
+- `MaxDeliver`: max redelivery attempts before moving to dead letter
+- `AckWait`: time before unacked message is redelivered (default 30s)
+
+**Pull consumers** (recommended for production):
+```go
+sub, _ := js.PullSubscribe("orders.>", "order-processor",
+    nats.AckExplicit(), nats.MaxDeliver(5))
+msgs, _ := sub.Fetch(10, nats.MaxWait(5*time.Second))
+for _, msg := range msgs {
+    processOrder(msg.Data)
+    msg.Ack()  // Always ack after successful processing
+}
+```
+
+**Push consumers** (message delivered automatically):
+```go
+js.Subscribe("orders.created", func(m *nats.Msg) {
+    processOrder(m.Data)
+    m.Ack()
+}, nats.Durable("push-processor"), nats.ManualAck())
+```
+
+### Exactly-Once Semantics
+Combine publish-side deduplication with consumer-side explicit acks.
+
+**Publish with dedup:**
+```go
+// Set Nats-Msg-Id header for deduplication
+msg := &nats.Msg{
+    Subject: "orders.created",
+    Data:    []byte(`{"id":"ord-123"}`),
+    Header:  nats.Header{"Nats-Msg-Id": []string{"ord-123-v1"}},
+}
+js.PublishMsg(msg)
+// Republishing with same Nats-Msg-Id within the Duplicates window is a no-op
+```
+
+**Consume with double-ack:**
+```go
+msg.AckSync() // Waits for server confirmation of ack
+```
+
+### Retention Policies
+- **LimitsPolicy**: keep messages until limits exceeded; oldest evicted. General-purpose.
+- **WorkQueuePolicy**: message removed once acked. One consumer per message. Use for job queues.
+- **InterestPolicy**: message kept while any defined consumer hasn't acked. Use for fan-out with persistence.
+
+## Key-Value Store
+
+Built on JetStream streams. Provides distributed, consistent key-value semantics.
+
+```go
+kv, _ := js.CreateKeyValue(&nats.KeyValueConfig{
+    Bucket: "config", History: 5, TTL: time.Hour, Replicas: 3,
+})
+kv.Put("db.host", []byte("pg.prod.internal"))            // Put
+entry, _ := kv.Get("db.host")                             // Get → "pg.prod.internal"
+_, err := kv.Create("db.host", []byte("other"))           // Create (put-if-absent) → error: exists
+kv.Update("db.host", []byte("pg2.internal"), entry.Revision()) // CAS update
+kv.Delete("db.host")                                      // Delete
+
+// Watch for changes
+watcher, _ := kv.WatchAll()
+for entry := range watcher.Updates() {
+    if entry != nil {
+        fmt.Printf("key=%s val=%s\n", entry.Key(), entry.Value())
+    }
+}
+```
+
+```bash
+# nats CLI
+nats kv add CONFIG --history=5 --ttl=1h --replicas=3
+nats kv put CONFIG db.host "pg.prod.internal"
+nats kv get CONFIG db.host
+# Output: pg.prod.internal
+```
 
 ## Object Store
 
-Built on JetStream. Use for config files, ML models, certificates — not multi-GB blobs.
+Large blob/file storage built on JetStream. Objects are chunked into stream messages.
 
-```
-# CLI
-nats object add ASSETS --replicas 3
-nats object put ASSETS ./model.bin --name ml-model-v2
-nats object get ASSETS ml-model-v2 --output ./downloaded-model.bin
-nats object watch ASSETS  # observe changes
+```go
+obs, _ := js.CreateObjectStore(&nats.ObjectStoreConfig{Bucket: "artifacts", Replicas: 3})
+file, _ := os.Open("model.bin")
+obs.Put(&nats.ObjectMeta{Name: "ml/model-v2"}, file) // Store (auto-chunked)
+result, _ := obs.Get("ml/model-v2")                   // Retrieve
+data, _ := io.ReadAll(result)
+obs.Delete("ml/model-v2")                             // Delete
+watcher, _ := obs.Watch()                              // Watch changes
 ```
 
-Objects are automatically chunked (default 128KB). Supports versioning and metadata.
+```bash
+nats object add ARTIFACTS --replicas=3
+nats object put ARTIFACTS model.bin --name="ml/model-v2"
+nats object get ARTIFACTS "ml/model-v2" --output=downloaded.bin
+nats object ls ARTIFACTS
+```
+
+## Clustering and Super-Clusters
+
+### Cluster (Single Region/DC)
+Three-node minimum for JetStream HA. Uses RAFT consensus.
+
+```hcl
+# server-1.conf
+server_name: n1
+jetstream: { store_dir: "/data/js" }
+cluster {
+    name: dc-east
+    listen: 0.0.0.0:6222
+    routes: [
+        nats-route://n2:6222
+        nats-route://n3:6222
+    ]
+}
+```
+
+### Super-Cluster (Multi-Region via Gateways)
+Connect geographically distributed clusters. Interest-only propagation minimizes WAN traffic.
+
+```hcl
+gateway {
+    name: dc-east
+    listen: 0.0.0.0:7222
+    gateways: [
+        { name: dc-west, urls: ["nats://west-n1:7222"] }
+        { name: dc-eu,   urls: ["nats://eu-n1:7222"] }
+    ]
+}
+```
+
+### Leaf Nodes
+Bridge edge/remote servers to a hub cluster. Ideal for IoT, multi-cloud, hybrid topologies.
+
+**Hub config:**
+```hcl
+leafnodes { port: 7422 }
+```
+
+**Leaf config:**
+```hcl
+leafnodes {
+    remotes: [{ url: "nats-leaf://hub:7422", credentials: "/etc/nats/leaf.creds" }]
+}
+```
+
+Leaf nodes operate independently during disconnection. Subject permissions on the leaf connection control data flow to/from hub.
+
+## Authentication and Authorization
+
+### Token/User-Password (dev/test only)
+```hcl
+authorization { token: "s3cr3t" }
+# Or
+authorization { users: [{ user: admin, password: "$2a$..." }] }
+```
+
+### NKey (Ed25519 — production recommended)
+Server stores only the public key. Client signs a nonce with its private seed.
+
+```hcl
+authorization {
+    users: [
+        {
+            nkey: UDXU4RCSJNZOIQHZNWXHXORDPRTGNJAHAHFRGZNEEJCPQTT2M7NLCNF4
+            permissions: {
+                publish: { allow: ["service.>"] }
+                subscribe: { allow: ["_INBOX.>"] }
+            }
+        }
+    ]
+}
+```
+
+### JWT + Accounts (Operator Mode — large-scale production)
+Decentralized, cryptographically verifiable. Managed with `nsc` CLI.
+
+```bash
+# Setup operator, account, user
+nsc add operator --generate-signing-key --sys --name prod-op
+nsc add account --name billing
+nsc add user --account billing --name svc-billing
+nsc generate config --nats-resolver --sys-account SYS > resolver.conf
+# Include resolver.conf in nats-server config
+```
+
+### Accounts (Multi-Tenancy)
+Isolate subject namespaces between tenants. Control cross-account access via imports/exports.
+
+```hcl
+accounts {
+    BILLING: {
+        users: [{ nkey: "UDXU..." }]
+        exports: [{ service: "billing.charge" }]
+    }
+    ORDERS: {
+        users: [{ nkey: "UABC..." }]
+        imports: [{ service: { account: BILLING, subject: "billing.charge" } }]
+    }
+}
+```
+
+## Monitoring and Observability
+
+### HTTP Monitoring Endpoints
+Enable with `http_port: 8222` in server config.
+
+| Endpoint     | Purpose                                |
+|-------------|----------------------------------------|
+| `/varz`     | Server stats, memory, connections       |
+| `/connz`    | Active client connections detail        |
+| `/routez`   | Cluster route information               |
+| `/subsz`    | Subscription counts and details         |
+| `/jsz`      | JetStream stream/consumer metrics       |
+| `/healthz`  | Liveness/readiness check                |
+| `/gatewayz` | Gateway (super-cluster) info            |
+| `/leafz`    | Leaf node connection status             |
+| `/accountz` | Account-level stats                     |
+
+```bash
+curl http://localhost:8222/healthz    # Output: {"status":"ok"}
+curl http://localhost:8222/varz       # Server stats JSON
+curl http://localhost:8222/jsz        # JetStream stats
+```
+
+### Prometheus Integration
+Use `prometheus-nats-exporter` sidecar or scrape `/varz` directly.
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: nats
+    static_configs:
+      - targets: ["nats-server:8222"]
+```
+
+### nats CLI Monitoring
+```bash
+nats server info                  # Server version, cluster, JetStream status
+nats server report connections    # Connection report across cluster
+nats server report jetstream      # JetStream usage report
+nats stream report                # Stream stats (messages, bytes, consumers)
+nats consumer report ORDERS       # Consumer lag, ack pending
+```
 
 ## Client Libraries
 
-### Go (nats.go)
+| Language | Package         | Install                        |
+|----------|----------------|--------------------------------|
+| Go       | `nats.go`      | `go get github.com/nats-io/nats.go` |
+| Python   | `nats-py`      | `pip install nats-py`          |
+| Node.js  | `nats`         | `npm install nats`             |
+| Rust     | `async-nats`   | `cargo add async-nats`         |
+
+### Connection Best Practices
 ```go
-import (
-    "github.com/nats-io/nats.go"
-    "github.com/nats-io/nats.go/jetstream"
-)
-
-// Connect with options
-nc, err := nats.Connect("nats://localhost:4222",
-    nats.UserCredentials("user.creds"),
+// Go — production connection with HA and reconnect
+nc, err := nats.Connect("nats://n1:4222,nats://n2:4222,nats://n3:4222",
+    nats.Name("order-service"),
+    nats.RetryOnFailedConnect(true),
     nats.MaxReconnects(-1),
-    nats.ReconnectWait(2 * time.Second),
+    nats.ReconnectWait(2*time.Second),
+    nats.DisconnectErrHandler(func(nc *nats.Conn, err error) { log.Printf("disconnected: %v", err) }),
+    nats.ReconnectHandler(func(nc *nats.Conn) { log.Printf("reconnected to %s", nc.ConnectedUrl()) }),
 )
-defer nc.Close()
-
-// Pub/Sub
-nc.Publish("events.user.login", []byte(`{"user":"alice"}`))
-nc.Subscribe("events.>", func(msg *nats.Msg) {
-    log.Printf("received: %s", msg.Data)
-})
-
-// Queue group
-nc.QueueSubscribe("orders.new", "order-workers", func(msg *nats.Msg) {
-    processOrder(msg.Data)
-    // only one worker in "order-workers" receives each message
-})
-
-// Request/Reply
-resp, err := nc.Request("api.users.get", []byte(`{"id":1}`), 5*time.Second)
-
-// JetStream
-js, _ := jetstream.New(nc)
-js.CreateStream(ctx, jetstream.StreamConfig{
-    Name:     "EVENTS",
-    Subjects: []string{"events.>"},
-    Storage:  jetstream.FileStorage,
-    Replicas: 3,
-})
-js.Publish(ctx, "events.order.created", []byte(`{"order":1}`))
-
-// Pull consumer
-cons, _ := js.CreateOrUpdateConsumer(ctx, "EVENTS", jetstream.ConsumerConfig{
-    Durable:   "event-processor",
-    AckPolicy: jetstream.AckExplicitPolicy,
-})
-msgs, _ := cons.Fetch(10)
-for msg := range msgs.Messages() {
-    process(msg)
-    msg.Ack()
-}
-
-// KV Store
-kv, _ := js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: "config"})
-kv.Put(ctx, "feature.dark-mode", []byte("true"))
-entry, _ := kv.Get(ctx, "feature.dark-mode")
-// entry.Value() == []byte("true"), entry.Revision() == 1
+defer nc.Drain() // Always drain, never bare Close()
 ```
 
-### Python (nats-py)
 ```python
-import asyncio
-import nats
-from nats.js.api import StreamConfig, ConsumerConfig, AckPolicy
-
-async def main():
-    nc = await nats.connect(
-        "nats://localhost:4222",
-        user_credentials="user.creds",
-        max_reconnect_attempts=-1,
-    )
-
-    # Pub/Sub
-    async def handler(msg):
-        print(f"Received on {msg.subject}: {msg.data.decode()}")
-
-    await nc.subscribe("events.>", cb=handler)
-    await nc.publish("events.user.login", b'{"user":"alice"}')
-
-    # Queue group
-    await nc.subscribe("orders.new", queue="order-workers", cb=process_order)
-
-    # Request/Reply
-    resp = await nc.request("api.users.get", b'{"id":1}', timeout=5)
-
-    # JetStream
-    js = nc.jetstream()
-    await js.add_stream(StreamConfig(
-        name="EVENTS", subjects=["events.>"], retention="limits"
-    ))
-    ack = await js.publish("events.order.created", b'{"order":1}')
-
-    # Pull subscribe
-    sub = await js.pull_subscribe("events.>", durable="processor")
-    msgs = await sub.fetch(10, timeout=5)
-    for msg in msgs:
-        await msg.ack()
-
-    # KV Store
-    kv = await js.create_key_value(bucket="config")
-    await kv.put("feature.dark-mode", b"true")
-    entry = await kv.get("feature.dark-mode")
-    # entry.value == b"true"
-
-    await nc.close()
-
-asyncio.run(main())
+# Python — production connection
+nc = await nats.connect(
+    servers=["nats://n1:4222", "nats://n2:4222"],
+    max_reconnect_attempts=-1, reconnect_time_wait=2,
+    error_cb=lambda e: print(f"Error: {e}"),
+    disconnected_cb=lambda: print("Disconnected"),
+    reconnected_cb=lambda: print("Reconnected"),
+)
+await nc.drain()  # Always drain on shutdown
 ```
 
-### Node.js (nats.js)
-```javascript
-import { connect, StringCodec, AckPolicy } from "nats";
+## Patterns and Anti-Patterns
 
-const nc = await connect({
-  servers: "nats://localhost:4222",
-  maxReconnectAttempts: -1,
-});
-const sc = StringCodec();
+### DO: Patterns
+- **Hierarchical subjects**: `{service}.{entity}.{action}` — enables flexible wildcard routing.
+- **Drain on shutdown**: Always call `drain()` before exit to flush pending messages.
+- **Explicit ack in JetStream**: Use `AckExplicit` and ack after processing completes.
+- **Dedup headers**: Set `Nats-Msg-Id` for exactly-once publish semantics.
+- **Connection pooling**: One connection per service; multiplex with subscriptions.
+- **Health checks**: Monitor `/healthz` and consumer ack-pending metrics.
+- **Idempotent consumers**: Design handlers to tolerate redelivery safely.
+- **Pull consumers for work queues**: Better backpressure control than push.
+- **Odd replica counts**: Use 1, 3, or 5 replicas for RAFT consensus.
 
-// Pub/Sub
-const sub = nc.subscribe("events.>");
-(async () => {
-  for await (const msg of sub) {
-    console.log(`Received on ${msg.subject}: ${sc.decode(msg.data)}`);
-  }
-})();
-nc.publish("events.user.login", sc.encode('{"user":"alice"}'));
+### DON'T: Anti-Patterns
+- **Bare `Close()` without `Drain()`**: Causes in-flight message loss.
+- **Ignoring acks in JetStream**: Leads to infinite redelivery and resource exhaustion.
+- **Overly broad wildcards (`>`) in production subscriptions**: Performance and security risk.
+- **Huge messages (>1MB)**: Use Object Store for large payloads; publish a reference.
+- **Sync subscribe in async contexts**: Causes deadlocks. Match sub style to runtime.
+- **No reconnect handling**: Network is unreliable. Always configure reconnect with backoff.
+- **Hardcoded single server URL**: Always pass multiple seed URLs for HA.
+- **Skipping TLS in production**: Always enable TLS; use NKey or JWT auth.
+- **Unbounded consumer without MaxDeliver**: Poison messages retry forever.
+- **Mixing `WorkQueuePolicy` with multiple consumers**: Only one consumer group allowed.
 
-// Queue group
-const qsub = nc.subscribe("orders.new", { queue: "order-workers" });
+## nats CLI Quick Reference
 
-// Request/Reply
-const resp = await nc.request("api.users.get", sc.encode('{"id":1}'), { timeout: 5000 });
-
-// JetStream
-const jsm = await nc.jetstreamManager();
-await jsm.streams.add({
-  name: "EVENTS", subjects: ["events.>"], retention: "limits",
-});
-const js = nc.jetstream();
-await js.publish("events.order.created", sc.encode('{"order":1}'));
-
-// Pull consumer
-const consumer = await js.consumers.get("EVENTS", "processor");
-const messages = await consumer.fetch({ max_messages: 10, expires: 5000 });
-for await (const msg of messages) {
-  msg.ack();
-}
-
-// KV Store
-const kv = await js.views.kv("config");
-await kv.put("feature.dark-mode", sc.encode("true"));
-const entry = await kv.get("feature.dark-mode");
-
-await nc.close();
-```
-
-## Monitoring
-
-### Built-in HTTP Endpoints (port 8222)
-```
-GET /varz          # server info, connections, memory, CPU
-GET /connz         # active connections detail
-GET /subsz         # subscription routing info
-GET /jsz           # JetStream account/stream/consumer stats
-GET /healthz       # health check (returns 200 if healthy)
-```
-
-### Prometheus + Grafana
-Deploy `nats-server-exporter` as a sidecar or standalone:
-```yaml
-# prometheus.yml scrape config
-- job_name: nats
-  static_configs:
-    - targets: ["nats-exporter:7777"]
-```
-Key metrics: `nats_server_connections`, `nats_server_msgs_in/out`,
-`nats_jetstream_stream_messages`, `nats_jetstream_consumer_num_pending`.
-
-### CLI Monitoring
-```
-nats server report jetstream  # stream/consumer health
-nats server report connections
-nats server ping              # cluster-wide latency check
-```
-
-## Kubernetes Deployment
-
-### Helm Chart (recommended)
 ```bash
-helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-helm repo update
-helm install nats nats/nats -f values.yaml -n messaging --create-namespace
+# Server
+nats-server -js -sd /data/jetstream -p 4222 -m 8222
+
+# Context (save connection profiles)
+nats context save prod --server nats://prod:4222 --creds /etc/nats/user.creds
+nats context select prod
+
+# Pub/Sub
+nats pub orders.created '{"id":"o1"}'
+nats sub "orders.>"
+
+# Request/Reply
+nats reply svc.echo --command="echo {{.Body}}"
+nats request svc.echo "hello"           # Output: hello
+
+# Streams
+nats stream ls
+nats stream info ORDERS
+nats stream purge ORDERS --force
+nats stream rm ORDERS --force
+
+# Consumers
+nats consumer ls ORDERS
+nats consumer next ORDERS myprocessor --count=5
+
+# Key-Value
+nats kv add CONFIG --replicas=3
+nats kv put CONFIG app.version "2.1.0"
+nats kv get CONFIG app.version           # Output: 2.1.0
+nats kv watch CONFIG
+
+# Object Store
+nats object add BLOBS --replicas=3
+nats object put BLOBS ./file.tar.gz
+nats object get BLOBS file.tar.gz
+nats object ls BLOBS
+
+# Benchmarking
+nats bench test.subject --pub 5 --sub 5 --msgs 1000000 --size 128
 ```
-See [assets/k8s-nats-helm-values.yaml](assets/k8s-nats-helm-values.yaml) for a full
-production `values.yaml` with HA, TLS, JetStream PVCs, anti-affinity, and monitoring.
-
-### Leaf Nodes (Multi-Cluster / Edge)
-Connect remote clusters or edge nodes to a central NATS cluster:
-```
-leafnodes {
-  remotes [
-    { url: "nats-leaf://central-nats:7422", credentials: "leaf.creds" }
-  ]
-}
-```
-Leaf nodes transparently extend subject routing across clusters without full mesh.
-
-## Production Checklist
-
-- [ ] Enable TLS on all client and cluster connections
-- [ ] Use NKey or JWT auth — never deploy with no auth in production
-- [ ] Set JetStream storage limits (`max_file_store`, `max_memory_store`)
-- [ ] Deploy 3+ nodes for clustering (odd number for quorum)
-- [ ] Use `replicas: 3` on streams for high availability
-- [ ] Set explicit `ack_wait` and `max_deliver` on consumers
-- [ ] Configure `max_payload` (default 1MB) per deployment needs
-- [ ] Enable Prometheus exporter and set alerts on pending messages
-- [ ] Set pod anti-affinity in Kubernetes for node distribution
-- [ ] Use PVCs with fast storage class for JetStream file store
-- [ ] Configure reconnect logic in all clients (`MaxReconnects: -1`)
-- [ ] Test failover: kill a node and verify consumers rebalance
-
-## Common Patterns
-
-### Service Mesh with Request/Reply
-Services register on `api.<service>.<method>` subjects. Callers use `nc.Request()`.
-Multiple instances use queue groups for automatic load balancing.
-
-### Event Sourcing with JetStream
-Publish domain events to streams. Use `workqueue` retention for command handlers.
-Use `limits` retention for event logs with replay capability.
-
-### Distributed Config with KV
-Store config in KV buckets. Services watch for changes and hot-reload without restarts.
-Use CAS updates (`kv.Update(key, value, lastRevision)`) to prevent write conflicts.
-
-### Fan-Out with Filtered Consumers
-One stream captures `events.>`. Create per-service consumers with subject filters
-(`events.billing.>`, `events.shipping.>`) for targeted delivery without multiple streams.
-
-## References
-
-In-depth guides for advanced topics:
-
-| Document | Description |
-|----------|-------------|
-| [references/jetstream-patterns.md](references/jetstream-patterns.md) | Stream config, consumer types, exactly-once semantics, mirroring, sourcing, subject transforms, republishing |
-| [references/troubleshooting.md](references/troubleshooting.md) | Slow consumers, message loss, connection issues, split-brain, resource exhaustion, auth failures, monitoring |
-| [references/security-guide.md](references/security-guide.md) | TLS, NKeys, JWT auth, account isolation, user permissions, operator hierarchy, cert rotation, resolvers |
-
-## Scripts
-
-Executable helpers (`scripts/` directory):
-
-| Script | Description |
-|--------|-------------|
-| [scripts/setup-nats-cluster.sh](scripts/setup-nats-cluster.sh) | Stand up a 3-node NATS cluster locally with Docker. Supports `--clean` teardown. |
-| [scripts/nats-health-check.sh](scripts/nats-health-check.sh) | Check server health: connectivity, JetStream, streams, consumers, cluster state. Exit codes: 0/1/2. |
-| [scripts/benchmark-nats.sh](scripts/benchmark-nats.sh) | Benchmark pub/sub throughput, request/reply latency, JetStream rates. Supports `--quick`. |
-
-## Assets
-
-Templates, configs, and client examples (`assets/` directory):
-
-| Asset | Description |
-|-------|-------------|
-| [assets/nats-server.conf](assets/nats-server.conf) | Production NATS server config with JetStream, TLS, NKey auth, logging, limits |
-| [assets/docker-compose.yml](assets/docker-compose.yml) | 3-node NATS cluster + Surveyor + Prometheus + Grafana observability stack |
-| [assets/go-client-example.go](assets/go-client-example.go) | Go client: JetStream, reconnect handling, KV store, graceful shutdown |
-| [assets/python-client-example.py](assets/python-client-example.py) | Python async client: JetStream consumer, KV store, signal handling |
-| [assets/k8s-nats-helm-values.yaml](assets/k8s-nats-helm-values.yaml) | Helm values for production NATS on Kubernetes with HA, TLS, monitoring |
-
-<!-- tested: pass -->
