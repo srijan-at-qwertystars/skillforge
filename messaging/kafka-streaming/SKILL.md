@@ -384,3 +384,36 @@ p.Flush(5000)
 4. **Duplicates**: enable idempotent producer; implement idempotent consumer processing.
 5. **High latency**: check `linger.ms`, `batch.size`, compression, network, broker disk I/O.
 6. **Schema compatibility error**: verify Schema Registry compatibility mode and schema changes.
+
+## Enrichment Resources
+
+### References (references/)
+
+| Document | Description |
+|----------|-------------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Deep dive into EOS, transactional producers, idempotent consumers, Kafka Streams interactive queries, KTable joins, windowing (session/tumbling/hopping), GlobalKTable, Processor API vs DSL, dead letter queues, event sourcing, CQRS, compacted topics, and Kafka vs alternatives decision matrix |
+| [troubleshooting.md](references/troubleshooting.md) | Comprehensive troubleshooting: consumer lag, rebalancing storms, stuck consumers, under-replicated partitions, ISR shrinkage, log compaction issues, producer retry storms, memory pressure, offset reset confusion, Schema Registry errors, and cluster upgrade procedures |
+| [api-reference.md](references/api-reference.md) | Quick reference for Kafka CLI tools: kafka-topics, kafka-console-producer, kafka-console-consumer, kafka-consumer-groups, kafka-configs, kafka-reassign-partitions with flags and examples |
+| [operations-guide.md](references/operations-guide.md) | Operational runbook for day-to-day Kafka cluster management |
+
+### Scripts (scripts/)
+
+| Script | Description | Usage |
+|--------|-------------|-------|
+| [setup-kafka.sh](scripts/setup-kafka.sh) | Docker-based Kafka setup (KRaft or ZooKeeper), creates sample topics, produces/consumes test messages | `./scripts/setup-kafka.sh [--zookeeper] [--teardown]` |
+| [monitor-lag.sh](scripts/monitor-lag.sh) | Consumer group lag monitoring with alerting thresholds and continuous/one-shot modes | `./scripts/monitor-lag.sh --group my-group [--warn-threshold 1000] [--crit-threshold 10000] [--json]` |
+| [kafka-local.sh](scripts/kafka-local.sh) | Quick local Kafka startup helper | `./scripts/kafka-local.sh` |
+| [consumer-lag-check.sh](scripts/consumer-lag-check.sh) | Lightweight consumer lag check | `./scripts/consumer-lag-check.sh` |
+| [topic-management.sh](scripts/topic-management.sh) | Topic CRUD operations helper | `./scripts/topic-management.sh` |
+
+### Assets (assets/)
+
+| Asset | Description |
+|-------|-------------|
+| [docker-compose.yml](assets/docker-compose.yml) | Production-ready Docker Compose: Kafka (KRaft), Schema Registry, Kafka Connect, AKHQ UI with healthchecks and resource limits |
+| [producer-config.properties](assets/producer-config.properties) | Optimized producer configuration template with detailed comments (acks, idempotence, batching, compression, security) |
+| [consumer-config.properties](assets/consumer-config.properties) | Optimized consumer configuration template with detailed comments (group management, polling, fetch tuning, EOS, security) |
+| [connect-source.json](assets/connect-source.json) | Example Kafka Connect source connector configuration |
+| [producer-template.py](assets/producer-template.py) | Python producer code template |
+| [consumer-template.py](assets/consumer-template.py) | Python consumer code template |
+| [streams-template.java](assets/streams-template.java) | Java Kafka Streams application template |

@@ -478,3 +478,19 @@ npx autocannon -c 50 -d 10 -R 200 http://localhost:3000/api/test
 6. **No fallback on store failure:** Define fail-open or fail-closed behavior. Log rate limiter store failures as alerts.
 7. **Static limits for all tiers:** Implement tiered limits (free/pro/enterprise) using key-specific configurations, not one-size-fits-all.
 8. **Testing only happy path:** Test boundary conditions — window edges, exact-limit requests, burst patterns, concurrent requests, and store unavailability.
+
+## References
+
+- **[Advanced Patterns](references/advanced-patterns.md):** Adaptive rate limiting, ML-based anomaly detection, token bucket with burst capacity, hierarchical rate limiting (global→service→user→endpoint), microservices patterns (sidecar vs centralized), fair queuing, priority-based limiting, webhook rate limiting, API monetization tiers, and GraphQL query complexity limiting.
+- **[Troubleshooting](references/troubleshooting.md):** Race conditions in distributed setups, Redis cluster key distribution (`CROSSSLOT` errors), clock synchronization, key cardinality explosion, memory growth with sliding window logs, false positives from shared IPs (NAT/VPN), header spoofing bypass (`X-Forwarded-For`), load balancer sticky session interaction, and debugging rate limit decisions.
+
+## Scripts
+
+- **[benchmark-ratelimiter.sh](scripts/benchmark-ratelimiter.sh):** Load test a rate-limited endpoint using `wrk` or `hey`. Configurable concurrency, duration, target rate. Outputs status code distribution with rate limit analysis. Run: `./scripts/benchmark-ratelimiter.sh -u http://localhost:3000/api/test`
+- **[redis-ratelimit.sh](scripts/redis-ratelimit.sh):** Validates Redis Lua rate limiting scripts. Runs token bucket / sliding window / fixed window Lua scripts and asserts correct allow/reject behavior. Run: `./scripts/redis-ratelimit.sh`
+
+## Assets
+
+- **[rate-limiter.ts](assets/rate-limiter.ts):** TypeScript rate limiter library with token bucket, sliding window counter, and fixed window implementations. Redis Lua scripts for atomicity. Provides `consume()`, `peek()`, and `reset()` with typed `RateLimitResult`.
+- **[rate-limit-middleware.ts](assets/rate-limit-middleware.ts):** Express middleware with configurable strategies, pluggable key extractors (IP, user, API key, composite), cost functions, per-tier overrides, layered limiting, fail-open/closed modes, and `RateLimit-*` headers.
+- **[rate-limit.lua](assets/rate-limit.lua):** Redis Lua scripts for atomic rate limiting — token bucket, sliding window counter, fixed window, sliding window log, and concurrent request limiter.

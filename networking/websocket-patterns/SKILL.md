@@ -85,7 +85,6 @@ wss.on('connection', (ws, req) => {
   ws.on('close', () => clearInterval(interval));
 });
 ```
-
 ### Socket.IO Server
 
 ```js
@@ -102,7 +101,6 @@ const sub = pub.duplicate();
 await Promise.all([pub.connect(), sub.connect()]);
 io.adapter(createAdapter(pub, sub));
 ```
-
 ### Python — websockets Library
 
 ```python
@@ -119,7 +117,6 @@ async def main():
 
 asyncio.run(main())
 ```
-
 ### Go — gorilla/websocket
 
 ```go
@@ -145,7 +142,6 @@ ws.onmessage = (event) => console.log('Received:', JSON.parse(event.data));
 ws.onclose = (event) => console.log(`Closed: ${event.code} ${event.reason}`);
 ws.onerror = (error) => console.error('WS error:', error);
 ```
-
 ### Reconnecting Client with Exponential Backoff
 
 Jitter prevents thundering herd on reconnect storms. Reset attempt counter on successful open. Skip reconnect on intentional close (code 1000).
@@ -195,7 +191,6 @@ chatNs.on('connection', (socket) => {
   });
 });
 ```
-
 ### Acknowledgements
 
 ```js
@@ -210,7 +205,6 @@ socket.on('save-document', (data, callback) => {
   catch (err) { callback({ status: 'error', message: err.message }); }
 });
 ```
-
 ### Middleware
 
 ```js
@@ -249,7 +243,6 @@ io.use((socket, next) => {
   next();
 });
 ```
-
 ### Cookie-Based
 
 ```js
@@ -263,7 +256,6 @@ httpServer.on('upgrade', (req, socket, head) => {
   });
 });
 ```
-
 ### Per-Message Authentication
 
 Verify tokens on sensitive operations:
@@ -307,7 +299,6 @@ const sub = pub.duplicate();
 await Promise.all([pub.connect(), sub.connect()]);
 io.adapter(createAdapter(pub, sub));
 ```
-
 ### Redis Streams Adapter (Durable)
 
 Use for guaranteed delivery and connection state recovery:
@@ -317,7 +308,6 @@ const client = createClient({ url: 'redis://redis:6379' });
 await client.connect();
 io.adapter(createAdapter(client));
 ```
-
 ### Sticky Sessions (nginx)
 
 ```nginx
@@ -354,7 +344,6 @@ ws.on('message', (raw) => {
   }
 });
 ```
-
 ### Request-Response over WebSocket
 
 Correlate requests/responses with unique IDs and timeouts:
@@ -379,7 +368,6 @@ ws.onmessage = (e) => {
   }
 };
 ```
-
 ### Broadcasting
 
 ```js
@@ -460,7 +448,6 @@ const wss = new WebSocketServer({
   },
 });
 ```
-
 ### Rate Limiting
 
 ```js
@@ -472,7 +459,6 @@ ws.on('message', () => {
 });
 setInterval(() => messageCounts.clear(), 60000);
 ```
-
 ### Message Size Limits
 
 ```js
@@ -495,3 +481,19 @@ app.get('/metrics', (req, res) => {
 ```
 
 Debug Socket.IO: `DEBUG=socket.io* node server.js`. Inspect browser frames in Chrome DevTools → Network → WS tab. CLI tool: `npx wscat -c wss://example.com/ws`.
+
+## References
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Multiplexing, sub-protocols, binary protocols, permessage-deflate, connection pooling, graceful drain, WebSocket over HTTP/2 (RFC 8441), WebTransport comparison, presence, cursor sharing, OT/CRDT collaborative editing.
+- **[Troubleshooting](references/troubleshooting.md)** — Proxy/LB drops, Nginx/HAProxy config, SSL/TLS, CORS, memory leaks, message ordering, reconnect state sync, mobile network transitions, browser tab throttling, DevTools debugging.
+
+## Scripts
+
+- **[ws-load-test.sh](scripts/ws-load-test.sh)** — Load testing with concurrent connections and throughput metrics. Uses websocat or wscat. Run with `--help`.
+- **[ws-debug.sh](scripts/ws-debug.sh)** — Frame-level debugging with timestamps, JSON pretty-print, custom headers, and interactive mode. Run with `--help`.
+
+## Assets
+
+- **[ws-server.ts](assets/ws-server.ts)** — Production ws-library server: rooms, JWT auth, heartbeat, rate limiting, graceful shutdown.
+- **[socket-io-server.ts](assets/socket-io-server.ts)** — Socket.IO server: Redis adapter, namespaces, middleware, connection state recovery.
+- **[nginx-websocket.conf](assets/nginx-websocket.conf)** — Nginx WebSocket proxy: upgrade headers, SSL, sticky sessions, rate limiting.

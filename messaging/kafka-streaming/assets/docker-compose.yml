@@ -1,115 +1,265 @@
-# Kafka Development Environment — KRaft mode (no ZooKeeper)
-# Components: Kafka broker, Schema Registry, Kafka Connect, AKHQ UI
+# =============================================================================
+# Kafka Streaming Platform - Docker Compose (KRaft Mode)
+# =============================================================================
+# Apache Kafka 3.9.0 running in KRaft (no ZooKeeper) combined mode with
+# Schema Registry, Kafka Connect, and AKHQ management UI.
 #
 # Usage:
-#   docker compose up -d              # Start all services
-#   docker compose logs -f kafka      # Follow Kafka logs
-#   docker compose down -v            # Stop and remove volumes
-#
-# Endpoints:
-#   Kafka broker:      localhost:9092
-#   Schema Registry:   http://localhost:8081
-#   Kafka Connect:     http://localhost:8083
-#   AKHQ UI:           http://localhost:8080
+#   docker compose up -d
+#   docker compose ps
+#   docker compose logs -f kafka
+#   docker compose down -v   # removes volumes too
+# =============================================================================
+
+x-common-healthcheck: &default-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 30s
 
 services:
+  # ---------------------------------------------------------------------------
+  # Kafka Broker + Controller (KRaft combined mode)
+  # ---------------------------------------------------------------------------
+  # In KRaft mode, Kafka manages its own metadata without ZooKeeper.
+  # Combined mode means this node acts as both broker AND controller.
+  # For production multi-node clusters, separate broker and controller roles.
+  # ---------------------------------------------------------------------------
   kafka:
     image: apache/kafka:3.9.0
     container_name: kafka
+    hostname: kafka
     ports:
-      - "9092:9092"
+      - "9092:9092"   # External PLAINTEXT listener for client connections
+      - "9093:9093"   # Controller listener (internal, exposed for debugging)
     environment:
+      # --- Node Identity ---
       KAFKA_NODE_ID: 1
-      KAFKA_PROCESS_ROLES: broker,controller
-      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093,PLAINTEXT_HOST://0.0.0.0:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_PROCESS_ROLES: broker,controller           # Combined mode
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093     # Self-referencing quorum
+
+      # --- Listeners ---
+      # PLAINTEXT: client-facing on 9092
+      # CONTROLLER: internal KRaft controller communication on 9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_LOG_SEGMENT_BYTES: 1073741824
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+      # --- Cluster ID ---
+      # Pre-generated cluster ID for reproducible setups (use kafka-storage.sh random-uuid to generate)
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
+      # --- Topic Defaults ---
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1         # Set to 3 in production
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1 # Set to 3 in production
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1            # Set to 2 in production
+      KAFKA_NUM_PARTITIONS: 3                           # Default partitions for auto-created topics
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1               # Set to 3 in production
+
+      # --- Log Management ---
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 168                    # 7 days retention
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824               # 1 GB segment size
+      KAFKA_LOG_RETENTION_CHECK_INTERVAL_MS: 300000     # Check every 5 minutes
+
+      # --- Performance ---
+      KAFKA_NUM_NETWORK_THREADS: 3
+      KAFKA_NUM_IO_THREADS: 8
+      KAFKA_SOCKET_SEND_BUFFER_BYTES: 102400
+      KAFKA_SOCKET_RECEIVE_BUFFER_BYTES: 102400
+      KAFKA_SOCKET_REQUEST_MAX_BYTES: 104857600         # 100 MB max request size
+
+      # --- Group Coordinator ---
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0         # No delay in dev; set 3000 in prod
     volumes:
       - kafka-data:/var/lib/kafka/data
+    networks:
+      - kafka-network
     healthcheck:
-      test: /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1
-      interval: 10s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
+      # Verify the broker is reachable and can serve API version requests
+      test: >
+        /opt/kafka/bin/kafka-broker-api-versions.sh
+        --bootstrap-server localhost:9092
+        > /dev/null 2>&1 || exit 1
+      <<: *default-healthcheck
+      start_period: 45s
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "2.0"
+        reservations:
+          memory: 1g
+          cpus: "0.5"
+    restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # Confluent Schema Registry
+  # ---------------------------------------------------------------------------
+  # Manages Avro, JSON Schema, and Protobuf schemas for Kafka topics.
+  # Enforces compatibility rules to prevent breaking changes.
+  # ---------------------------------------------------------------------------
   schema-registry:
-    image: confluentinc/cp-schema-registry:7.7.1
+    image: confluentinc/cp-schema-registry:7.7.0
     container_name: schema-registry
+    hostname: schema-registry
     ports:
       - "8081:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
-      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:9092
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      # Schema compatibility mode: BACKWARD, FORWARD, FULL, NONE
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: BACKWARD
+      SCHEMA_REGISTRY_DEBUG: "false"
+    networks:
+      - kafka-network
     depends_on:
       kafka:
         condition: service_healthy
+    healthcheck:
+      test: >
+        curl -f http://localhost:8081/subjects > /dev/null 2>&1 || exit 1
+      <<: *default-healthcheck
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+          cpus: "0.25"
+    restart: unless-stopped
 
-  connect:
-    image: confluentinc/cp-kafka-connect:7.7.1
+  # ---------------------------------------------------------------------------
+  # Kafka Connect
+  # ---------------------------------------------------------------------------
+  # Distributed data integration framework for streaming data between Kafka
+  # and external systems (databases, search indexes, file systems, etc.).
+  # Drop connector JARs into the mounted ./connectors volume.
+  # ---------------------------------------------------------------------------
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.7.0
     container_name: kafka-connect
+    hostname: kafka-connect
     ports:
       - "8083:8083"
     environment:
-      CONNECT_BOOTSTRAP_SERVERS: kafka:29092
-      CONNECT_REST_ADVERTISED_HOST_NAME: connect
+      CONNECT_BOOTSTRAP_SERVERS: kafka:9092
       CONNECT_REST_PORT: 8083
-      CONNECT_GROUP_ID: connect-cluster
+      CONNECT_REST_ADVERTISED_HOST_NAME: kafka-connect
+
+      # --- Cluster Identity ---
+      CONNECT_GROUP_ID: kafka-connect-cluster
       CONNECT_CONFIG_STORAGE_TOPIC: _connect-configs
       CONNECT_OFFSET_STORAGE_TOPIC: _connect-offsets
       CONNECT_STATUS_STORAGE_TOPIC: _connect-status
+
+      # Replication factors for internal topics (set to 3 in production)
       CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
       CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+
+      # --- Serialization (Avro with Schema Registry) ---
       CONNECT_KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
       CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
       CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
       CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: http://schema-registry:8081
-      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components
+
+      # Internal converter for Connect's own data (JSON, no schemas needed)
+      CONNECT_INTERNAL_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_INTERNAL_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+
+      # --- Plugin Discovery ---
+      CONNECT_PLUGIN_PATH: /usr/share/java,/usr/share/confluent-hub-components,/connectors
+
+      # --- Logging ---
+      CONNECT_LOG4J_ROOT_LOGLEVEL: INFO
+      CONNECT_LOG4J_LOGGERS: "org.apache.kafka.connect.runtime.rest=WARN,org.reflections=ERROR"
+    volumes:
+      # Mount local directory for custom connector JARs
+      - ./connectors:/connectors:ro
+    networks:
+      - kafka-network
     depends_on:
       kafka:
         condition: service_healthy
       schema-registry:
-        condition: service_started
-    # Uncomment to install Debezium connector on startup:
-    # command:
-    #   - bash
-    #   - -c
-    #   - |
-    #     confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.5.4
-    #     /etc/confluent/docker/run
+        condition: service_healthy
+    healthcheck:
+      test: >
+        curl -f http://localhost:8083/connectors > /dev/null 2>&1 || exit 1
+      <<: *default-healthcheck
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1.5"
+        reservations:
+          memory: 512m
+          cpus: "0.25"
+    restart: unless-stopped
 
+  # ---------------------------------------------------------------------------
+  # AKHQ - Kafka Management UI
+  # ---------------------------------------------------------------------------
+  # Web-based UI for managing and monitoring Kafka clusters, topics,
+  # consumer groups, schema registry, and Kafka Connect.
+  # Access at http://localhost:8080
+  # ---------------------------------------------------------------------------
   akhq:
-    image: tchiotludo/akhq:0.25.1
+    image: tchiotludo/akhq:latest
     container_name: akhq
+    hostname: akhq
     ports:
       - "8080:8080"
     environment:
       AKHQ_CONFIGURATION: |
         akhq:
           connections:
-            local:
+            kafka-cluster:
               properties:
-                bootstrap.servers: kafka:29092
+                bootstrap.servers: "kafka:9092"
               schema-registry:
-                url: http://schema-registry:8081
+                url: "http://schema-registry:8081"
               connect:
-                - name: connect
-                  url: http://connect:8083
+                - name: "kafka-connect"
+                  url: "http://kafka-connect:8083"
+          security:
+            default-group: admin
+          server:
+            access-log:
+              enabled: false
+    networks:
+      - kafka-network
     depends_on:
       kafka:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+        reservations:
+          memory: 256m
+          cpus: "0.25"
+    restart: unless-stopped
 
+# =============================================================================
+# Named Volumes
+# =============================================================================
 volumes:
   kafka-data:
+    driver: local
+    name: kafka-streaming-data
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  kafka-network:
+    driver: bridge
+    name: kafka-streaming-network
