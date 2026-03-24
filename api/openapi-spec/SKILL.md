@@ -198,13 +198,9 @@ requestBody:
         properties:
           file: { type: string, format: binary }
           description: { type: string }
-          tags: { type: array, items: { type: string } }
       encoding:
         file: { contentType: "image/png, image/jpeg, application/pdf" }
-        tags: { style: form, explode: true }
 ```
-
-**Multiple content types:** Support `application/json`, `application/xml`, and `application/x-www-form-urlencoded` by listing each under `content` with the same or different schema.
 
 ## Responses
 
@@ -349,7 +345,7 @@ security:
 
 ## Links and Callbacks
 
-**Links** connect responses to follow-up operations (HATEOAS-style):
+**Links** connect responses to follow-up operations:
 ```yaml
 links:
   GetCreatedUser:
@@ -393,8 +389,7 @@ webhooks:
 
 ## Common Patterns
 
-**Paginated list (offset):**
-```yaml
+**Paginated list (offset):**```yaml
     UserList:
       type: object
       required: [data, pagination]
@@ -445,20 +440,11 @@ webhooks:
 - name: search
   in: query
   schema: { type: string, minLength: 2 }
-- name: createdAfter
-  in: query
-  schema: { type: string, format: date-time }
 ```
 
 ## Specification Extensions
 
-Prefix custom fields with `x-`:
-```yaml
-x-internal: true
-x-rate-limit: 100
-x-stability: experimental
-x-codegen-request-body-name: metricsRequest
-```
+Prefix custom fields with `x-`: e.g. `x-internal: true`, `x-rate-limit: 100`, `x-stability: experimental`.
 
 ## Tooling
 
@@ -467,23 +453,15 @@ x-codegen-request-body-name: metricsRequest
 | Validate | Spectral | `spectral lint openapi.yaml` |
 | Validate | redocly-cli | `redocly lint openapi.yaml` |
 | Bundle | redocly-cli | `redocly bundle openapi.yaml -o bundle.yaml` |
-| Docs | Swagger UI | Interactive browser explorer (Docker or npm) |
+| Docs | Swagger UI | Interactive browser explorer |
 | Docs | Redoc | `redocly preview-docs openapi.yaml` |
-| Docs | Stoplight Elements | Embeddable React component |
 | Codegen | openapi-generator | `openapi-generator-cli generate -i spec.yaml -g typescript-axios -o ./sdk` |
-| Codegen | openapi-generator | `openapi-generator-cli generate -i spec.yaml -g python-fastapi -o ./server` |
 
 ## Design-First vs Code-First
 
-- **Design-first**: Write spec YAML before code. Use Swagger Editor or Stoplight Studio. Generate server stubs. Best for governance, team alignment, contract-driven development.
-- **Code-first**: Annotate code, auto-generate spec. Use SpringDoc (Java), FastAPI (Python), swaggo (Go), tsoa (TypeScript). Best for rapid prototyping.
+- **Design-first**: Write spec YAML before code. Generate server stubs. Best for governance and contract-driven development.
+- **Code-first**: Annotate code, auto-generate spec. Use SpringDoc (Java), FastAPI (Python), swaggo (Go), tsoa (TypeScript).
 - **Hybrid**: Maintain spec as source of truth; validate generated code matches spec in CI.
-
-## Versioning
-
-1. **URI path**: `/v1/users` — simple, visible, easy routing
-2. **Header**: `Accept: application/vnd.api.v1+json` — clean URLs
-3. **No breaking changes preferred**: Add fields/endpoints additively. Use `deprecated: true` on operations and properties before removal.
 
 ## Key Rules
 
@@ -496,4 +474,26 @@ x-codegen-request-body-name: metricsRequest
 - Use `pattern` for string validation (phones, slugs, codes)
 - Set `deprecated: true` instead of removing endpoints/fields
 - Validate specs in CI with Spectral or redocly-cli before merge
-- Keep specs in version control alongside source code
+
+## References
+
+Deep-dive documentation in `references/`:
+
+- **`advanced-patterns.md`** — Schema composition (allOf/oneOf/anyOf/discriminator), polymorphism, circular references, API versioning strategies (URL/header/content-type), pagination patterns (cursor/offset/keyset), filtering/sorting/field selection, HATEOAS links, webhooks/callbacks, rate limiting headers
+- **`troubleshooting.md`** — Spec validation errors, code generation gotchas, breaking vs non-breaking changes, Swagger 2→OpenAPI 3 migration, security scheme misconfigurations, `$ref` resolution problems, nullable vs required confusion, `additionalProperties` pitfalls, YAML syntax gotchas
+- **`api-reference.md`** — Complete field reference for every OpenAPI 3.1 object (Info, Server, PathItem, Operation, Parameter, RequestBody, Response, Schema, SecurityScheme, Discriminator, Components, etc.) with all properties, types, defaults, and examples
+
+## Scripts
+
+Executable helper scripts in `scripts/`:
+
+- **`validate-spec.sh`** — Validates an OpenAPI spec using Spectral or swagger-cli. Auto-installs tools. Usage: `./scripts/validate-spec.sh openapi.yaml [--tool spectral|swagger-cli] [--ruleset .spectral.yml]`
+- **`generate-client.sh`** — Generates API client/server code via openapi-generator-cli. Supports 50+ languages (TypeScript, Python, Java, Go, etc.). Usage: `./scripts/generate-client.sh openapi.yaml -l typescript-axios -o ./sdk`
+- **`mock-server.sh`** — Starts a Prism mock server from an OpenAPI spec. Validates requests, returns spec examples or dynamic data. Usage: `./scripts/mock-server.sh openapi.yaml [--port 4010] [--dynamic]`
+
+## Assets
+
+Reusable templates and schemas in `assets/`:
+
+- **`openapi-template.yaml`** — Complete OpenAPI 3.1 starter template with health check, CRUD endpoints, cursor pagination, RFC 7807 errors, rate limiting headers, and security schemes pre-configured
+- **`error-response.yaml`** — Reusable RFC 7807 error components for 400, 401, 403, 404, 409, 422, 500

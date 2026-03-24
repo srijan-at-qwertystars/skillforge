@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="">
+  <meta name="theme-color" content="#3d72b4">
+
+  <title>htmx App</title>
+
+  <!-- htmx core -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+
+  <!-- Hyperscript (optional — client-side behavior without JS files) -->
+  <script src="https://unpkg.com/hyperscript.org@0.9.14"></script>
+
+  <!-- Idiomorph extension (optional — DOM morphing for smooth updates) -->
+  <script src="https://unpkg.com/idiomorph@0.3.0/dist/idiomorph-ext.min.js"></script>
+
+  <!-- htmx extensions (uncomment as needed) -->
+  <!-- <script src="https://unpkg.com/htmx-ext-response-targets@2.0.2/response-targets.js"></script> -->
+  <!-- <script src="https://unpkg.com/htmx-ext-head-support@2.0.3/head-support.js"></script> -->
+  <!-- <script src="https://unpkg.com/htmx-ext-preload@2.1.0/preload.js"></script> -->
+  <!-- <script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js"></script> -->
+  <!-- <script src="https://unpkg.com/htmx-ext-ws@2.0.2/ws.js"></script> -->
+
+  <!-- htmx config (optional global overrides) -->
+  <meta name="htmx-config" content='{
+    "historyCacheSize": 10,
+    "defaultSwapStyle": "innerHTML",
+    "globalViewTransitions": false,
+    "selfRequestsOnly": true
+  }'>
+
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                   Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #1a1a2e;
+      background-color: #fafafa;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────── */
+    .container { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+    .content   { max-width: 800px; margin: 0 auto; padding: 2rem 1rem; }
+
+    /* ── htmx Loading Indicators ──────────────────────────────────── */
+    .htmx-indicator {
+      display: none;
+      opacity: 0;
+      transition: opacity 200ms ease-in;
+    }
+    .htmx-request .htmx-indicator,
+    .htmx-request.htmx-indicator {
+      display: inline-flex;
+      opacity: 1;
+    }
+
+    /* Global loading bar (top of page) */
+    #global-loader {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: transparent;
+      z-index: 9999;
+      pointer-events: none;
+    }
+    #global-loader::after {
+      content: '';
+      display: block;
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #3d72b4, #6c5ce7);
+      transition: width 0s;
+    }
+    .htmx-request #global-loader::after {
+      width: 100%;
+      transition: width 2s cubic-bezier(0.1, 0.05, 0.1, 0.9);
+    }
+
+    /* Inline spinner */
+    .spinner {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      border: 2px solid #e0e0e0;
+      border-top-color: #3d72b4;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-left: 0.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Skeleton loader */
+    .skeleton {
+      background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: skeleton-pulse 1.5s ease-in-out infinite;
+      border-radius: 4px;
+      min-height: 1.5em;
+    }
+    @keyframes skeleton-pulse { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* ── htmx Swap Transitions ────────────────────────────────────── */
+    .htmx-swapping {
+      opacity: 0;
+      transition: opacity 0.15s ease-out;
+    }
+    .htmx-added {
+      opacity: 0;
+    }
+    .htmx-settling {
+      opacity: 1;
+      transition: opacity 0.3s ease-in;
+    }
+
+    /* Fade-out for deleted elements */
+    .htmx-swapping[hx-swap*="swap:"] {
+      transform: scale(0.95);
+      transition: all 0.3s ease-out;
+    }
+
+    /* ── View Transitions (progressive) ───────────────────────────── */
+    @supports (view-transition-name: test) {
+      .main-content { view-transition-name: main-content; }
+      ::view-transition-old(main-content) {
+        animation: fade-out 0.2s ease-out;
+      }
+      ::view-transition-new(main-content) {
+        animation: fade-in 0.2s ease-in;
+      }
+    }
+
+    @keyframes fade-out { to { opacity: 0; } }
+    @keyframes fade-in { from { opacity: 0; } }
+
+    /* ── Toast Notifications ──────────────────────────────────────── */
+    #toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      pointer-events: none;
+    }
+    .toast {
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      color: white;
+      font-size: 0.9rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: toast-in 0.3s ease-out;
+      pointer-events: auto;
+    }
+    .toast.success { background: #28a745; }
+    .toast.error   { background: #dc3545; }
+    .toast.warning { background: #ffc107; color: #333; }
+    .toast.info    { background: #3d72b4; }
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateX(100%); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ── Utility Classes ──────────────────────────────────────────── */
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+               overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+    .text-muted { color: #6c757d; }
+    .text-danger { color: #dc3545; }
+    .mt-1 { margin-top: 0.5rem; }
+    .mt-2 { margin-top: 1rem; }
+    .mb-1 { margin-bottom: 0.5rem; }
+    .mb-2 { margin-bottom: 1rem; }
+  </style>
+</head>
+
+<!-- CSRF: replace {{ csrf_token }} with your framework's token -->
+<body hx-ext="morph"
+      hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+
+  <!-- Global loading bar -->
+  <div id="global-loader" class="htmx-indicator"></div>
+
+  <!-- Toast container -->
+  <div id="toast-container"></div>
+
+  <!-- Navigation (example) -->
+  <header>
+    <nav class="container" style="display:flex; justify-content:space-between; align-items:center; padding:1rem;">
+      <a href="/" style="font-weight:700; font-size:1.2rem; text-decoration:none; color:#1a1a2e;">
+        htmx App
+      </a>
+      <div style="display:flex; gap:1rem;">
+        <a href="/" hx-get="/" hx-target=".main-content" hx-push-url="true"
+           hx-swap="innerHTML transition:true">Home</a>
+        <a href="/about" hx-get="/about" hx-target=".main-content" hx-push-url="true"
+           hx-swap="innerHTML transition:true">About</a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Main content area -->
+  <main class="main-content content">
+    <!-- Your page content here -->
+    <h1>Welcome</h1>
+    <p>htmx base template with all extensions ready.</p>
+  </main>
+
+  <!-- Toast notification handler -->
+  <script>
+    // Listen for server-triggered toast events via HX-Trigger header
+    document.body.addEventListener("showToast", function(e) {
+      const container = document.getElementById("toast-container");
+      const toast = document.createElement("div");
+      const detail = e.detail || {};
+      toast.className = "toast " + (detail.level || "info");
+      toast.textContent = detail.message || detail.text || "Notification";
+      container.appendChild(toast);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateX(100%)";
+        toast.style.transition = "all 0.3s ease-out";
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    });
+
+    // Global error handler for htmx requests
+    document.body.addEventListener("htmx:responseError", function(e) {
+      const status = e.detail.xhr.status;
+      if (status === 401) {
+        window.location.href = "/login";
+      } else if (status >= 500) {
+        document.body.dispatchEvent(new CustomEvent("showToast", {
+          detail: { message: "Server error. Please try again.", level: "error" }
+        }));
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,320 @@
+# =============================================================================
+# Reusable Error Response Schemas
+#
+# RFC 7807 Problem Details-compliant error schemas for common HTTP error codes.
+# Include these in your OpenAPI spec via $ref or copy the components you need.
+#
+# Usage in your spec:
+#   responses:
+#     "400":
+#       $ref: "error-response.yaml#/components/responses/BadRequest"
+#
+#   Or copy individual schemas:
+#     schema:
+#       $ref: "error-response.yaml#/components/schemas/Error"
+# =============================================================================
+
+components:
+
+  # ---------------------------------------------------------------------------
+  # Base Error Schema (RFC 7807 Problem Details)
+  # ---------------------------------------------------------------------------
+  schemas:
+    Error:
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri
+          description: |
+            A URI reference that identifies the error type.
+            Should be a dereferenceable URL that leads to human-readable documentation.
+          example: "https://api.example.com/errors/validation-error"
+        title:
+          type: string
+          description: |
+            A short, human-readable summary of the error type.
+            Should remain consistent across occurrences.
+          example: "Validation Error"
+        status:
+          type: integer
+          minimum: 100
+          maximum: 599
+          description: The HTTP status code for this error occurrence.
+          example: 422
+        detail:
+          type: string
+          description: |
+            A human-readable explanation specific to this occurrence.
+            Should help the client understand and potentially fix the issue.
+          example: "The 'email' field must be a valid email address."
+        instance:
+          type: string
+          format: uri
+          description: |
+            A URI reference that identifies this specific occurrence.
+            Useful for correlating with server logs.
+          example: "/errors/requests/550e8400-e29b-41d4-a716-446655440000"
+        traceId:
+          type: string
+          description: Distributed tracing ID for debugging.
+          example: "abc123def456"
+        timestamp:
+          type: string
+          format: date-time
+          description: When the error occurred.
+          example: "2024-01-15T09:30:00Z"
+        errors:
+          type: array
+          description: Detailed field-level errors for validation failures.
+          items:
+            $ref: "#/components/schemas/FieldError"
+
+    FieldError:
+      type: object
+      required: [message]
+      properties:
+        field:
+          type: string
+          description: |
+            JSON path to the field with the error.
+            Uses dot notation for nested fields.
+          example: "address.zipCode"
+        message:
+          type: string
+          description: Human-readable error message for this field.
+          example: "must be a valid US zip code"
+        code:
+          type: string
+          description: |
+            Machine-readable error code for programmatic handling.
+            Convention: UPPER_SNAKE_CASE.
+          example: "INVALID_FORMAT"
+        rejectedValue:
+          description: The value that was rejected (if safe to echo).
+          example: "not-a-zip"
+
+  # ---------------------------------------------------------------------------
+  # Reusable Error Responses
+  # ---------------------------------------------------------------------------
+  responses:
+
+    # --- 400 Bad Request ---
+    BadRequest:
+      description: |
+        The request is malformed or contains invalid data.
+        Check the request body, query parameters, and headers.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            malformedJson:
+              summary: Malformed JSON body
+              value:
+                type: "https://api.example.com/errors/bad-request"
+                title: "Bad Request"
+                status: 400
+                detail: "The request body contains malformed JSON at position 42."
+                instance: "/errors/requests/a1b2c3"
+            missingField:
+              summary: Missing required field
+              value:
+                type: "https://api.example.com/errors/bad-request"
+                title: "Bad Request"
+                status: 400
+                detail: "The request body is missing required fields."
+                errors:
+                  - field: "email"
+                    message: "is required"
+                    code: "REQUIRED"
+            invalidParam:
+              summary: Invalid query parameter
+              value:
+                type: "https://api.example.com/errors/bad-request"
+                title: "Bad Request"
+                status: 400
+                detail: "Query parameter 'limit' must be a positive integer."
+                errors:
+                  - field: "limit"
+                    message: "must be between 1 and 100"
+                    code: "OUT_OF_RANGE"
+                    rejectedValue: -5
+
+    # --- 401 Unauthorized ---
+    Unauthorized:
+      description: |
+        Authentication is required but was not provided or is invalid.
+        Provide a valid Bearer token in the Authorization header.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          description: Authentication challenge
+          example: 'Bearer realm="api", error="invalid_token"'
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            missingToken:
+              summary: No token provided
+              value:
+                type: "https://api.example.com/errors/unauthorized"
+                title: "Unauthorized"
+                status: 401
+                detail: "No authentication token was provided. Include a Bearer token in the Authorization header."
+            expiredToken:
+              summary: Token expired
+              value:
+                type: "https://api.example.com/errors/unauthorized"
+                title: "Unauthorized"
+                status: 401
+                detail: "The authentication token has expired. Please obtain a new token."
+            invalidToken:
+              summary: Token is invalid
+              value:
+                type: "https://api.example.com/errors/unauthorized"
+                title: "Unauthorized"
+                status: 401
+                detail: "The authentication token is malformed or has been tampered with."
+
+    # --- 403 Forbidden ---
+    Forbidden:
+      description: |
+        The authenticated user does not have permission to perform this action.
+        The request was understood but refused.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            insufficientRole:
+              summary: Insufficient role
+              value:
+                type: "https://api.example.com/errors/forbidden"
+                title: "Forbidden"
+                status: 403
+                detail: "This action requires 'admin' role. Your current role is 'viewer'."
+            resourceRestricted:
+              summary: Resource access restricted
+              value:
+                type: "https://api.example.com/errors/forbidden"
+                title: "Forbidden"
+                status: 403
+                detail: "You do not have access to this organization's resources."
+
+    # --- 404 Not Found ---
+    NotFound:
+      description: |
+        The requested resource was not found.
+        Verify the URL and resource identifier.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            resourceNotFound:
+              summary: Resource not found
+              value:
+                type: "https://api.example.com/errors/not-found"
+                title: "Not Found"
+                status: 404
+                detail: "No user found with ID '550e8400-e29b-41d4-a716-446655440000'."
+                instance: "/users/550e8400-e29b-41d4-a716-446655440000"
+            endpointNotFound:
+              summary: Endpoint does not exist
+              value:
+                type: "https://api.example.com/errors/not-found"
+                title: "Not Found"
+                status: 404
+                detail: "The requested endpoint does not exist. Check the API documentation."
+
+    # --- 409 Conflict ---
+    Conflict:
+      description: |
+        The request conflicts with the current state of the resource.
+        Often caused by duplicate unique fields or concurrent modifications.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            duplicateEmail:
+              summary: Duplicate email
+              value:
+                type: "https://api.example.com/errors/conflict"
+                title: "Conflict"
+                status: 409
+                detail: "A user with email 'jane@example.com' already exists."
+                errors:
+                  - field: "email"
+                    message: "must be unique"
+                    code: "DUPLICATE"
+                    rejectedValue: "jane@example.com"
+            concurrentModification:
+              summary: Concurrent modification
+              value:
+                type: "https://api.example.com/errors/conflict"
+                title: "Conflict"
+                status: 409
+                detail: "The resource was modified by another request. Fetch the latest version and retry."
+
+    # --- 422 Unprocessable Entity ---
+    UnprocessableEntity:
+      description: |
+        The request body is syntactically valid but semantically incorrect.
+        One or more fields failed business logic validation.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            validationErrors:
+              summary: Multiple validation errors
+              value:
+                type: "https://api.example.com/errors/validation-error"
+                title: "Unprocessable Entity"
+                status: 422
+                detail: "The request failed validation. See 'errors' for details."
+                errors:
+                  - field: "name"
+                    message: "must be between 1 and 200 characters"
+                    code: "LENGTH_OUT_OF_RANGE"
+                    rejectedValue: ""
+                  - field: "email"
+                    message: "must be a valid email address"
+                    code: "INVALID_FORMAT"
+                    rejectedValue: "not-an-email"
+                  - field: "role"
+                    message: "must be one of: admin, editor, viewer"
+                    code: "INVALID_ENUM_VALUE"
+                    rejectedValue: "superadmin"
+            businessLogic:
+              summary: Business rule violation
+              value:
+                type: "https://api.example.com/errors/business-rule"
+                title: "Unprocessable Entity"
+                status: 422
+                detail: "Cannot deactivate a user who owns active projects. Transfer project ownership first."
+
+    # --- 500 Internal Server Error ---
+    InternalServerError:
+      description: |
+        An unexpected error occurred on the server.
+        If this persists, contact API support with the traceId.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          examples:
+            serverError:
+              summary: Generic server error
+              value:
+                type: "https://api.example.com/errors/internal"
+                title: "Internal Server Error"
+                status: 500
+                detail: "An unexpected error occurred. Please try again later."
+                traceId: "abc123def456ghi789"
+                timestamp: "2024-01-15T09:30:00Z"

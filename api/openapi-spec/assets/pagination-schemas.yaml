@@ -1,0 +1,395 @@
+# =============================================================================
+# Reusable Pagination Schemas
+#
+# Provides cursor-based and offset-based pagination schemas and parameters
+# for consistent pagination across your API.
+#
+# Usage in your spec:
+#   parameters:
+#     - $ref: "pagination-schemas.yaml#/components/parameters/CursorParam"
+#     - $ref: "pagination-schemas.yaml#/components/parameters/LimitParam"
+#
+#   schema:
+#     allOf:
+#       - $ref: "pagination-schemas.yaml#/components/schemas/CursorPaginatedResponse"
+#       - type: object
+#         properties:
+#           data:
+#             type: array
+#             items:
+#               $ref: "#/components/schemas/User"
+# =============================================================================
+
+components:
+
+  # ---------------------------------------------------------------------------
+  # Pagination Parameters
+  # ---------------------------------------------------------------------------
+  parameters:
+
+    # --- Cursor-Based Pagination ---
+    CursorParam:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+      description: |
+        Opaque pagination cursor from a previous response's `pageInfo.endCursor`.
+        Omit for the first page.
+      example: "eyJpZCI6IjEyMyIsImRpciI6Im5leHQifQ=="
+
+    CursorBeforeParam:
+      name: before
+      in: query
+      required: false
+      schema:
+        type: string
+      description: |
+        Cursor for backward pagination. Returns items before this cursor.
+        Use `pageInfo.startCursor` from the previous response.
+
+    CursorAfterParam:
+      name: after
+      in: query
+      required: false
+      schema:
+        type: string
+      description: |
+        Cursor for forward pagination. Returns items after this cursor.
+        Use `pageInfo.endCursor` from the previous response.
+
+    # --- Offset-Based Pagination ---
+    OffsetParam:
+      name: offset
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+      description: Number of items to skip before starting to return results.
+
+    # --- Page-Based Pagination ---
+    PageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: Page number (1-indexed).
+
+    PageSizeParam:
+      name: pageSize
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page.
+
+    # --- Keyset Pagination ---
+    AfterIdParam:
+      name: after_id
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: |
+        Return items created after the item with this ID.
+        Use the last item's ID from the previous response.
+
+    BeforeIdParam:
+      name: before_id
+      in: query
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Return items created before the item with this ID.
+
+    # --- Shared ---
+    LimitParam:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Maximum number of items to return per request.
+
+  # ---------------------------------------------------------------------------
+  # Pagination Response Schemas
+  # ---------------------------------------------------------------------------
+  schemas:
+
+    # =========================================================================
+    # Cursor-Based Pagination
+    # =========================================================================
+    #
+    # Best for: feeds, real-time data, large datasets, infinite scroll.
+    # Guarantees consistency even when items are inserted or deleted.
+    #
+    # Client flow:
+    #   1. First request: GET /items?limit=20
+    #   2. Next page:     GET /items?limit=20&cursor={pageInfo.endCursor}
+    #   3. Repeat until pageInfo.hasNextPage is false
+
+    CursorPaginatedResponse:
+      type: object
+      required: [data, pageInfo]
+      properties:
+        data:
+          type: array
+          description: Array of items for the current page.
+          items: {}
+        pageInfo:
+          $ref: "#/components/schemas/CursorPageInfo"
+
+    CursorPageInfo:
+      type: object
+      required: [hasNextPage]
+      properties:
+        hasNextPage:
+          type: boolean
+          description: Whether more items exist after the last item in this page.
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Whether more items exist before the first item in this page.
+          example: false
+        startCursor:
+          type: ["string", "null"]
+          description: |
+            Cursor pointing to the first item in the current page.
+            Use with the `before` parameter for backward pagination.
+          example: "eyJpZCI6IjEwMSJ9"
+        endCursor:
+          type: ["string", "null"]
+          description: |
+            Cursor pointing to the last item in the current page.
+            Use with the `after` or `cursor` parameter for forward pagination.
+          example: "eyJpZCI6IjEyMCJ9"
+        totalCount:
+          type: integer
+          description: |
+            Total number of items across all pages (optional).
+            May be omitted for performance on large datasets.
+          example: 1523
+
+    # --- Bi-directional Cursor Pagination (Relay-style) ---
+    RelayCursorConnection:
+      type: object
+      required: [edges, pageInfo]
+      description: |
+        Relay-style cursor pagination with edges wrapping each node.
+        Follows the Relay Connection specification.
+      properties:
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/RelayCursorEdge"
+        pageInfo:
+          $ref: "#/components/schemas/CursorPageInfo"
+        totalCount:
+          type: integer
+          description: Total number of items.
+
+    RelayCursorEdge:
+      type: object
+      required: [node, cursor]
+      properties:
+        node:
+          type: object
+          description: The actual data item.
+        cursor:
+          type: string
+          description: Cursor for this specific edge/item.
+          example: "eyJpZCI6IjExNSJ9"
+
+    # =========================================================================
+    # Offset-Based Pagination
+    # =========================================================================
+    #
+    # Best for: traditional UIs with page numbers, small-to-medium datasets.
+    # Warning: Results may shift if items are inserted/deleted between requests.
+    #
+    # Client flow:
+    #   1. First request: GET /items?limit=20&offset=0
+    #   2. Next page:     GET /items?limit=20&offset=20
+    #   3. Continue incrementing offset by limit
+
+    OffsetPaginatedResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          description: Array of items for the current page.
+          items: {}
+        pagination:
+          $ref: "#/components/schemas/OffsetPaginationMeta"
+
+    OffsetPaginationMeta:
+      type: object
+      required: [total, limit, offset, hasMore]
+      properties:
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of items matching the query.
+          example: 1523
+        limit:
+          type: integer
+          minimum: 1
+          description: Maximum items per page (as requested).
+          example: 20
+        offset:
+          type: integer
+          minimum: 0
+          description: Number of items skipped.
+          example: 40
+        hasMore:
+          type: boolean
+          description: Whether more items exist beyond this page.
+          example: true
+
+    # =========================================================================
+    # Page-Based Pagination
+    # =========================================================================
+    #
+    # Best for: traditional web UIs with explicit page numbers.
+    # Similar caveats to offset-based regarding consistency.
+    #
+    # Client flow:
+    #   1. First request: GET /items?page=1&pageSize=20
+    #   2. Next page:     GET /items?page=2&pageSize=20
+
+    PagePaginatedResponse:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          description: Array of items for the current page.
+          items: {}
+        pagination:
+          $ref: "#/components/schemas/PagePaginationMeta"
+
+    PagePaginationMeta:
+      type: object
+      required: [page, pageSize, totalPages, totalItems]
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          description: Current page number (1-indexed).
+          example: 3
+        pageSize:
+          type: integer
+          minimum: 1
+          description: Number of items per page.
+          example: 20
+        totalPages:
+          type: integer
+          minimum: 0
+          description: Total number of pages.
+          example: 77
+        totalItems:
+          type: integer
+          minimum: 0
+          description: Total number of items across all pages.
+          example: 1523
+
+    # =========================================================================
+    # Keyset Pagination
+    # =========================================================================
+    #
+    # Best for: sorted datasets backed by database indexes.
+    # Uses the sort key of the last item as a reference point.
+    # More performant than offset for large datasets.
+    #
+    # Client flow:
+    #   1. First request: GET /items?limit=20&sort=createdAt:desc
+    #   2. Next page:     GET /items?limit=20&sort=createdAt:desc&after_id={lastId}
+
+    KeysetPaginatedResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          description: Array of items for the current page.
+          items: {}
+        hasMore:
+          type: boolean
+          description: Whether more items exist in the current direction.
+          example: true
+        firstId:
+          type: string
+          format: uuid
+          description: ID of the first item in this page.
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        lastId:
+          type: string
+          format: uuid
+          description: |
+            ID of the last item in this page.
+            Use as `after_id` parameter for the next page.
+          example: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+
+    # =========================================================================
+    # Pagination with HATEOAS Links
+    # =========================================================================
+    #
+    # Add navigational links to any pagination response for discoverability.
+
+    PaginationLinks:
+      type: object
+      description: Navigational links for pagination (HATEOAS).
+      properties:
+        self:
+          type: string
+          format: uri
+          description: URL for the current page.
+          example: "https://api.example.com/users?page=3&pageSize=20"
+        first:
+          type: string
+          format: uri
+          description: URL for the first page.
+          example: "https://api.example.com/users?page=1&pageSize=20"
+        last:
+          type: ["string", "null"]
+          format: uri
+          description: URL for the last page (null if unknown).
+          example: "https://api.example.com/users?page=77&pageSize=20"
+        prev:
+          type: ["string", "null"]
+          format: uri
+          description: URL for the previous page (null if on first page).
+          example: "https://api.example.com/users?page=2&pageSize=20"
+        next:
+          type: ["string", "null"]
+          format: uri
+          description: URL for the next page (null if on last page).
+          example: "https://api.example.com/users?page=4&pageSize=20"
+
+    # --- Paginated response with embedded links ---
+    LinkedPaginatedResponse:
+      type: object
+      required: [data, _links]
+      properties:
+        data:
+          type: array
+          items: {}
+        pagination:
+          $ref: "#/components/schemas/OffsetPaginationMeta"
+        _links:
+          $ref: "#/components/schemas/PaginationLinks"

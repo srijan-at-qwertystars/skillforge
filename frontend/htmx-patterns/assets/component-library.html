@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>htmx Component Library</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/hyperscript.org@0.9.14"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6;
+           max-width: 900px; margin: 0 auto; padding: 2rem 1rem; color: #1a1a2e; }
+    h1 { border-bottom: 3px solid #3d72b4; padding-bottom: 0.5rem; margin-bottom: 2rem; }
+    h2 { color: #3d72b4; margin-top: 3rem; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.25rem; }
+    pre { background: #f4f4f8; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.875rem; }
+    code { background: #f4f4f8; padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em; }
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }
+    .component { border: 1px solid #e0e0e0; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; background: #fff; }
+    .component-title { font-size: 0.8rem; text-transform: uppercase; color: #6c757d; letter-spacing: 0.05em; margin-bottom: 1rem; }
+    button { padding: 0.5rem 1rem; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;
+             background: #f8f9fa; font-size: 0.9rem; }
+    button:hover { background: #e9ecef; }
+    button.primary { background: #3d72b4; color: white; border-color: #3d72b4; }
+    button.primary:hover { background: #2d5a9e; }
+    button.danger { color: #dc3545; border-color: #dc3545; }
+    input, select, textarea { padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9rem; }
+    input:focus, select:focus, textarea:focus { outline: 2px solid #3d72b4; outline-offset: 1px; }
+    .error-msg { color: #dc3545; font-size: 0.85rem; }
+    .success-msg { color: #28a745; font-size: 0.85rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid #e0e0e0; }
+    th { background: #f8f9fa; font-weight: 600; }
+    tr:hover { background: #f8f9fa; }
+  </style>
+</head>
+<body>
+
+<h1>htmx Component Library</h1>
+<p>Copy-paste ready htmx UI components. Each component is self-contained —
+   copy the HTML and adapt the server endpoint URLs to your backend.</p>
+
+<!-- ================================================================== -->
+<h2>1. Active Search</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Live search with debounce, loading indicator, and URL sync</div>
+
+  <!-- COPY FROM HERE -->
+  <div id="search-component">
+    <div style="position:relative;">
+      <input type="search" name="q"
+             placeholder="Search items..."
+             hx-get="/search"
+             hx-trigger="input changed delay:300ms, search"
+             hx-target="#search-results"
+             hx-indicator="#search-spinner"
+             hx-push-url="true"
+             style="width:100%; padding-right:2.5rem;"
+             autocomplete="off">
+      <span id="search-spinner" class="htmx-indicator"
+            style="position:absolute; right:0.75rem; top:50%; transform:translateY(-50%);">
+        🔍
+      </span>
+    </div>
+    <div id="search-results" style="margin-top:0.5rem;">
+      <!-- Server returns search result items here -->
+    </div>
+  </div>
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>2. Infinite Scroll</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Load more content as user scrolls to bottom</div>
+
+  <!-- COPY FROM HERE -->
+  <div id="infinite-scroll-list">
+    <!-- Rendered items go here -->
+    <div class="item">Item 1</div>
+    <div class="item">Item 2</div>
+    <div class="item">Item 3</div>
+
+    <!-- Sentinel: loads next page when scrolled into view -->
+    <div hx-get="/items?page=2"
+         hx-trigger="revealed"
+         hx-swap="outerHTML"
+         hx-indicator="#scroll-spinner">
+      <div id="scroll-spinner" class="htmx-indicator" style="text-align:center; padding:1rem;">
+        <span style="display:inline-block; width:1.5rem; height:1.5rem; border:3px solid #e0e0e0;
+               border-top-color:#3d72b4; border-radius:50%; animation:spin 0.6s linear infinite;"></span>
+        <p style="color:#6c757d; margin-top:0.5rem;">Loading more...</p>
+      </div>
+    </div>
+    <!--
+      Server returns: next batch of items + new sentinel with page=3:
+      <div class="item">Item 4</div>
+      <div class="item">Item 5</div>
+      <div hx-get="/items?page=3" hx-trigger="revealed" hx-swap="outerHTML">...</div>
+    -->
+  </div>
+  <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>3. Click-to-Edit</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Inline editing — click to switch between view/edit modes</div>
+
+  <!-- COPY FROM HERE -->
+  <div id="contact-1" hx-target="this" hx-swap="outerHTML">
+    <div style="display:flex; align-items:center; gap:1rem;">
+      <div>
+        <strong>Jane Doe</strong>
+        <div style="color:#6c757d; font-size:0.9rem;">jane@example.com</div>
+      </div>
+      <button hx-get="/contacts/1/edit">Edit</button>
+    </div>
+  </div>
+  <!--
+    Server returns on GET /contacts/1/edit:
+
+    <form id="contact-1" hx-put="/contacts/1" hx-target="this" hx-swap="outerHTML">
+      <div style="display:flex; gap:0.5rem; align-items:end;">
+        <div>
+          <label>Name</label>
+          <input name="name" value="Jane Doe" required>
+        </div>
+        <div>
+          <label>Email</label>
+          <input name="email" type="email" value="jane@example.com" required>
+        </div>
+        <button type="submit" class="primary">Save</button>
+        <button type="button" hx-get="/contacts/1">Cancel</button>
+      </div>
+    </form>
+  -->
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>4. Modal Dialog</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Server-rendered modal loaded on demand</div>
+
+  <!-- COPY FROM HERE -->
+  <button hx-get="/modal/confirm"
+          hx-target="#modal-container"
+          hx-swap="innerHTML">
+    Open Modal
+  </button>
+  <div id="modal-container"></div>
+  <!--
+    Server returns on GET /modal/confirm:
+
+    <div id="modal-backdrop"
+         style="position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:1000;
+                display:flex; align-items:center; justify-content:center;"
+         _="on click if target is me remove me">
+      <div style="background:white; border-radius:12px; padding:2rem; max-width:500px;
+                  width:90%; box-shadow:0 20px 60px rgba(0,0,0,0.3); animation:modalIn 0.2s ease-out;">
+        <h3 style="margin:0 0 1rem;">Confirm Action</h3>
+        <p>Are you sure you want to proceed?</p>
+        <div style="display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1.5rem;">
+          <button _="on click remove #modal-backdrop">Cancel</button>
+          <button class="primary" hx-post="/action/confirm"
+                  hx-target="#modal-container" hx-swap="innerHTML">
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  -->
+  <style>
+    @keyframes modalIn { from { opacity:0; transform:scale(0.95) translateY(-10px); } }
+  </style>
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>5. Toast Notifications</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Triggered by server via HX-Trigger response header</div>
+
+  <!-- COPY FROM HERE -->
+  <div id="toast-container"
+       style="position:fixed; top:1rem; right:1rem; z-index:10000;
+              display:flex; flex-direction:column; gap:0.5rem; pointer-events:none;">
+  </div>
+
+  <script>
+    document.body.addEventListener("showToast", function(e) {
+      var container = document.getElementById("toast-container");
+      var toast = document.createElement("div");
+      var detail = e.detail || {};
+      var level = detail.level || "info";
+      var colors = { success:"#28a745", error:"#dc3545", warning:"#ffc107", info:"#3d72b4" };
+      toast.style.cssText = "padding:0.75rem 1.25rem; border-radius:8px; color:white; font-size:0.9rem;" +
+        "box-shadow:0 4px 12px rgba(0,0,0,0.15); pointer-events:auto; cursor:pointer;" +
+        "animation:toastIn 0.3s ease-out; background:" + (colors[level] || colors.info);
+      if (level === "warning") toast.style.color = "#333";
+      toast.textContent = detail.message || "Notification";
+      toast.onclick = function() { toast.remove(); };
+      container.appendChild(toast);
+      setTimeout(function() {
+        toast.style.opacity = "0"; toast.style.transform = "translateX(100%)";
+        toast.style.transition = "all 0.3s"; setTimeout(function() { toast.remove(); }, 300);
+      }, 4000);
+    });
+  </script>
+  <style>@keyframes toastIn { from { opacity:0; transform:translateX(100%); } }</style>
+
+  <!-- Test buttons (remove in production) -->
+  <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+    <button _="on click send showToast(message:'Item saved!', level:'success') to body">
+      Success Toast
+    </button>
+    <button _="on click send showToast(message:'Something went wrong', level:'error') to body">
+      Error Toast
+    </button>
+    <button _="on click send showToast(message:'Check your input', level:'warning') to body">
+      Warning Toast
+    </button>
+  </div>
+  <!--
+    Server triggers toast via response header:
+    HX-Trigger: {"showToast": {"message": "Saved!", "level": "success"}}
+  -->
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>6. Tabs</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Server-rendered tab content loaded on click</div>
+
+  <!-- COPY FROM HERE -->
+  <div id="tabs">
+    <div role="tablist" style="display:flex; border-bottom:2px solid #e0e0e0; gap:0;">
+      <button role="tab" class="tab active"
+              hx-get="/tabs/overview" hx-target="#tab-content" hx-swap="innerHTML"
+              _="on click remove .active from .tab then add .active to me"
+              style="padding:0.75rem 1.5rem; border:none; background:none; cursor:pointer;
+                     border-bottom:2px solid #3d72b4; margin-bottom:-2px; font-weight:600; color:#3d72b4;">
+        Overview
+      </button>
+      <button role="tab" class="tab"
+              hx-get="/tabs/details" hx-target="#tab-content" hx-swap="innerHTML"
+              _="on click remove .active from .tab then add .active to me"
+              style="padding:0.75rem 1.5rem; border:none; background:none; cursor:pointer;
+                     border-bottom:2px solid transparent; margin-bottom:-2px; color:#6c757d;">
+        Details
+      </button>
+      <button role="tab" class="tab"
+              hx-get="/tabs/history" hx-target="#tab-content" hx-swap="innerHTML"
+              _="on click remove .active from .tab then add .active to me"
+              style="padding:0.75rem 1.5rem; border:none; background:none; cursor:pointer;
+                     border-bottom:2px solid transparent; margin-bottom:-2px; color:#6c757d;">
+        History
+      </button>
+    </div>
+    <div id="tab-content" style="padding:1.5rem 0;">
+      <!-- Tab content loaded here by server -->
+      <p>Overview content goes here.</p>
+    </div>
+  </div>
+  <style>
+    .tab.active { border-bottom-color: #3d72b4 !important; color: #3d72b4 !important; font-weight:600; }
+    .tab:not(.active) { border-bottom-color: transparent !important; color: #6c757d !important; }
+    .tab:hover:not(.active) { color: #333 !important; }
+  </style>
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>7. Accordion</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Lazy-loaded accordion panels</div>
+
+  <!-- COPY FROM HERE -->
+  <div id="accordion" style="border:1px solid #e0e0e0; border-radius:8px; overflow:hidden;">
+    <div class="accordion-item">
+      <button hx-get="/accordion/1" hx-target="next .accordion-body" hx-swap="innerHTML"
+              _="on click toggle .open on closest .accordion-item"
+              style="width:100%; padding:1rem; text-align:left; border:none; border-bottom:1px solid #e0e0e0;
+                     background:#f8f9fa; cursor:pointer; font-size:1rem; font-weight:500;
+                     display:flex; justify-content:space-between; align-items:center;">
+        Section 1 <span>▸</span>
+      </button>
+      <div class="accordion-body" style="max-height:0; overflow:hidden; transition:max-height 0.3s ease;">
+        <!-- Content loaded from server -->
+      </div>
+    </div>
+    <div class="accordion-item">
+      <button hx-get="/accordion/2" hx-target="next .accordion-body" hx-swap="innerHTML"
+              _="on click toggle .open on closest .accordion-item"
+              style="width:100%; padding:1rem; text-align:left; border:none; border-bottom:1px solid #e0e0e0;
+                     background:#f8f9fa; cursor:pointer; font-size:1rem; font-weight:500;
+                     display:flex; justify-content:space-between; align-items:center;">
+        Section 2 <span>▸</span>
+      </button>
+      <div class="accordion-body" style="max-height:0; overflow:hidden; transition:max-height 0.3s ease;">
+      </div>
+    </div>
+    <div class="accordion-item">
+      <button hx-get="/accordion/3" hx-target="next .accordion-body" hx-swap="innerHTML"
+              _="on click toggle .open on closest .accordion-item"
+              style="width:100%; padding:1rem; text-align:left; border:none;
+                     background:#f8f9fa; cursor:pointer; font-size:1rem; font-weight:500;
+                     display:flex; justify-content:space-between; align-items:center;">
+        Section 3 <span>▸</span>
+      </button>
+      <div class="accordion-body" style="max-height:0; overflow:hidden; transition:max-height 0.3s ease;">
+      </div>
+    </div>
+  </div>
+  <style>
+    .accordion-item.open .accordion-body { max-height: 500px !important; padding: 1rem; }
+    .accordion-item.open button span { transform: rotate(90deg); display:inline-block; transition: transform 0.2s; }
+    .accordion-item button span { transition: transform 0.2s; display:inline-block; }
+  </style>
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>8. Sortable Table</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Server-side sorting with clickable column headers</div>
+
+  <!-- COPY FROM HERE -->
+  <table id="sortable-table">
+    <thead>
+      <tr>
+        <th hx-get="/items?sort=name&dir=asc" hx-target="#sortable-table" hx-swap="outerHTML"
+            style="cursor:pointer; user-select:none;">
+          Name ↕
+        </th>
+        <th hx-get="/items?sort=date&dir=desc" hx-target="#sortable-table" hx-swap="outerHTML"
+            style="cursor:pointer; user-select:none;">
+          Date ↕
+        </th>
+        <th hx-get="/items?sort=status&dir=asc" hx-target="#sortable-table" hx-swap="outerHTML"
+            style="cursor:pointer; user-select:none;">
+          Status ↕
+        </th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr id="row-1">
+        <td>Project Alpha</td>
+        <td>2024-01-15</td>
+        <td><span style="color:#28a745">Active</span></td>
+        <td><button hx-get="/items/1/edit" hx-target="#row-1" hx-swap="outerHTML">Edit</button></td>
+      </tr>
+      <tr id="row-2">
+        <td>Project Beta</td>
+        <td>2024-02-20</td>
+        <td><span style="color:#6c757d">Archived</span></td>
+        <td><button hx-get="/items/2/edit" hx-target="#row-2" hx-swap="outerHTML">Edit</button></td>
+      </tr>
+    </tbody>
+  </table>
+  <!--
+    Server returns the full <table> with sorted rows and updated header arrows.
+    Active sort column shows ↑ or ↓ instead of ↕.
+  -->
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>9. Bulk Operations</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Select multiple items and apply bulk actions</div>
+
+  <!-- COPY FROM HERE -->
+  <form id="bulk-form" hx-post="/items/bulk" hx-target="#bulk-table-body" hx-swap="innerHTML"
+        hx-indicator="#bulk-spinner" hx-confirm="Apply action to selected items?">
+    <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:1rem;">
+      <select name="action" required>
+        <option value="">Select action...</option>
+        <option value="activate">Activate</option>
+        <option value="archive">Archive</option>
+        <option value="delete">Delete</option>
+      </select>
+      <button type="submit" class="primary">Apply</button>
+      <span id="bulk-spinner" class="htmx-indicator">Processing...</span>
+      <span id="selected-count" style="color:#6c757d; margin-left:auto;">0 selected</span>
+    </div>
+
+    <table style="width:100%;">
+      <thead>
+        <tr>
+          <th style="width:3rem;">
+            <input type="checkbox"
+                   _="on change
+                        set checkboxes to <input[name='ids']/> in closest <table/>
+                        repeat for cb in checkboxes set cb.checked to my.checked end
+                        put checkboxes.filter(c => c.checked).length + ' selected' into #selected-count">
+          </th>
+          <th>Name</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="bulk-table-body">
+        <tr>
+          <td><input type="checkbox" name="ids" value="1"
+                     _="on change put (<input[name='ids']:checked/>).length + ' selected' into #selected-count"></td>
+          <td>Item 1</td>
+          <td>Active</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" name="ids" value="2"
+                     _="on change put (<input[name='ids']:checked/>).length + ' selected' into #selected-count"></td>
+          <td>Item 2</td>
+          <td>Active</td>
+        </tr>
+        <tr>
+          <td><input type="checkbox" name="ids" value="3"
+                     _="on change put (<input[name='ids']:checked/>).length + ' selected' into #selected-count"></td>
+          <td>Item 3</td>
+          <td>Archived</td>
+        </tr>
+      </tbody>
+    </table>
+  </form>
+  <!-- COPY TO HERE -->
+</div>
+
+<!-- ================================================================== -->
+<h2>10. Inline Validation</h2>
+<!-- ================================================================== -->
+<div class="component">
+  <div class="component-title">Real-time field validation as user types</div>
+
+  <!-- COPY FROM HERE -->
+  <form hx-post="/register" hx-target="#form-result" hx-swap="innerHTML">
+    <div style="display:flex; flex-direction:column; gap:1rem; max-width:400px;">
+
+      <!-- Username with live validation -->
+      <div>
+        <label for="username" style="font-weight:500;">Username</label>
+        <input id="username" name="username" type="text" required
+               hx-get="/validate/username" hx-trigger="input changed delay:500ms"
+               hx-target="#username-feedback" hx-swap="innerHTML"
+               hx-indicator="#username-checking"
+               placeholder="Choose a username" style="width:100%;">
+        <span id="username-checking" class="htmx-indicator" style="font-size:0.85rem; color:#6c757d;">
+          Checking...
+        </span>
+        <div id="username-feedback" style="font-size:0.85rem; min-height:1.25rem;">
+          <!-- Server returns:
+            Available: <span class="success-msg">✓ Username available</span>
+            Taken:     <span class="error-msg">✗ Username already taken</span>
+          -->
+        </div>
+      </div>
+
+      <!-- Email with validation -->
+      <div>
+        <label for="email" style="font-weight:500;">Email</label>
+        <input id="email" name="email" type="email" required
+               hx-get="/validate/email" hx-trigger="change, blur"
+               hx-target="#email-feedback" hx-swap="innerHTML"
+               placeholder="you@example.com" style="width:100%;">
+        <div id="email-feedback" style="font-size:0.85rem; min-height:1.25rem;"></div>
+      </div>
+
+      <!-- Password with strength meter -->
+      <div>
+        <label for="password" style="font-weight:500;">Password</label>
+        <input id="password" name="password" type="password" required minlength="8"
+               hx-post="/validate/password-strength" hx-trigger="input changed delay:300ms"
+               hx-target="#password-strength" hx-swap="innerHTML"
+               placeholder="Min 8 characters" style="width:100%;">
+        <div id="password-strength" style="font-size:0.85rem; min-height:1.25rem;">
+          <!--
+            Server returns strength indicator:
+            <div style="display:flex; gap:2px; margin-top:4px;">
+              <div style="height:4px; flex:1; background:#dc3545; border-radius:2px;"></div>
+              <div style="height:4px; flex:1; background:#e0e0e0; border-radius:2px;"></div>
+              <div style="height:4px; flex:1; background:#e0e0e0; border-radius:2px;"></div>
+            </div>
+            <span class="error-msg">Weak — add numbers and symbols</span>
+          -->
+        </div>
+      </div>
+
+      <button type="submit" class="primary">Register</button>
+    </div>
+    <div id="form-result" style="margin-top:1rem;"></div>
+  </form>
+  <!-- COPY TO HERE -->
+</div>
+
+</body>
+</html>

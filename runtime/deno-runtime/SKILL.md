@@ -426,3 +426,58 @@ Deno.serve((req) => serveDir(req, { fsRoot: "./public", quiet: true }));
 - Set `"strict": true` in compilerOptions
 - Use `Deno.serve()` not deprecated `Deno.listen()` for HTTP
 - Use `Deno.Command` not deprecated `Deno.run` for subprocesses
+
+---
+
+## References
+
+In-depth guides in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Deno 2.x advanced patterns:
+  custom permission strategies, FFI with Rust/C, Web Workers & structured concurrency,
+  Deno KV atomic transactions / watch / queues, Fresh 2.x islands, Deno Deploy edge
+  functions & cron, testing strategies (mocking, snapshots, BDD), performance profiling,
+  WASM integration.
+
+- **[troubleshooting.md](references/troubleshooting.md)** — Debugging common Deno issues:
+  Node.js compatibility gaps (incomplete `node:*` polyfills), npm native-addon packages,
+  permission denied debugging, import map resolution, lock file conflicts, deno.json vs
+  package.json conflicts, TypeScript strict mode errors, Deploy cold start optimization,
+  KV consistency gotchas, common error messages reference.
+
+- **[migration-guide.md](references/migration-guide.md)** — Complete Node.js → Deno migration:
+  package.json → deno.json, require → import, CommonJS → ESM, Express → Hono/Oak/Fresh,
+  Jest → Deno.test, dotenv → Deno.env, fs → Deno file APIs, child_process → Deno.Command,
+  node_modules → vendor, CI/CD pipeline changes, Docker multi-stage builds, full checklist.
+
+## Scripts
+
+Executable helper scripts in `scripts/`:
+
+- **[scaffold-deno-project.sh](scripts/scaffold-deno-project.sh)** — Scaffolds a Deno project
+  with `--type api|fresh|cli|library`. Generates deno.json, tasks, directory structure, starter
+  code, and tests. Usage: `./scripts/scaffold-deno-project.sh my-project --type api`
+
+- **[migrate-from-node.sh](scripts/migrate-from-node.sh)** — Analyzes a Node.js project and
+  generates a migration checklist. Detects frameworks, problematic deps, CommonJS usage,
+  bare built-in imports. Optionally generates deno.json with `--apply`.
+  Usage: `./scripts/migrate-from-node.sh /path/to/node-project --apply`
+
+- **[deno-deploy.sh](scripts/deno-deploy.sh)** — Deploys to Deno Deploy with pre-deploy
+  type-checking, env var setup, and post-deploy health checks.
+  Usage: `./scripts/deno-deploy.sh --project my-api --production`
+
+## Assets & Templates
+
+Ready-to-use project templates in `assets/`:
+
+- **[deno-api-template/](assets/deno-api-template/)** — Hono-based REST API template:
+  - `main.ts` — Full CRUD API with validation, error handling, pagination
+  - `deno.json` — Config with tasks (dev, start, test, lint, compile)
+  - `Dockerfile` — Multi-stage build (deps → build → runtime, non-root user)
+
+- **[fresh-app-template/](assets/fresh-app-template/)** — Fresh framework app template:
+  - `main.ts` — Fresh app entry point
+  - `deno.json` — Config with Preact JSX, tasks
+  - `routes/index.tsx` — Server-rendered home page
+  - `islands/Counter.tsx` — Interactive island component

@@ -136,17 +136,13 @@ htmx adds `htmx-request` class to the indicator during requests. Style:
 
 ## CSS Transitions
 
-htmx applies lifecycle classes for animations:
-
 ```css
-/* Fade out old content */
 .htmx-swapping { opacity: 0; transition: opacity 0.3s ease-out; }
-/* Fade in new content */
 .htmx-added { opacity: 0; }
 .htmx-settling { opacity: 1; transition: opacity 0.3s ease-in; }
 ```
 
-Preserve element IDs across swaps for smooth transitions. htmx matches old/new elements by ID and applies settle transitions.
+Preserve element IDs across swaps for smooth transitions.
 
 ## Boosting (hx-boost)
 
@@ -270,28 +266,17 @@ HX-Trigger: {"showMessage": {"level": "success", "text": "Saved!"}}
 
 Listen in JS: `document.body.addEventListener("showMessage", (e) => { ... })`
 
-## WebSocket (hx-ws)
+## WebSocket / SSE
 
 ```html
+<!-- WebSocket -->
 <div hx-ext="ws" ws-connect="/ws/chat">
   <div id="messages"></div>
-  <form ws-send>
-    <input name="message"><button>Send</button>
-  </form>
+  <form ws-send><input name="message"><button>Send</button></form>
 </div>
-```
 
-Server sends HTML fragments; htmx swaps them into matching target IDs.
-
-## Server-Sent Events (SSE)
-
-```html
+<!-- Server-Sent Events -->
 <div hx-ext="sse" sse-connect="/events">
-  <div hx-trigger="sse:notification" hx-get="/notifications"
-       hx-target="this" hx-swap="innerHTML">
-    Waiting for updates...
-  </div>
-  <!-- Direct swap from SSE data -->
   <div sse-swap="message">Awaiting messages...</div>
 </div>
 ```
@@ -312,18 +297,11 @@ Key extensions: `response-targets`, `loading-states`, `multi-swap`, `path-deps`,
 
 ## Hyperscript Integration
 
-Use `_` attribute for client-side behavior without JavaScript files:
-
 ```html
 <button hx-delete="/items/1" hx-target="closest tr" hx-swap="outerHTML swap:500ms"
-        _="on htmx:beforeSwap add .fade-out to closest <tr/>">
-  Delete
-</button>
-<input type="text" _="on input if my.value.length > 100
-                        add .warning to me else remove .warning from me">
+        _="on htmx:beforeSwap add .fade-out to closest <tr/>">Delete</button>
 <div _="on showMessage(detail) from body put detail.text into me
-        then wait 3s then transition my opacity to 0 then remove me">
-</div>
+        then wait 3s then transition my opacity to 0 then remove me"></div>
 ```
 
 ## Progressive Enhancement
@@ -342,6 +320,8 @@ Always provide fallback behavior for non-JS environments:
 ```
 
 ## Server Framework Integration
+
+See [`references/server-integration.md`](references/server-integration.md) for complete examples.
 
 ### Detect htmx Requests
 
@@ -392,17 +372,15 @@ end
 ```html
 <!-- Django -->
 <body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-<!-- Rails -->
-<meta name="csrf-token" content="<%= form_authenticity_token %>">
-<body hx-headers='{"X-CSRF-Token": document.querySelector("meta[name=csrf-token]").content}'>
-```
-
-Or configure globally:
-```javascript
+<!-- Rails / generic — configure globally -->
+<script>
 document.body.addEventListener("htmx:configRequest", (e) => {
   e.detail.headers["X-CSRF-Token"] = document.querySelector("meta[name=csrf-token]").content;
 });
+</script>
 ```
+
+See [`references/advanced-patterns.md#csrf-handling-across-frameworks`](references/advanced-patterns.md#csrf-handling-across-frameworks) for all frameworks.
 
 ## Common Patterns
 
@@ -452,10 +430,8 @@ Server returns next batch + new sentinel with `page=3`.
 ```html
 <form hx-post="/items/bulk" hx-target="#item-table" hx-swap="outerHTML">
   <table id="item-table">
-    <tr><td><input type="checkbox" name="ids" value="1"></td><td>Item 1</td>
-        <td><select name="status_1"><option>Active</option><option>Archived</option></select></td></tr>
-    <tr><td><input type="checkbox" name="ids" value="2"></td><td>Item 2</td>
-        <td><select name="status_2"><option>Active</option><option>Archived</option></select></td></tr>
+    <tr><td><input type="checkbox" name="ids" value="1"></td><td>Item 1</td></tr>
+    <tr><td><input type="checkbox" name="ids" value="2"></td><td>Item 2</td></tr>
   </table>
   <button type="submit">Update Selected</button>
 </form>
@@ -463,12 +439,8 @@ Server returns next batch + new sentinel with `page=3`.
 
 ### Delete with Fade Out
 ```html
-<tr>
-  <td>Item</td>
-  <td><button hx-delete="/items/1" hx-target="closest tr"
-              hx-swap="outerHTML swap:500ms"
-              hx-confirm="Delete this item?">Delete</button></td>
-</tr>
+<button hx-delete="/items/1" hx-target="closest tr"
+        hx-swap="outerHTML swap:500ms" hx-confirm="Delete?">Delete</button>
 ```
 ```css
 tr.htmx-swapping { opacity: 0; transition: opacity 500ms ease-out; }
@@ -495,3 +467,33 @@ Server returns element without polling trigger when job completes.
 8. **Debounce inputs.** Always use `delay:` on search/typeahead triggers.
 9. **Confirm destructive actions.** Use `hx-confirm` on delete operations.
 10. **Cache partials.** Server-side cache frequently requested fragments.
+
+---
+
+## References
+
+Deep-dive documentation for advanced use cases:
+
+| Document | Description |
+|----------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Nested OOB swaps, idiomorph morphing, view transitions, optimistic UI, offline support, state management, complex forms (wizards, dependent selects, drag-and-drop), real-time collaboration, CSRF across frameworks |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Swap timing, event bubbling, history cache, CORS, content-type negotiation, debugging with `htmx.logAll()`, extension conflicts, polling memory leaks, SSE reconnection, 4xx/5xx error handling |
+| [`references/server-integration.md`](references/server-integration.md) | Full code examples for Django (django-htmx), Flask, Express.js, Go (templ), Rails (Turbo vs htmx), FastAPI, Spring Boot, Phoenix LiveView comparison — partials, fragments, response headers |
+
+## Scripts
+
+Executable helpers for htmx development:
+
+| Script | Description |
+|--------|-------------|
+| [`scripts/scaffold-htmx-project.sh`](scripts/scaffold-htmx-project.sh) | Scaffold a complete htmx project: `./scaffold-htmx-project.sh --backend flask\|django\|express\|go [--name my-app]` |
+| [`scripts/htmx-dev-server.py`](scripts/htmx-dev-server.py) | Python dev server with htmx CDN injection, SSE live-reload, and example CRUD endpoints: `python htmx-dev-server.py --port 8000` |
+
+## Assets
+
+Copy-paste templates and starter files:
+
+| Asset | Description |
+|-------|-------------|
+| [`assets/base-template.html`](assets/base-template.html) | HTML5 base template with htmx, hyperscript, idiomorph CDN links, loading indicators CSS, toast notifications, global error handling |
+| [`assets/component-library.html`](assets/component-library.html) | Ready-to-use htmx components: active search, infinite scroll, click-to-edit, modal dialog, toast notifications, tabs, accordion, sortable table, bulk operations, inline validation |
