@@ -1,0 +1,171 @@
+# PeerAuthentication and AuthorizationPolicy Templates
+# Configures mTLS enforcement and L7 RBAC for service-to-service communication.
+#
+# Apply: kubectl apply -f peer-auth.yaml
+# Verify: istioctl authn tls-check <pod> <service>
+
+# --- Mesh-wide STRICT mTLS ---
+# Apply to istio-system namespace to enforce across the entire mesh.
+# Start with PERMISSIVE during migration, then switch to STRICT.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: mesh-wide-strict
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# --- Namespace-level PERMISSIVE override ---
+# Use for namespaces with non-mesh clients or during migration.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: legacy-permissive
+  namespace: legacy-apps
+spec:
+  mtls:
+    mode: PERMISSIVE
+
+---
+# --- Workload-specific with port-level mTLS ---
+# Fine-grained control: STRICT by default, DISABLE on health check port.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: backend-api-mtls
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend-api
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    8081:
+      mode: DISABLE       # Health check port accessed by non-mesh probes
+
+---
+# ===================================================
+# Authorization Policies (L7 RBAC)
+# ===================================================
+
+# --- Deny-all baseline ---
+# Create an empty policy with no rules to deny all traffic to the namespace.
+# Then add explicit ALLOW policies per service below.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: production
+spec: {}
+
+---
+# --- Allow frontend → backend-api ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend-api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/production/sa/frontend"
+      to:
+        - operation:
+            methods: ["GET", "POST", "PUT"]
+            paths: ["/api/*"]
+      when:
+        - key: request.headers[x-request-id]
+          notValues: [""]
+
+---
+# --- Allow ingress gateway → frontend ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: frontend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["istio-system"]
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+            ports: ["8080"]
+
+---
+# --- Allow health checks from any source ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-health-checks
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend-api
+  action: ALLOW
+  rules:
+    - to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/health", "/ready", "/livez", "/readyz"]
+
+---
+# --- Deny specific paths ---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-admin-external
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend-api
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notNamespaces: ["production"]
+      to:
+        - operation:
+            paths: ["/admin/*", "/internal/*"]
+
+---
+# --- JWT claim-based access control ---
+# Requires a matching RequestAuthentication resource.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: require-jwt-admin
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend-api
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            requestPrincipals: ["https://auth.example.com/*"]
+      to:
+        - operation:
+            methods: ["DELETE"]
+            paths: ["/api/admin/*"]
+      when:
+        - key: request.auth.claims[role]
+          values: ["admin"]

@@ -480,3 +480,18 @@ spec:
 ```
 - Set `holdApplicationUntilProxyStarts: true` to prevent race conditions at startup
 - Monitor proxy memory with `istio_agent_pilot_proxy_convergence_time` metric
+
+## Additional Resources
+
+### References
+- **[Advanced Patterns](references/advanced-patterns.md)** — Wasm plugins, multi-cluster federation, ext-authz, rate limiting, traffic mirroring, locality-aware LB, Flagger, ambient mesh deep dive, egress control, Lua filters.
+- **[Troubleshooting](references/troubleshooting.md)** — Sidecar injection failures, mTLS errors, VirtualService routing, 503/504 debugging, latency/resource overhead, upgrades, cert rotation, istioctl workflows.
+
+### Scripts
+- **[install-istio.sh](scripts/install-istio.sh)** — Istio install with profile selection, namespace labeling, verification, optional Bookinfo deployment.
+- **[mesh-debug.sh](scripts/mesh-debug.sh)** — Proxy status, config dump, listener/route/cluster inspection, cert checks, connectivity testing.
+
+### Asset Templates
+- **[virtualservice.yaml](assets/virtualservice.yaml)** — Traffic splitting, header routing, retries, timeouts, fault injection, DestinationRule subsets.
+- **[peer-auth.yaml](assets/peer-auth.yaml)** — PeerAuthentication (STRICT/PERMISSIVE/port-level) and AuthorizationPolicy (deny-all, ALLOW, JWT RBAC).
+- **[gateway.yaml](assets/gateway.yaml)** — TLS termination, multiple hosts, mutual TLS, HTTP→HTTPS redirect, CORS, VirtualService bindings.

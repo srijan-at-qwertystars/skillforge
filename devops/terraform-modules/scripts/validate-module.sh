@@ -13,7 +13,9 @@
 #   2. terraform init          — Provider/module initialization
 #   3. terraform validate      — Configuration validity
 #   4. tflint                  — Linting rules (if installed)
-#   5. tfsec / trivy           — Security scanning (if installed)
+#   5. terraform-docs          — Documentation check (if installed)
+#   6. terraform test          — Run native tests (if tests/ exists)
+#   7. tfsec / trivy           — Security scanning (if installed)
 #
 # Exit codes:
 #   0  All checks passed
@@ -84,8 +86,6 @@ else
   terraform -chdir="$INIT_DIR" validate -no-color 2>&1 || true
 fi
 
-rm -rf "$INIT_DIR"
-
 # --- 4. tflint ---
 echo ""
 echo "--- Linting ---"
@@ -102,7 +102,38 @@ else
   skip "tflint"
 fi
 
-# --- 5. Security scanning ---
+# --- 5. Documentation generation check ---
+echo ""
+echo "--- Documentation Check ---"
+if command -v terraform-docs &>/dev/null; then
+  if terraform-docs markdown table --output-check "$MODULE_DIR" >/dev/null 2>&1; then
+    pass "terraform-docs"
+  else
+    fail "terraform-docs — docs are out of date, run 'terraform-docs markdown table --output-file README.md $MODULE_DIR'"
+    terraform-docs markdown table --output-check "$MODULE_DIR" 2>&1 || true
+  fi
+else
+  skip "terraform-docs"
+fi
+
+# --- 6. Terraform test ---
+echo ""
+echo "--- Terraform Tests ---"
+if [[ -d "$MODULE_DIR/tests" ]]; then
+  TEST_OUTPUT=$(terraform -chdir="$INIT_DIR" test -no-color 2>&1) && TEST_RC=0 || TEST_RC=$?
+  if [[ $TEST_RC -eq 0 ]]; then
+    pass "terraform test"
+  else
+    fail "terraform test"
+    echo "$TEST_OUTPUT"
+  fi
+else
+  skip "terraform test — no tests/ directory found"
+fi
+
+rm -rf "$INIT_DIR"
+
+# --- 7. Security scanning ---
 echo ""
 echo "--- Security Scanning ---"
 if command -v trivy &>/dev/null; then

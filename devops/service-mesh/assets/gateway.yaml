@@ -1,0 +1,178 @@
+# Istio Gateway Template
+# Features: TLS termination, multiple hosts, CORS, HTTP→HTTPS redirect
+#
+# Apply: kubectl apply -f gateway.yaml -n istio-system
+# Verify: istioctl proxy-config listeners <ingress-gateway-pod> -n istio-system
+#
+# Prerequisites:
+#   - TLS secrets must exist in the ingress gateway's namespace:
+#     kubectl create -n istio-system secret tls app-tls-cert \
+#       --cert=cert.pem --key=key.pem
+#   - DNS records pointing to the ingress gateway external IP
+
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: main-gateway
+  namespace: istio-system
+  labels:
+    app: main-gateway
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    # --- HTTPS for primary application ---
+    - port:
+        number: 443
+        name: https-app
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: app-tls-cert        # Kubernetes TLS secret name
+        minProtocolVersion: TLSV1_2
+        cipherSuites:
+          - ECDHE-ECDSA-AES256-GCM-SHA384
+          - ECDHE-RSA-AES256-GCM-SHA384
+          - ECDHE-ECDSA-AES128-GCM-SHA256
+          - ECDHE-RSA-AES128-GCM-SHA256
+      hosts:
+        - "app.example.com"
+        - "www.example.com"
+
+    # --- HTTPS for API subdomain ---
+    - port:
+        number: 443
+        name: https-api
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: api-tls-cert
+        minProtocolVersion: TLSV1_2
+      hosts:
+        - "api.example.com"
+
+    # --- HTTPS with mutual TLS (client certificate required) ---
+    - port:
+        number: 443
+        name: https-partner
+        protocol: HTTPS
+      tls:
+        mode: MUTUAL
+        credentialName: partner-tls-cert
+        # CA cert for validating client certificates
+        # Stored in the same secret or a separate CA secret
+      hosts:
+        - "partner.example.com"
+
+    # --- HTTP → HTTPS redirect ---
+    - port:
+        number: 80
+        name: http-redirect
+        protocol: HTTP
+      tls:
+        httpsRedirect: true
+      hosts:
+        - "app.example.com"
+        - "www.example.com"
+        - "api.example.com"
+
+---
+# VirtualService for the primary app (bound to the gateway)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: app-routing
+  namespace: production
+spec:
+  hosts:
+    - "app.example.com"
+    - "www.example.com"
+  gateways:
+    - istio-system/main-gateway
+  http:
+    # www → apex redirect
+    - match:
+        - authority:
+            exact: "www.example.com"
+      redirect:
+        authority: "app.example.com"
+
+    - match:
+        - uri:
+            prefix: /api
+      route:
+        - destination:
+            host: backend-api.production.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+      retries:
+        attempts: 3
+        perTryTimeout: 10s
+        retryOn: 5xx,reset,connect-failure
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://app.example.com"
+          - regex: "https://.*\\.example\\.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - authorization
+          - content-type
+          - x-request-id
+          - x-correlation-id
+        exposeHeaders:
+          - x-request-id
+          - x-correlation-id
+        maxAge: "24h"
+        allowCredentials: true
+
+    - route:
+        - destination:
+            host: frontend.production.svc.cluster.local
+            port:
+              number: 3000
+
+---
+# VirtualService for the API subdomain
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: api-routing
+  namespace: production
+spec:
+  hosts:
+    - "api.example.com"
+  gateways:
+    - istio-system/main-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /v1
+      route:
+        - destination:
+            host: api-v1.production.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+
+    - match:
+        - uri:
+            prefix: /v2
+      route:
+        - destination:
+            host: api-v2.production.svc.cluster.local
+            port:
+              number: 8080
+      timeout: 30s
+
+    # Default: latest API version
+    - route:
+        - destination:
+            host: api-v2.production.svc.cluster.local
+            port:
+              number: 8080

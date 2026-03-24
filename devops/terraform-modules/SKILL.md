@@ -447,22 +447,6 @@ module "eks" {
 }
 ```
 
-### Lambda Module
-
-```hcl
-module "lambda" {
-  source        = "./modules/lambda"
-  function_name = "${var.project}-processor"
-  handler       = "index.handler"
-  runtime       = "nodejs20.x"
-  source_dir    = "${path.root}/src/processor"
-  environment_variables = {
-    TABLE_NAME = module.dynamodb.table_name
-    STAGE      = var.environment
-  }
-}
-```
-
 ## Quick Reference
 
 | Practice | Do | Don't |
@@ -475,3 +459,33 @@ module "lambda" {
 | Testing | `terraform test` + CI plan | Skip validation |
 | Naming | `terraform-{provider}-{name}` | Ambiguous names |
 | Modules | <20 resources, single purpose | Monolithic modules |
+
+## Enrichment Resources
+
+### References
+
+| File | Description |
+|------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Module composition, factories, check blocks, ephemeral resources, provider functions, Stacks, monorepo vs polyrepo |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | State locks, drift, provider conflicts, circular deps, import/moved gotchas, performance, timeouts |
+| [`references/testing-guide.md`](references/testing-guide.md) | Terraform test framework, mock providers, Terratest patterns |
+
+### Scripts
+
+| File | Description |
+|------|-------------|
+| [`scripts/scaffold-module.sh`](scripts/scaffold-module.sh) | Generate module with standard layout. Usage: `./scaffold-module.sh <name> [provider]` |
+| [`scripts/validate-module.sh`](scripts/validate-module.sh) | Validate: fmt, init, validate, tflint, terraform-docs, test, security scan. Usage: `./validate-module.sh [dir]` |
+| [`scripts/publish-module.sh`](scripts/publish-module.sh) | Module publishing workflow for registries |
+
+### Assets
+
+| File | Description |
+|------|-------------|
+| [`assets/vpc-module/`](assets/vpc-module/) | Complete VPC module: public/private subnets, NAT gateways, flow logs, for_each patterns |
+| [`assets/github-actions.yml`](assets/github-actions.yml) | CI/CD: plan on PR with comments, apply on merge, daily drift detection |
+| [`assets/terragrunt.hcl`](assets/terragrunt.hcl) | Terragrunt DRY template: hierarchy, remote state, dependencies, hooks |
+| [`assets/module-template/`](assets/module-template/) | Basic module template |
+| [`assets/github-actions-ci.yml`](assets/github-actions-ci.yml) | Lightweight CI-only workflow |
+| [`assets/terrafile.hcl`](assets/terrafile.hcl) | Terrafile for module dependencies |
+| [`assets/.tflint.hcl`](assets/.tflint.hcl) | TFLint configuration |

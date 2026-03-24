@@ -1,0 +1,263 @@
+# Terraform CI/CD Pipeline
+# - Plans on pull requests to main
+# - Applies on merge to main
+# - Detects drift on a daily schedule
+#
+# Required repository secrets:
+#   AWS_ACCESS_KEY_ID      – IAM credentials for Terraform
+#   AWS_SECRET_ACCESS_KEY  – (or use OIDC — see permissions block)
+# Required repository variables (optional overrides):
+#   TF_VERSION             – Terraform CLI version (default: 1.7.0)
+#   TF_WORKING_DIR         – Root module path   (default: .)
+
+name: "Terraform CI/CD"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**.tf"
+      - "**.tfvars"
+  schedule:
+    # Drift detection — runs daily at 06:00 UTC
+    - cron: "0 6 * * *"
+
+# Prevent parallel applies; PRs can run concurrently
+concurrency:
+  group: terraform-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# OIDC + PR comment permissions
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_WORKING_DIR: ${{ vars.TF_WORKING_DIR || '.' }}
+  TF_VERSION: ${{ vars.TF_VERSION || '1.7.0' }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+# ──────────────────────────────────────────────
+# Job 1 — Plan (runs on pull requests)
+# ──────────────────────────────────────────────
+jobs:
+  plan:
+    name: "Terraform Plan"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: true          # enables stdout capture for PR comments
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init -backend=true
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -no-color -out=tfplan \
+            -detailed-exitcode 2>&1 | tee plan_output.txt
+          echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      # Post a summary comment on the PR with format, validate, and plan results
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const planPath = '${{ env.TF_WORKING_DIR }}/plan_output.txt';
+            let planBody = '';
+            if (fs.existsSync(planPath)) {
+              planBody = fs.readFileSync(planPath, 'utf8').slice(-60000);
+            }
+            const body = `#### Terraform Format 🖌 \`${{ steps.fmt.outcome }}\`
+            #### Terraform Init ⚙️ \`${{ steps.init.outcome }}\`
+            #### Terraform Validate 📋 \`${{ steps.validate.outcome }}\`
+            #### Terraform Plan 📖 \`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`hcl
+            ${planBody}
+            \`\`\`
+
+            </details>
+
+            *Triggered by @${{ github.actor }}, commit \`${{ github.sha.substring(0,8) }}\`*`;
+
+            // Upsert: update existing bot comment or create a new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Terraform Plan 📖')
+            );
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      # Persist the binary plan so it can be applied after merge
+      - name: Upload Plan Artifact
+        if: steps.plan.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.event.pull_request.number }}
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+          retention-days: 5
+
+      # Fail the check if fmt or plan had errors
+      - name: Gate — Fail on Errors
+        if: steps.fmt.outcome == 'failure' || steps.plan.outcome == 'failure'
+        run: exit 1
+
+  # ──────────────────────────────────────────────
+  # Job 2 — Apply (runs on push/merge to main)
+  # ──────────────────────────────────────────────
+  apply:
+    name: "Terraform Apply"
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: production               # requires environment approval rules
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init -backend=true
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve -no-color
+
+  # ──────────────────────────────────────────────
+  # Job 3 — Drift Detection (scheduled daily)
+  # ──────────────────────────────────────────────
+  drift:
+    name: "Drift Detection"
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ env.TF_WORKING_DIR }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false         # need raw exit code
+
+      - name: Terraform Init
+        run: terraform init -backend=true
+
+      # Exit code 0 = no changes, 1 = error, 2 = drift detected
+      - name: Terraform Plan — Detect Drift
+        id: drift_plan
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -no-color 2>&1 | tee drift.txt
+          echo "exitcode=$?" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+
+      # Open (or update) a GitHub Issue when drift is found
+      - name: Create Drift Issue
+        if: steps.drift_plan.outputs.exitcode == '2'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const drift = fs.readFileSync(
+              '${{ env.TF_WORKING_DIR }}/drift.txt', 'utf8'
+            ).slice(-60000);
+
+            const title = '⚠️ Terraform Drift Detected';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'terraform-drift',
+            });
+
+            const body = `Drift detected on \`${new Date().toISOString()}\`.
+
+            <details><summary>Plan Output</summary>
+
+            \`\`\`hcl
+            ${drift}
+            \`\`\`
+
+            </details>`;
+
+            if (issues.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issues[0].number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['terraform-drift'],
+              });
+            }

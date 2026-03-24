@@ -1,0 +1,143 @@
+# VirtualService Template
+# Features: traffic splitting, header-based routing, retries, timeouts, fault injection
+#
+# Apply: kubectl apply -f virtualservice.yaml -n <namespace>
+# Verify: istioctl proxy-config routes <pod> -o json
+
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: my-service
+  namespace: production
+  labels:
+    app: my-service
+    managed-by: istio
+spec:
+  hosts:
+    - my-service
+  gateways:
+    - mesh                    # Internal mesh traffic
+    - my-gateway              # External ingress traffic (remove if internal-only)
+  http:
+    # --- Rule 1: Header-based routing (e.g., internal testing) ---
+    - name: "internal-test-route"
+      match:
+        - headers:
+            x-test-version:
+              exact: "canary"
+          uri:
+            prefix: /api
+      route:
+        - destination:
+            host: my-service
+            subset: canary
+            port:
+              number: 8080
+      timeout: 10s
+      retries:
+        attempts: 2
+        perTryTimeout: 3s
+        retryOn: 5xx,reset,connect-failure
+
+    # --- Rule 2: Canary traffic splitting ---
+    - name: "canary-split"
+      match:
+        - uri:
+            prefix: /api/v2
+      route:
+        - destination:
+            host: my-service
+            subset: stable
+            port:
+              number: 8080
+          weight: 90
+        - destination:
+            host: my-service
+            subset: canary
+            port:
+              number: 8080
+          weight: 10
+      timeout: 15s
+      retries:
+        attempts: 3
+        perTryTimeout: 5s
+        retryOn: 5xx,reset,connect-failure,retriable-4xx
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://app.example.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        allowHeaders:
+          - authorization
+          - content-type
+          - x-request-id
+        maxAge: "24h"
+
+    # --- Rule 3: Fault injection for chaos testing (staging only) ---
+    # Uncomment for testing resilience. Do NOT use in production.
+    # - name: "fault-injection"
+    #   match:
+    #     - headers:
+    #         x-fault-inject:
+    #           exact: "true"
+    #   fault:
+    #     delay:
+    #       percentage:
+    #         value: 50
+    #       fixedDelay: 3s
+    #     abort:
+    #       percentage:
+    #         value: 10
+    #       httpStatus: 503
+    #   route:
+    #     - destination:
+    #         host: my-service
+    #         subset: stable
+
+    # --- Rule 4: Default route ---
+    - name: "default-route"
+      route:
+        - destination:
+            host: my-service
+            subset: stable
+            port:
+              number: 8080
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 3s
+        retryOn: 5xx,reset,connect-failure
+
+---
+# DestinationRule defining subsets referenced above
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: my-service
+  namespace: production
+spec:
+  host: my-service
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_REQUEST
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 30
+  subsets:
+    - name: stable
+      labels:
+        version: stable
+    - name: canary
+      labels:
+        version: canary

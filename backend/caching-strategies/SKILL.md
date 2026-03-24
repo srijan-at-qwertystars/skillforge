@@ -415,3 +415,21 @@ Calculate hit ratio: `keyspace_hits / (keyspace_hits + keyspace_misses) * 100`
 - **Dog-piling on cold start**: Deploying without cache warming causes all requests to hit origin simultaneously. Always warm critical caches.
 - **Inconsistent key naming**: Use a consistent convention like `{entity}:{id}:{field}`. Document the schema.
 - **Caching errors/nulls**: Avoid caching `null` results or error responses with long TTL. Use short TTL (30-60s) for negative caching to prevent repeated DB hits for missing data.
+
+## Additional Resources
+
+### References
+
+- **[Advanced Patterns](references/advanced-patterns.md)** — Deep dive into consistent hashing, cache-aside/write-through hybrid, cache warming strategies (lazy vs eager vs scheduled), XFetch probabilistic early expiration, request coalescing, negative caching, cache versioning, hot key detection and mitigation, read-your-writes consistency, and cache topology patterns (replicated vs partitioned vs hierarchical).
+- **[Troubleshooting Guide](references/troubleshooting.md)** — Diagnosing and resolving common caching issues: cache stampede, stale data, cache poisoning, memory pressure/OOM, Redis connection pool exhaustion, serialization errors, key collisions, cross-node inconsistency, TTL tuning, and debugging techniques (hit/miss logging, MONITOR, SLOWLOG, Prometheus metrics).
+
+### Scripts
+
+- **[cache-benchmark.sh](scripts/cache-benchmark.sh)** — Redis benchmark suite testing throughput, latency, and memory usage across data structures (strings, hashes, sorted sets, lists), pipeline depths, and mixed read/write workloads. Usage: `./scripts/cache-benchmark.sh --help`
+- **[cache-analyzer.sh](scripts/cache-analyzer.sh)** — Redis cache analyzer: key distribution by prefix, memory usage per prefix, TTL distribution, hot/cold key detection, big key scan, and health checks. Usage: `./scripts/cache-analyzer.sh --help`
+
+### Code Assets
+
+- **[redis-cache.ts](assets/redis-cache.ts)** — TypeScript Redis caching library with cache-aside, write-through, stampede protection (mutex + XFetch probabilistic), negative caching, bulk operations, and multi-layer (L1 in-memory + L2 Redis) support.
+- **[cache-middleware.ts](assets/cache-middleware.ts)** — Express/Koa HTTP caching middleware with Cache-Control header builder, ETag generation with conditional requests (If-None-Match / If-Modified-Since), Vary header management, and full response caching with configurable backing store.
+- **[cache-config.yml](assets/cache-config.yml)** — Cache configuration template covering Redis connection/pool settings, TTL policies per data category, eviction tuning, multi-layer config, stampede protection, cache warming sources, HTTP caching presets, invalidation strategies, and monitoring/alerting thresholds.

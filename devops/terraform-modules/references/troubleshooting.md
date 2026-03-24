@@ -52,6 +52,15 @@
   - [Slow Plans with Large State](#slow-plans-with-large-state)
   - [Reducing Provider API Calls](#reducing-provider-api-calls)
   - [Parallelism Tuning](#parallelism-tuning)
+- [Import Block Gotchas](#import-block-gotchas)
+  - [Generated Config Quirks](#generated-config-quirks)
+  - [Importing with for_each and count](#importing-with-for_each-and-count)
+  - [Cross-Module Imports](#cross-module-imports)
+  - [Import Block vs CLI Command](#import-block-vs-cli-command)
+- [Moved Block Edge Cases](#moved-block-edge-cases)
+  - [Type and Index Constraints](#type-and-index-constraints)
+  - [Chaining Moved Blocks](#chaining-moved-blocks)
+  - [Moved Block Conflicts](#moved-block-conflicts)
 - [Common Error Messages Reference](#common-error-messages-reference)
 
 ---
@@ -941,7 +950,294 @@ terraform apply -parallelism=2   # Less parallel (slower, gentler on APIs)
 
 ---
 
-## Common Error Messages Reference
+## Import Block Gotchas
+
+Terraform 1.5+ introduced declarative `import` blocks as an alternative to the `terraform import` CLI command. While powerful, they come with several common pitfalls.
+
+**Key rule**: An `import` block **requires** a matching resource configuration. You cannot import a resource without first writing its corresponding `resource` block:
+
+```hcl
+# This alone will NOT work — Terraform needs a resource block to map to
+import {
+  to = aws_instance.legacy
+  id = "i-0abc123def456"
+}
+
+# Error: Import block target does not exist
+#   The target for the import block does not exist in your configuration.
+```
+
+You must also add:
+
+```hcl
+resource "aws_instance" "legacy" {
+  ami           = "ami-0abcdef1234567890"
+  instance_type = "t3.micro"
+}
+```
+
+Import blocks are **one-time operations** — once `terraform apply` runs the import and the resource is in state, the `import` block can be safely removed from your configuration.
+
+### Generated Config Quirks
+
+The `-generate-config-out` flag helps bootstrap resource configuration, but the output often needs manual cleanup:
+
+```bash
+terraform plan -generate-config-out=generated.tf
+```
+
+Common issues with generated configuration:
+- **All optional attributes are included**, producing verbose, hard-to-maintain code
+- **May not compile** if the provider schema has changed or if computed-only attributes are included
+- **Sensitive values appear as placeholders**, requiring manual replacement
+- **Complex nested blocks** may be flattened or structured incorrectly
+
+```hcl
+# Generated config often includes unnecessary defaults:
+resource "aws_instance" "legacy" {
+  ami                         = "ami-0abcdef1234567890"
+  instance_type               = "t3.micro"
+  credit_specification {
+    cpu_credits = "standard"   # Optional — remove if you don't need to manage this
+  }
+  metadata_options {
+    http_endpoint = "enabled"  # Default value — safe to remove
+    http_tokens   = "optional" # Default value — safe to remove
+  }
+  # ... dozens more optional attributes
+}
+```
+
+**Best practice**: Generate the config, then strip it down to only the attributes you want to explicitly manage.
+
+### Importing with for_each and count
+
+When importing into resources that use `for_each` or `count`, specify the key or index in the `to` attribute:
+
+```hcl
+# Importing into a resource with for_each — use the map key
+import {
+  to = aws_iam_user.users["alice"]
+  id = "alice"
+}
+
+import {
+  to = aws_iam_user.users["bob"]
+  id = "bob"
+}
+
+# Importing into a resource with count — use the numeric index
+import {
+  to = aws_subnet.private[0]
+  id = "subnet-0abc123"
+}
+
+import {
+  to = aws_subnet.private[1]
+  id = "subnet-0def456"
+}
+```
+
+A common mistake is forgetting the key/index:
+
+```
+# Error: Configuration for import target does not exist
+#   The configuration for the given import target aws_iam_user.users
+#   does not exist. If the target uses count or for_each, you must
+#   specify the instance key.
+```
+
+### Cross-Module Imports
+
+You can import resources into module instances using dotted paths:
+
+```hcl
+import {
+  to = module.networking.aws_vpc.main
+  id = "vpc-0abc123"
+}
+
+# For modules with for_each
+import {
+  to = module.app["production"].aws_instance.server
+  id = "i-0abc123def456"
+}
+```
+
+**Limitation**: The `import` block must be placed in the **root module** (or the module that calls the target module). You cannot place it inside the child module itself.
+
+### Import Block vs CLI Command
+
+| Aspect | `import` block | `terraform import` CLI |
+|--------|---------------|----------------------|
+| Requires resource config | Yes | Yes |
+| Preview in plan | Yes | No (imports immediately) |
+| Can generate config | Yes (`-generate-config-out`) | No |
+| Works in CI/CD | Yes (declarative) | Yes (imperative) |
+| Bulk imports | Multiple blocks in one apply | One resource at a time |
+| Complex resource IDs | Straightforward | May need shell escaping |
+
+**Handling complex resource IDs**: Some resources use multi-part identifiers. Pass them exactly as the provider documentation specifies:
+
+```hcl
+# IAM policy attachment — uses a compound ID
+import {
+  to = aws_iam_role_policy_attachment.admin
+  id = "my-role/arn:aws:iam::aws:policy/AdministratorAccess"
+}
+
+# S3 bucket object — uses bucket/key format
+import {
+  to = aws_s3_object.config
+  id = "my-bucket/configs/app.json"
+}
+```
+
+---
+
+## Moved Block Edge Cases
+
+The `moved` block enables safe refactoring of Terraform resource addresses without destroying and recreating infrastructure. However, several constraints apply.
+
+### Type and Index Constraints
+
+**You cannot move between different resource types.** The `moved` block only changes the address, not the resource type:
+
+```hcl
+# This will NOT work
+moved {
+  from = aws_instance.server
+  to   = aws_ec2_instance.server  # Different resource type!
+}
+
+# Error: Cross-type move is not allowed
+#   A moved block may only move a resource to a new address of the
+#   same resource type.
+```
+
+**Workaround**: For cross-type moves, use a two-step process:
+1. `terraform state rm` the old resource (or use `removed` block with `destroy = false`)
+2. `import` the infrastructure under the new resource type
+
+**Moving from `count` to `for_each`** requires explicit index-to-key mapping. Each instance must have its own `moved` block:
+
+```hcl
+# Old configuration used count
+# resource "aws_subnet" "private" {
+#   count = 3
+# }
+
+# New configuration uses for_each
+resource "aws_subnet" "private" {
+  for_each = toset(["us-east-1a", "us-east-1b", "us-east-1c"])
+  # ...
+}
+
+# Map each numeric index to the corresponding key
+moved {
+  from = aws_subnet.private[0]
+  to   = aws_subnet.private["us-east-1a"]
+}
+
+moved {
+  from = aws_subnet.private[1]
+  to   = aws_subnet.private["us-east-1b"]
+}
+
+moved {
+  from = aws_subnet.private[2]
+  to   = aws_subnet.private["us-east-1c"]
+}
+```
+
+Moving resources **in or out** of `for_each`/`count` follows the same pattern — specify the full instance address on both sides:
+
+```hcl
+# Moving a standalone resource INTO a for_each set
+moved {
+  from = aws_iam_role.app_role
+  to   = aws_iam_role.roles["app"]
+}
+```
+
+### Chaining Moved Blocks
+
+You **can** chain moves across releases, but each release should only contain one hop. Do not chain A→B and B→C in the same configuration:
+
+```hcl
+# Release 1: Rename the resource
+moved {
+  from = aws_instance.web
+  to   = aws_instance.web_server
+}
+
+# Release 2 (after Release 1 is applied): Move into a module
+moved {
+  from = aws_instance.web_server
+  to   = module.compute.aws_instance.web_server
+}
+```
+
+If both moves are present simultaneously, Terraform may raise:
+
+```
+# Error: Moved source has no matching resource
+#   The "from" address aws_instance.web in a moved block does not
+#   match a resource instance in the prior state.
+```
+
+This happens because Terraform processes all `moved` blocks at once — after A→B is applied, the second block's `from` (B) refers to the new address correctly, but the first block's `from` (A) no longer exists.
+
+**Best practice**: Keep `moved` blocks for one release cycle. After the move is applied across all environments, remove the old `moved` block before adding new ones.
+
+### Moved Block Conflicts
+
+Two `moved` blocks cannot have the same `from` or the same `to` address:
+
+```hcl
+# CONFLICT — same source
+moved {
+  from = aws_instance.old
+  to   = aws_instance.new_a
+}
+
+moved {
+  from = aws_instance.old
+  to   = aws_instance.new_b
+}
+
+# Error: Ambiguous move statements
+#   Multiple moved blocks have the source address aws_instance.old.
+```
+
+Similarly, two blocks targeting the same destination will conflict:
+
+```hcl
+# CONFLICT — same destination
+moved {
+  from = aws_instance.alpha
+  to   = aws_instance.final
+}
+
+moved {
+  from = aws_instance.beta
+  to   = aws_instance.final
+}
+
+# Error: Ambiguous move statements
+#   Multiple moved blocks have the destination address aws_instance.final.
+```
+
+**Moved blocks and conditional resources**: If a resource is conditionally created (via `count = var.enabled ? 1 : 0`), the moved block must reference the indexed address:
+
+```hcl
+moved {
+  from = aws_instance.legacy[0]
+  to   = aws_instance.refactored[0]
+}
+```
+
+**Cleanup guidance**: Remove `moved` blocks after the move has been applied in **all** environments (dev, staging, production). Stale moved blocks are harmless but add clutter. If state has already been updated, removing the block has no effect on infrastructure.
 
 | Error | Likely Cause | Quick Fix |
 |-------|-------------|-----------|
@@ -959,3 +1255,6 @@ terraform apply -parallelism=2   # Less parallel (slower, gentler on APIs)
 | `Output refers to sensitive values` | Output contains sensitive variable | Mark output `sensitive = true` |
 | `Invalid count argument` | Count depends on unknown value | Use a variable with known value |
 | `duplicate resource` | Two resources with same address | Rename one or use for_each/count |
+| `Import block target does not exist` | `import.to` doesn't match a resource block | Write the matching resource configuration |
+| `Moved source has no matching resource` | `moved.from` address doesn't exist in state | Verify address or remove stale moved block |
+| `Cross-type move is not allowed` | Trying to move between different resource types | Use import + state rm instead |

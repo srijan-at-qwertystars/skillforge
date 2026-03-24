@@ -43,6 +43,23 @@
 - [Module Dependency Injection](#module-dependency-injection)
   - [Passing Entire Resources](#passing-entire-resources)
   - [Dependency Inversion](#dependency-inversion)
+- [Check Blocks](#check-blocks)
+  - [Continuous Validation](#continuous-validation)
+  - [Check vs Precondition vs Postcondition](#check-vs-precondition-vs-postcondition)
+- [Ephemeral Resources](#ephemeral-resources)
+  - [Ephemeral Resource Blocks](#ephemeral-resource-blocks)
+  - [Write-Only Attributes](#write-only-attributes)
+  - [Ephemeral Values in Providers](#ephemeral-values-in-providers)
+- [Provider-Defined Functions](#provider-defined-functions)
+  - [Calling Provider Functions](#calling-provider-functions)
+  - [Common Provider Functions](#common-provider-functions)
+- [Stacks (HCP Terraform)](#stacks-hcp-terraform)
+  - [Stack Components and Deployments](#stack-components-and-deployments)
+  - [Stacks vs Terragrunt](#stacks-vs-terragrunt)
+- [Monorepo vs Polyrepo Module Strategies](#monorepo-vs-polyrepo-module-strategies)
+  - [Monorepo Layout](#monorepo-layout)
+  - [Polyrepo Layout](#polyrepo-layout)
+  - [Comparison](#comparison)
 
 ---
 
@@ -966,3 +983,411 @@ module "app" {
   }
 }
 ```
+
+---
+
+## Check Blocks
+
+> **Terraform 1.5+** — Continuous validation assertions that run on every plan/apply.
+
+Check blocks define assertions that Terraform evaluates during the plan and apply phases. Unlike preconditions and postconditions, **check failures produce warnings, not errors** — they never block operations. This makes them ideal for monitoring infrastructure drift and verifying assumptions about external resources.
+
+### Continuous Validation
+
+Check blocks can include scoped `data` sources that exist only for the validation:
+
+```hcl
+check "api_health" {
+  data "http" "api" {
+    url = "https://${aws_lb.main.dns_name}/healthz"
+  }
+
+  assert {
+    condition     = data.http.api.status_code == 200
+    error_message = "API health check failed: ${data.http.api.status_code}"
+  }
+}
+
+check "certificate_expiry" {
+  data "aws_acm_certificate" "main" {
+    domain   = "app.example.com"
+    statuses = ["ISSUED"]
+  }
+
+  assert {
+    condition     = timecmp(plantimestamp(), timeadd(data.aws_acm_certificate.main.not_after, "-720h")) < 0
+    error_message = "TLS certificate expires within 30 days — renew immediately."
+  }
+}
+
+check "budget_guardrail" {
+  assert {
+    condition     = var.instance_count <= 20
+    error_message = "Instance count ${var.instance_count} exceeds soft budget limit of 20."
+  }
+}
+```
+
+When HCP Terraform's **continuous validation** is enabled, check blocks re-evaluate on a schedule even between applies, surfacing drift in the UI.
+
+### Check vs Precondition vs Postcondition
+
+| Feature | `check` block | `precondition` | `postcondition` |
+|---|---|---|---|
+| Blocks plan/apply on failure | No (warning only) | Yes | Yes |
+| Scoped `data` sources | Yes | No | No |
+| Runs during | Plan and apply | Before resource action | After resource action |
+| Attached to a resource | No (standalone) | Yes | Yes |
+| Use case | Monitoring, drift detection | Input validation | Output verification |
+
+Use **preconditions** to enforce hard requirements, **postconditions** to verify resource creation succeeded, and **check blocks** to surface non-critical warnings and monitor external dependencies.
+
+---
+
+## Ephemeral Resources
+
+> **Terraform 1.10+** — Resources that exist only during plan/apply and are never stored in state.
+
+Ephemeral resources solve a long-standing problem: sensitive values (like secrets) that must be fetched at runtime but should never be persisted in state files. They are declared with the `ephemeral` keyword and their values are discarded after each operation completes.
+
+### Ephemeral Resource Blocks
+
+```hcl
+ephemeral "aws_secretsmanager_secret_version" "db_password" {
+  secret_id = "prod/database/password"
+}
+
+ephemeral "aws_kms_secrets" "api_keys" {
+  secret {
+    name    = "stripe_key"
+    payload = var.encrypted_stripe_key
+  }
+}
+
+resource "aws_db_instance" "main" {
+  engine               = "postgres"
+  instance_class       = "db.r6g.large"
+  username             = "admin"
+  password             = ephemeral.aws_secretsmanager_secret_version.db_password.secret_string
+  skip_final_snapshot  = true
+}
+```
+
+The `ephemeral.*.secret_string` value is available during plan/apply but is **never written to the state file**.
+
+### Write-Only Attributes
+
+Resources can declare attributes as write-only — values that are sent to the provider API but never stored in state:
+
+```hcl
+resource "aws_db_instance" "main" {
+  engine         = "postgres"
+  instance_class = "db.r6g.large"
+  username       = "admin"
+
+  # write-only: sent to AWS API but not persisted in state
+  password_wo         = ephemeral.aws_secretsmanager_secret_version.db_password.secret_string
+  password_wo_version = 1  # increment to trigger password rotation
+}
+```
+
+### Ephemeral Values in Providers
+
+Ephemeral resources are especially useful for provider authentication, keeping credentials out of state entirely:
+
+```hcl
+ephemeral "aws_secretsmanager_secret_version" "ci_token" {
+  secret_id = "ci/github-token"
+}
+
+provider "github" {
+  token = ephemeral.aws_secretsmanager_secret_version.ci_token.secret_string
+}
+```
+
+Use the `ephemeral()` function to explicitly mark a value as ephemeral in local expressions:
+
+```hcl
+locals {
+  db_connection_string = ephemeral("postgresql://admin:${ephemeral.aws_secretsmanager_secret_version.db_password.secret_string}@db.internal:5432/app")
+}
+```
+
+Ephemeral values **cannot** be used in outputs (unless the output is also marked `ephemeral = true`) or assigned to non-write-only resource attributes.
+
+---
+
+## Provider-Defined Functions
+
+> **Terraform 1.8+** — Call functions exposed by providers using the `provider::` namespace.
+
+Providers can ship custom functions alongside their resources and data sources. These are called with the `provider::provider_name::function_name()` syntax, giving modules access to provider-specific logic without shelling out to external scripts.
+
+### Calling Provider Functions
+
+```hcl
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = ">= 5.40"
+    }
+  }
+}
+
+# Parse an ARN into its component parts
+locals {
+  arn_parts = provider::aws::arn_parse("arn:aws:s3:::my-bucket/prefix/key.txt")
+}
+
+output "bucket_region" {
+  value = local.arn_parts.region
+}
+
+output "account_id" {
+  value = local.arn_parts.account_id
+}
+
+output "resource" {
+  value = local.arn_parts.resource  # "my-bucket/prefix/key.txt"
+}
+```
+
+Provider functions participate in the dependency graph like any other expression — Terraform knows which provider must be configured before the function can be called.
+
+### Common Provider Functions
+
+```hcl
+# AWS — build an ARN from parts
+locals {
+  custom_arn = provider::aws::arn_build({
+    partition  = "aws"
+    service    = "iam"
+    region     = ""
+    account_id = data.aws_caller_identity.current.account_id
+    resource   = "role/MyRole"
+  })
+}
+
+# HTTP provider — decode a URL-encoded string
+locals {
+  decoded_callback = provider::http::decode_url(var.encoded_callback_url)
+}
+
+# Google — parse a resource name
+locals {
+  project_info = provider::google::region_from_id(
+    google_compute_instance.main.id
+  )
+}
+
+# Use in validation rules
+variable "target_arn" {
+  type = string
+  validation {
+    condition     = provider::aws::arn_parse(var.target_arn).service == "lambda"
+    error_message = "target_arn must be a Lambda function ARN."
+  }
+}
+```
+
+> **Tip:** Run `terraform providers schema -json | jq '.provider_schemas["registry.terraform.io/hashicorp/aws"].functions'` to list all functions a provider version exposes.
+
+---
+
+## Stacks (HCP Terraform)
+
+> **HCP Terraform only** — Orchestrate multiple Terraform configurations as a single deployment unit.
+
+Terraform Stacks let you define **components** (individual Terraform root modules) and **deployments** (environment-specific instances of those components) in a declarative configuration. Stacks manage cross-component ordering, shared inputs, and coordinated applies.
+
+### Stack Components and Deployments
+
+A stack lives in a directory with a `tfstacks.yaml` manifest and `.tfstack.hcl` / `.tfdeploy.hcl` files:
+
+```
+my-stack/
+├── tfstacks.yaml          # manifest — points to the stack config
+├── main.tfstack.hcl       # component definitions
+├── deployments.tfdeploy.hcl  # deployment targets
+└── components/
+    ├── networking/         # regular Terraform root module
+    │   └── main.tf
+    └── compute/
+        └── main.tf
+```
+
+**`tfstacks.yaml`** — registers the stack with HCP Terraform:
+
+```yaml
+version: "1.0"
+```
+
+**`main.tfstack.hcl`** — define components and their relationships:
+
+```hcl
+required_providers {
+  aws = {
+    source  = "hashicorp/aws"
+    version = "~> 5.0"
+  }
+}
+
+variable "region" { type = string }
+
+provider "aws" "this" {
+  config {
+    region = var.region
+  }
+}
+
+component "networking" {
+  source = "./components/networking"
+  providers = { aws = provider.aws.this }
+  inputs = { region = var.region }
+}
+
+component "compute" {
+  source = "./components/compute"
+  providers = { aws = provider.aws.this }
+  inputs = {
+    vpc_id     = component.networking.vpc_id
+    subnet_ids = component.networking.subnet_ids
+  }
+}
+```
+
+**`deployments.tfdeploy.hcl`** — map components to environments:
+
+```hcl
+deployment "staging" {
+  inputs = { region = "us-west-2" }
+}
+
+deployment "production" {
+  inputs = { region = "us-east-1" }
+}
+```
+
+Enable `deferred_changes` to allow partial applies when some components have unresolved values:
+
+```hcl
+deployment "production" {
+  inputs = { region = "us-east-1" }
+
+  orchestrate "auto_approve" "safe_plans" {
+    check { condition = context.plan.changes.remove == 0 }
+  }
+}
+```
+
+### Stacks vs Terragrunt
+
+| Feature | Terraform Stacks | Terragrunt |
+|---|---|---|
+| Vendor | HashiCorp (HCP Terraform) | Gruntwork (open source) |
+| Orchestration | Built-in dependency graph | `dependency` / `dependencies` blocks |
+| State management | HCP Terraform managed | Any backend (S3, GCS, etc.) |
+| Cross-component refs | `component.X.output` | `dependency.X.outputs` |
+| Plan/Apply | Single coordinated operation | Per-module or `run-all` |
+| Lock-in | HCP Terraform required | Backend-agnostic |
+| Maturity | GA (2024) | Mature, wide adoption |
+
+Choose Stacks if you are already on HCP Terraform and want first-party orchestration. Choose Terragrunt for backend flexibility and open-source tooling.
+
+---
+
+## Monorepo vs Polyrepo Module Strategies
+
+Choosing how to organize Terraform modules across repositories has significant implications for versioning, CI/CD, team autonomy, and dependency management.
+
+### Monorepo Layout
+
+All modules live in a single repository, versioned together or via path-based references:
+
+```
+terraform-modules/              # single repository
+├── modules/
+│   ├── vpc/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── eks/
+│   │   └── ...
+│   └── rds/
+│       └── ...
+├── stacks/                     # root modules consuming the above
+│   ├── staging/
+│   │   └── main.tf            # source = "../../modules/vpc"
+│   └── production/
+│       └── main.tf
+├── .github/workflows/
+│   └── ci.yaml                # single pipeline tests all modules
+└── README.md
+```
+
+Versioning options in a monorepo:
+
+```hcl
+# Path reference — always latest from the same repo
+module "vpc" { source = "../../modules/vpc" }
+
+# Git tag with path — pin a module at a specific repo tag
+module "vpc" {
+  source = "git::https://github.com/acme/terraform-modules.git//modules/vpc?ref=v2.3.0"
+}
+```
+
+### Polyrepo Layout
+
+Each module (or small group of related modules) has its own repository and release lifecycle:
+
+```
+# Repository: acme/terraform-aws-vpc
+terraform-aws-vpc/
+├── main.tf
+├── variables.tf
+├── outputs.tf
+├── examples/
+│   └── complete/
+└── .github/workflows/
+    └── release.yaml            # independent release pipeline
+
+# Repository: acme/terraform-aws-eks
+terraform-aws-eks/
+├── main.tf
+└── ...
+```
+
+Consumption uses registry or git references with independent version tags:
+
+```hcl
+module "vpc" {
+  source  = "app.terraform.io/acme/vpc/aws"
+  version = "~> 2.3"
+}
+
+module "eks" {
+  source  = "app.terraform.io/acme/eks/aws"
+  version = "~> 1.0"
+}
+```
+
+### Comparison
+
+| Concern | Monorepo | Polyrepo |
+|---|---|---|
+| **Versioning** | Repo-wide tags or path refs | Per-module semver tags |
+| **CI/CD** | Single pipeline; must detect changed modules | Independent pipelines per repo |
+| **Cross-module changes** | One PR touches all affected modules | Coordinated PRs across repos |
+| **Discoverability** | All code in one place | Requires a registry or catalog |
+| **Access control** | CODEOWNERS per path | Repository-level permissions |
+| **Dependency management** | Always uses latest (or pinned tag) | Explicit version constraints |
+| **Best for** | Small–medium teams, fast iteration | Large orgs, strict module ownership |
+| **Risk** | Blast radius of bad merge is broad | Version drift between consumers |
+
+**When to choose monorepo:** Your team is small (< 30 engineers), modules change together frequently, and you want atomic cross-module PRs.
+
+**When to choose polyrepo:** You have multiple teams owning different modules, need independent release cycles, or publish modules to a private registry for broad consumption.
+
+A common hybrid approach is to start with a monorepo and extract heavily-consumed modules into their own repositories once they stabilize and gain multiple consumers.

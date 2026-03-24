@@ -1,0 +1,320 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Cache Configuration Template
+# ──────────────────────────────────────────────────────────────────────────────
+# Copy and customize this file for your service. All durations are in seconds
+# unless noted otherwise.
+
+# ─── Redis Connection ────────────────────────────────────────────────────────
+
+redis:
+  primary:
+    host: "${REDIS_HOST:localhost}"
+    port: ${REDIS_PORT:6379}
+    password: "${REDIS_PASSWORD:}"
+    database: 0
+    tls: false
+  replica:
+    enabled: false
+    host: "${REDIS_REPLICA_HOST:}"
+    port: ${REDIS_REPLICA_PORT:6379}
+  cluster:
+    enabled: false
+    nodes:
+      - host: redis-node-1
+        port: 6379
+      - host: redis-node-2
+        port: 6379
+      - host: redis-node-3
+        port: 6379
+
+  connection_pool:
+    min_idle: 5
+    max_active: 50
+    max_idle: 20
+    connect_timeout: 5      # seconds
+    read_timeout: 3         # seconds
+    write_timeout: 3        # seconds
+    idle_timeout: 300       # close connections idle for this long
+    health_check_interval: 30
+
+  retry:
+    max_attempts: 3
+    base_delay: 100         # milliseconds
+    max_delay: 2000         # milliseconds
+    retry_on_timeout: true
+
+# ─── TTL Policies ────────────────────────────────────────────────────────────
+# Define TTL per data category. Use the key prefix to match policies.
+
+ttl_policies:
+  defaults:
+    ttl: 300                # 5 min default
+    jitter_percent: 10      # ±10% random jitter to prevent stampede
+
+  categories:
+    # Static configuration — rarely changes
+    config:
+      prefix: "config:*"
+      ttl: 3600             # 1 hour
+      jitter_percent: 5
+
+    # Feature flags — moderate staleness OK
+    feature_flags:
+      prefix: "ff:*"
+      ttl: 300              # 5 min
+      jitter_percent: 10
+
+    # User profiles — frequently accessed, occasionally updated
+    user_profiles:
+      prefix: "user:*"
+      ttl: 900              # 15 min
+      jitter_percent: 10
+
+    # Product catalog — updated daily in batch
+    products:
+      prefix: "product:*"
+      ttl: 1800             # 30 min
+      jitter_percent: 15
+
+    # Search results — short lived, high variance
+    search:
+      prefix: "search:*"
+      ttl: 120              # 2 min
+      jitter_percent: 20
+
+    # Session data — matches session lifetime
+    sessions:
+      prefix: "session:*"
+      ttl: 86400            # 24 hours
+      jitter_percent: 0     # no jitter for sessions
+
+    # Real-time pricing — very short TTL
+    pricing:
+      prefix: "price:*"
+      ttl: 15               # 15 seconds
+      jitter_percent: 30
+
+    # Negative cache — known misses
+    negative:
+      prefix: "neg:*"
+      ttl: 60               # 1 min
+      jitter_percent: 0
+
+# ─── Eviction Settings ──────────────────────────────────────────────────────
+
+eviction:
+  max_memory: "2gb"
+  policy: "allkeys-lru"     # Options: allkeys-lru, allkeys-lfu, volatile-lru,
+                            #          volatile-lfu, volatile-ttl, noeviction
+  # LFU tuning (only when policy is *-lfu)
+  lfu_log_factor: 10        # higher = slower frequency counter growth
+  lfu_decay_time: 1         # minutes between frequency counter halving
+
+# ─── Multi-Layer Caching ────────────────────────────────────────────────────
+
+layers:
+  l1:
+    enabled: true
+    type: "in-memory"
+    max_entries: 5000
+    ttl: 30                 # seconds — keep short to limit staleness
+    eviction: "lru"
+
+  l2:
+    enabled: true
+    type: "redis"
+    # Uses the redis connection config above
+
+  l3_cdn:
+    enabled: false
+    provider: "cloudflare"  # cloudflare | fastly | cloudfront
+    default_s_maxage: 300
+    stale_while_revalidate: 60
+    stale_if_error: 86400
+    purge_api:
+      endpoint: "${CDN_PURGE_ENDPOINT:}"
+      api_key: "${CDN_API_KEY:}"
+
+# ─── Stampede Protection ────────────────────────────────────────────────────
+
+stampede_protection:
+  enabled: true
+  strategy: "both"          # mutex | probabilistic | both
+
+  mutex:
+    lock_ttl: 10            # seconds — max time to hold the recompute lock
+    wait_timeout: 5000      # milliseconds — max time waiters will poll
+    retry_interval: 50      # milliseconds between polls
+
+  probabilistic:
+    beta: 1.0               # XFetch beta parameter
+                            # 0.5 = conservative, 1.0 = balanced, 2.0 = aggressive
+
+# ─── Cache Warming ──────────────────────────────────────────────────────────
+
+warming:
+  enabled: true
+  on_startup: true          # warm cache on application start
+  on_deploy: true           # warm after deployment (triggered via webhook)
+  scheduled:
+    enabled: true
+    interval: 300           # seconds between warming runs
+    expiry_threshold: 120   # refresh keys expiring within this many seconds
+
+  sources:
+    - name: "top-products"
+      query: "SELECT id, data FROM products ORDER BY view_count DESC LIMIT 5000"
+      prefix: "product"
+      batch_size: 500
+
+    - name: "active-users"
+      query: "SELECT id, profile FROM users WHERE last_login > NOW() - INTERVAL '7 days' LIMIT 10000"
+      prefix: "user"
+      batch_size: 500
+
+    - name: "config"
+      query: "SELECT key, value FROM app_config WHERE active = true"
+      prefix: "config"
+      batch_size: 100
+
+# ─── HTTP Caching ───────────────────────────────────────────────────────────
+
+http:
+  etag:
+    enabled: true
+    weak: false             # true for weak ETags (semantic equivalence)
+
+  conditional_requests:
+    if_none_match: true     # handle If-None-Match (ETag-based)
+    if_modified_since: true # handle If-Modified-Since (date-based)
+
+  presets:
+    static_assets:
+      path_pattern: "/static/**"
+      cache_control: "public, max-age=31536000, immutable"
+      vary: ["Accept-Encoding"]
+
+    api_public:
+      path_pattern: "/api/public/**"
+      cache_control: "public, max-age=0, s-maxage=300, stale-while-revalidate=60"
+      vary: ["Accept", "Accept-Encoding"]
+
+    api_private:
+      path_pattern: "/api/user/**"
+      cache_control: "private, max-age=0, must-revalidate"
+      vary: ["Authorization", "Accept"]
+
+    no_cache:
+      path_pattern: "/api/auth/**"
+      cache_control: "no-store"
+
+# ─── Invalidation ───────────────────────────────────────────────────────────
+
+invalidation:
+  # Event-driven invalidation via pub/sub
+  pubsub:
+    enabled: true
+    channel: "cache:invalidate"
+    # Subscribe to DB change events and publish key invalidations
+
+  # Tag-based invalidation
+  tags:
+    enabled: true
+    prefix: "tag:"          # tag keys stored as sets: tag:{tagname} → [key1, key2, ...]
+
+  # Version-based namespace invalidation
+  versioning:
+    enabled: true
+    key_prefix: "version:"  # version counter per namespace
+
+# ─── Monitoring & Alerting ──────────────────────────────────────────────────
+
+monitoring:
+  metrics:
+    enabled: true
+    export: "prometheus"    # prometheus | statsd | datadog
+    prefix: "cache"         # metric name prefix
+    labels:
+      service: "${SERVICE_NAME:my-service}"
+      environment: "${ENVIRONMENT:development}"
+
+  # Key metrics to track
+  tracked_metrics:
+    - name: "hit_ratio"
+      description: "Cache hit ratio"
+      type: "gauge"
+      source: "keyspace_hits / (keyspace_hits + keyspace_misses)"
+
+    - name: "latency"
+      description: "Cache operation latency"
+      type: "histogram"
+      buckets: [0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.5]
+
+    - name: "evictions"
+      description: "Number of evicted keys"
+      type: "counter"
+      source: "evicted_keys"
+
+    - name: "memory_usage"
+      description: "Redis memory usage bytes"
+      type: "gauge"
+      source: "used_memory"
+
+    - name: "connected_clients"
+      description: "Number of connected clients"
+      type: "gauge"
+      source: "connected_clients"
+
+  # Alert thresholds
+  alerts:
+    hit_ratio_low:
+      metric: "hit_ratio"
+      condition: "< 0.80"
+      severity: "warning"
+      message: "Cache hit ratio dropped below 80%"
+
+    hit_ratio_critical:
+      metric: "hit_ratio"
+      condition: "< 0.60"
+      severity: "critical"
+      message: "Cache hit ratio critically low"
+
+    eviction_spike:
+      metric: "evictions"
+      condition: "rate_per_minute > 1000"
+      severity: "warning"
+      message: "High eviction rate — consider increasing maxmemory"
+
+    memory_high:
+      metric: "memory_usage"
+      condition: "> 0.85 * maxmemory"
+      severity: "warning"
+      message: "Redis memory usage above 85% of maxmemory"
+
+    memory_critical:
+      metric: "memory_usage"
+      condition: "> 0.95 * maxmemory"
+      severity: "critical"
+      message: "Redis memory usage above 95% — imminent OOM"
+
+    latency_high:
+      metric: "latency_p99"
+      condition: "> 0.050"    # 50ms
+      severity: "warning"
+      message: "Cache p99 latency above 50ms"
+
+    connection_pool_exhaustion:
+      metric: "connected_clients"
+      condition: "> 0.80 * maxclients"
+      severity: "warning"
+      message: "Redis client connections above 80% capacity"
+
+# ─── Logging ─────────────────────────────────────────────────────────────────
+
+logging:
+  level: "info"             # debug | info | warn | error
+  log_hits: false           # log cache hits (noisy at debug level)
+  log_misses: true          # log cache misses
+  log_evictions: true       # log evictions
+  log_errors: true          # log cache operation errors
+  slow_operation_threshold: 50  # ms — log operations slower than this
