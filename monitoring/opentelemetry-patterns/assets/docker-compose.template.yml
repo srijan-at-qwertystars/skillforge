@@ -1,0 +1,153 @@
+# ============================================================================
+# Full Observability Stack: OTel Collector + Jaeger + Prometheus + Grafana
+# ============================================================================
+# Usage:
+#   cp docker-compose.template.yml docker-compose.yml
+#   # Edit environment variables and paths as needed
+#   docker compose up -d
+#
+# Services:
+#   - OTel Collector:  receives telemetry on :4317 (gRPC) and :4318 (HTTP)
+#   - Jaeger:          trace UI at http://localhost:16686
+#   - Prometheus:      metrics at http://localhost:9090
+#   - Grafana:         dashboards at http://localhost:3000 (admin/admin)
+#
+# Application config:
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+# ============================================================================
+
+services:
+  # --- OpenTelemetry Collector ---
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config", "/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+      - "8888:8888"     # Collector internal metrics
+      - "8889:8889"     # Prometheus exporter (if enabled)
+      - "13133:13133"   # Health check
+      - "55679:55679"   # zpages
+    environment:
+      - OTEL_BACKEND_TRACES_ENDPOINT=jaeger:4317
+      - OTEL_BACKEND_METRICS_ENDPOINT=http://prometheus:9090/api/v1/write
+      - OTEL_BACKEND_LOGS_ENDPOINT=http://loki:3100/loki/api/v1/push
+    depends_on:
+      - jaeger
+      - prometheus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:13133/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # --- Jaeger (Traces) ---
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "14250:14250"   # gRPC (used by Collector)
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    restart: unless-stopped
+
+  # --- Prometheus (Metrics) ---
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-remote-write-receiver'
+      - '--enable-feature=exemplar-storage'
+      - '--enable-feature=native-histograms'
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"     # Prometheus UI & API
+    restart: unless-stopped
+
+  # --- Grafana (Dashboards) ---
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"     # Grafana UI
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+      - jaeger
+    restart: unless-stopped
+
+  # --- Loki (Logs) — optional, uncomment to enable ---
+  # loki:
+  #   image: grafana/loki:latest
+  #   container_name: loki
+  #   ports:
+  #     - "3100:3100"
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+# ============================================================================
+# Supporting config files to create alongside this docker-compose:
+#
+# prometheus.yml:
+# ---
+# global:
+#   scrape_interval: 15s
+#   evaluation_interval: 15s
+#
+# scrape_configs:
+#   - job_name: 'otel-collector'
+#     static_configs:
+#       - targets: ['otel-collector:8888']
+#
+#   - job_name: 'otel-collector-exporter'
+#     static_configs:
+#       - targets: ['otel-collector:8889']
+# ---
+#
+# grafana/provisioning/datasources/datasources.yml:
+# ---
+# apiVersion: 1
+# datasources:
+#   - name: Prometheus
+#     type: prometheus
+#     access: proxy
+#     url: http://prometheus:9090
+#     isDefault: true
+#     jsonData:
+#       exemplarTraceIdDestinations:
+#         - name: traceID
+#           datasourceUid: jaeger
+#
+#   - name: Jaeger
+#     type: jaeger
+#     access: proxy
+#     url: http://jaeger:16686
+#     uid: jaeger
+#
+#   - name: Loki
+#     type: loki
+#     access: proxy
+#     url: http://loki:3100
+# ---
+# ============================================================================

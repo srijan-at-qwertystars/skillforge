@@ -1,0 +1,215 @@
+# ============================================================================
+# OTel Collector Production Configuration Template
+# ============================================================================
+# Copy and customize for your environment:
+#   cp otel-collector-config.template.yaml otel-collector-config.yaml
+#
+# Validate before deploying:
+#   otelcol-contrib validate --config otel-collector-config.yaml
+#
+# Environment variables used:
+#   OTEL_BACKEND_TRACES_ENDPOINT  — Trace backend (e.g., tempo:4317)
+#   OTEL_BACKEND_METRICS_ENDPOINT — Metrics backend (e.g., http://mimir:9009/api/v1/push)
+#   OTEL_BACKEND_LOGS_ENDPOINT    — Logs backend (e.g., http://loki:3100/loki/api/v1/push)
+#   OTEL_AUTH_TOKEN                — Auth token for backends (optional)
+# ============================================================================
+
+receivers:
+  # --- OTLP: Primary receiver for SDK-instrumented apps ---
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 16
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins: ["*"]
+
+  # --- Prometheus scraping (uncomment to enable) ---
+  # prometheus:
+  #   config:
+  #     scrape_configs:
+  #       - job_name: 'app-metrics'
+  #         scrape_interval: 15s
+  #         static_configs:
+  #           - targets: ['app:8080']
+  #       - job_name: 'node-exporter'
+  #         static_configs:
+  #           - targets: ['node-exporter:9100']
+
+  # --- Host metrics (uncomment for infrastructure monitoring) ---
+  # hostmetrics:
+  #   collection_interval: 30s
+  #   scrapers:
+  #     cpu: {}
+  #     memory: {}
+  #     disk: {}
+  #     filesystem: {}
+  #     load: {}
+  #     network: {}
+
+  # --- Filelog (uncomment for log file collection) ---
+  # filelog:
+  #   include: [/var/log/app/*.log]
+  #   start_at: end
+  #   operators:
+  #     - type: json_parser
+  #       parse_from: body
+  #       timestamp:
+  #         parse_from: attributes.timestamp
+  #         layout: '%Y-%m-%dT%H:%M:%S.%fZ'
+
+processors:
+  # --- Memory limiter: MUST be first in pipeline ---
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 4096
+    spike_limit_mib: 512
+
+  # --- Batch: MUST be last in pipeline ---
+  batch:
+    send_batch_size: 8192
+    send_batch_max_size: 16384
+    timeout: 5s
+
+  # --- Filter: Drop health check and readiness probe spans ---
+  filter/health:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.route"] == "/healthz"'
+        - 'attributes["http.route"] == "/readyz"'
+        - 'attributes["http.route"] == "/livez"'
+        - 'name == "GET /favicon.ico"'
+
+  # --- Attributes: Sanitize sensitive data ---
+  attributes/sanitize:
+    actions:
+      - key: db.statement
+        action: hash
+      - key: http.request.header.authorization
+        action: delete
+      - key: http.request.header.cookie
+        action: delete
+      - key: enduser.id
+        action: delete
+
+  # --- Resource: Add deployment metadata ---
+  resource/metadata:
+    attributes:
+      - key: deployment.cluster
+        value: "production"
+        action: upsert
+
+  # --- Tail sampling (gateway mode only — comment out for agents) ---
+  # tail_sampling:
+  #   decision_wait: 30s
+  #   num_traces: 200000
+  #   expected_new_traces_per_sec: 5000
+  #   policies:
+  #     - name: errors-always
+  #       type: status_code
+  #       status_code:
+  #         status_codes: [ERROR]
+  #     - name: slow-requests
+  #       type: latency
+  #       latency:
+  #         threshold_ms: 2000
+  #     - name: baseline
+  #       type: probabilistic
+  #       probabilistic:
+  #         sampling_percentage: 10
+
+connectors:
+  # --- Span metrics: Generate RED metrics from traces ---
+  spanmetrics:
+    histogram:
+      explicit:
+        buckets: [2ms, 5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]
+    dimensions:
+      - name: http.request.method
+      - name: http.response.status_code
+      - name: http.route
+      - name: rpc.service
+    exemplars:
+      enabled: true
+    namespace: "traces.spanmetrics"
+    metrics_flush_interval: 15s
+
+exporters:
+  # --- OTLP/gRPC: Traces to Tempo/Jaeger ---
+  otlp/traces:
+    endpoint: ${env:OTEL_BACKEND_TRACES_ENDPOINT}
+    tls:
+      insecure: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 5000
+
+  # --- Prometheus Remote Write: Metrics to Mimir/Cortex/Thanos ---
+  prometheusremotewrite:
+    endpoint: ${env:OTEL_BACKEND_METRICS_ENDPOINT}
+    tls:
+      insecure: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # --- Loki: Logs ---
+  loki:
+    endpoint: ${env:OTEL_BACKEND_LOGS_ENDPOINT}
+    default_labels_enabled:
+      exporter: true
+      job: true
+      instance: true
+      level: true
+
+  # --- Debug: Enable temporarily for troubleshooting ---
+  # debug:
+  #   verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: /health
+
+  pprof:
+    endpoint: 0.0.0.0:1777
+
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, pprof, zpages]
+
+  telemetry:
+    logs:
+      level: info
+      encoding: json
+    metrics:
+      address: 0.0.0.0:8888
+
+  pipelines:
+    # Traces → spanmetrics (before sampling), then export
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, filter/health, attributes/sanitize, resource/metadata, batch]
+      exporters: [otlp/traces, spanmetrics]
+
+    # Metrics from SDKs + spanmetrics connector
+    metrics:
+      receivers: [otlp, spanmetrics]
+      processors: [memory_limiter, batch]
+      exporters: [prometheusremotewrite]
+
+    # Logs
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [loki]

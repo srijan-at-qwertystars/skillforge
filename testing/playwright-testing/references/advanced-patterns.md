@@ -2,28 +2,201 @@
 
 ## Table of Contents
 
-- [Page Object Model with Fixtures](#page-object-model-with-fixtures)
-- [Custom Test Fixtures](#custom-test-fixtures)
-- [Worker Fixtures](#worker-fixtures)
+- [Page Object Model In Depth](#page-object-model-in-depth)
+  - [Core POM Principles](#core-pom-principles)
+  - [Component Objects and Composition](#component-objects-and-composition)
+  - [POM Inheritance Hierarchy](#pom-inheritance-hierarchy)
+  - [Navigation Returns New Page Objects](#navigation-returns-new-page-objects)
+- [Fixtures Composition](#fixtures-composition)
+  - [Wiring POM into Fixtures](#wiring-pom-into-fixtures)
+  - [Custom Test Fixtures](#custom-test-fixtures)
+  - [Fixture Options and Overrides](#fixture-options-and-overrides)
+  - [Automatic Fixtures](#automatic-fixtures)
+  - [Worker Fixtures](#worker-fixtures)
+  - [Fixture Composition Chains](#fixture-composition-chains)
+- [Test Parallelization Strategies](#test-parallelization-strategies)
+  - [File-Level vs Full Parallelism](#file-level-vs-full-parallelism)
+  - [Serial Mode and Dependencies](#serial-mode-and-dependencies)
+  - [Worker Count Tuning](#worker-count-tuning)
+- [Sharding](#sharding)
+  - [CLI Sharding](#cli-sharding)
+  - [GitHub Actions Matrix Sharding](#github-actions-matrix-sharding)
+  - [Merging Sharded Reports](#merging-sharded-reports)
+  - [Balancing Shards](#balancing-shards)
+- [Worker Reuse and Isolation](#worker-reuse-and-isolation)
+- [Custom Matchers](#custom-matchers)
+  - [expect.extend Basics](#expectextend-basics)
+  - [Async Custom Matchers](#async-custom-matchers)
+  - [Polling with toPass](#polling-with-topass)
+- [Parameterized Tests](#parameterized-tests)
+  - [Array-Driven Parameterization](#array-driven-parameterization)
+  - [Data-Driven from External Sources](#data-driven-from-external-sources)
+  - [Describe-Level Parameterization](#describe-level-parameterization)
+- [Visual Regression Workflows](#visual-regression-workflows)
+  - [Screenshot Assertions](#screenshot-assertions)
+  - [Masking Dynamic Content](#masking-dynamic-content)
+  - [Baseline Management](#baseline-management)
+  - [CI Visual Testing with Docker](#ci-visual-testing-with-docker)
+- [Accessibility Testing with @axe-core/playwright](#accessibility-testing-with-axe-coreplwywright)
+  - [Basic Setup](#basic-setup)
+  - [Scoped Scanning](#scoped-scanning)
+  - [WCAG Compliance Tags](#wcag-compliance-tags)
+  - [Custom a11y Fixture](#custom-a11y-fixture)
+  - [Violation Reporting](#violation-reporting)
 - [API Testing Alongside UI](#api-testing-alongside-ui)
-- [Parallel Execution Strategies](#parallel-execution-strategies)
-- [Test Sharding Across CI Workers](#test-sharding-across-ci-workers)
 - [Custom Reporter Development](#custom-reporter-development)
 - [Multiple Browser Projects](#multiple-browser-projects)
 - [Authenticated Test Suites](#authenticated-test-suites)
 - [Iframe Handling](#iframe-handling)
 - [Shadow DOM](#shadow-dom)
 - [Web Component Testing](#web-component-testing)
-- [Accessibility Testing with axe-core](#accessibility-testing-with-axe-core)
 - [Performance Metrics Collection](#performance-metrics-collection)
 - [HAR Recording and Replay](#har-recording-and-replay)
 
 ---
 
-## Page Object Model with Fixtures
+## Page Object Model In Depth
 
-Combine POM classes with Playwright fixtures for clean, reusable test code.
-Fixtures handle instantiation and lifecycle so tests stay focused on behavior.
+### Core POM Principles
+
+1. **Encapsulate selectors**: all locators defined as class properties in the constructor
+2. **Actions as methods**: each user interaction is a named method
+3. **No assertions in POMs**: page objects describe what a page *can do*, not what it *should be*
+4. **Return type signals navigation**: methods that navigate return the target page object
+5. **Stateless**: POMs hold locators, not test state
+
+```ts
+// pages/LoginPage.ts
+import { type Page, type Locator } from '@playwright/test';
+import { DashboardPage } from './DashboardPage';
+
+export class LoginPage {
+  readonly emailInput: Locator;
+  readonly passwordInput: Locator;
+  readonly submitButton: Locator;
+  readonly errorMessage: Locator;
+  readonly forgotPasswordLink: Locator;
+
+  constructor(private readonly page: Page) {
+    this.emailInput = page.getByLabel('Email');
+    this.passwordInput = page.getByLabel('Password');
+    this.submitButton = page.getByRole('button', { name: 'Sign in' });
+    this.errorMessage = page.getByRole('alert');
+    this.forgotPasswordLink = page.getByRole('link', { name: /forgot password/i });
+  }
+
+  async goto() {
+    await this.page.goto('/login');
+  }
+
+  async login(email: string, password: string): Promise<DashboardPage> {
+    await this.emailInput.fill(email);
+    await this.passwordInput.fill(password);
+    await this.submitButton.click();
+    return new DashboardPage(this.page);
+  }
+
+  async loginExpectingError(email: string, password: string) {
+    await this.emailInput.fill(email);
+    await this.passwordInput.fill(password);
+    await this.submitButton.click();
+  }
+}
+```
+
+### Component Objects and Composition
+
+For shared UI elements (nav bars, modals, sidebars), extract **component objects**:
+
+```ts
+// components/NavigationBar.ts
+export class NavigationBar {
+  constructor(private readonly page: Page) {}
+
+  readonly searchInput = this.page.getByRole('searchbox');
+  readonly userMenu = this.page.getByTestId('user-menu');
+
+  async search(query: string) {
+    await this.searchInput.fill(query);
+    await this.searchInput.press('Enter');
+  }
+
+  async openUserMenu() {
+    await this.userMenu.click();
+  }
+
+  async logout() {
+    await this.openUserMenu();
+    await this.page.getByRole('menuitem', { name: 'Logout' }).click();
+  }
+}
+
+// pages/DashboardPage.ts — composed with NavigationBar
+export class DashboardPage {
+  readonly nav: NavigationBar;
+  readonly statsPanel: Locator;
+
+  constructor(private readonly page: Page) {
+    this.nav = new NavigationBar(page);
+    this.statsPanel = page.getByTestId('stats-panel');
+  }
+}
+```
+
+### POM Inheritance Hierarchy
+
+Use a base page class for common helpers shared across all page objects:
+
+```ts
+export abstract class BasePage {
+  constructor(protected readonly page: Page) {}
+
+  async waitForPageLoad() {
+    await this.page.waitForLoadState('domcontentloaded');
+  }
+
+  async screenshot(name: string) {
+    return this.page.screenshot({ path: `screenshots/${name}.png`, fullPage: true });
+  }
+
+  get currentURL() { return this.page.url(); }
+}
+
+export class ProductPage extends BasePage {
+  readonly addToCartButton: Locator;
+
+  constructor(page: Page) {
+    super(page);
+    this.addToCartButton = page.getByRole('button', { name: 'Add to Cart' });
+  }
+
+  async goto(productId: string) {
+    await this.page.goto(`/products/${productId}`);
+    await this.waitForPageLoad();
+  }
+}
+```
+
+### Navigation Returns New Page Objects
+
+When an action causes navigation, return the destination POM:
+
+```ts
+// In CheckoutPage
+async placeOrder(): Promise<OrderConfirmationPage> {
+  await this.placeOrderButton.click();
+  await this.page.waitForURL('**/order-confirmation/**');
+  return new OrderConfirmationPage(this.page);
+}
+
+// Usage in test
+const confirmPage = await checkoutPage.placeOrder();
+await expect(confirmPage.orderNumber).toBeVisible();
+```
+
+---
+
+## Fixtures Composition
 
 ### Wiring POM into Fixtures
 
@@ -55,32 +228,9 @@ export const test = base.extend<Pages>({
 export { expect } from '@playwright/test';
 ```
 
-### Using POM Fixtures in Tests
+### Custom Test Fixtures
 
-```ts
-// tests/dashboard.spec.ts
-import { test, expect } from '../fixtures';
-
-test('dashboard shows user stats', async ({ dashboardPage }) => {
-  await dashboardPage.goto();
-  const revenue = await dashboardPage.getStatValue('Revenue');
-  expect(revenue).toBeTruthy();
-});
-
-test('logout redirects to login', async ({ dashboardPage }) => {
-  await dashboardPage.goto();
-  await dashboardPage.logout();
-});
-```
-
----
-
-## Custom Test Fixtures
-
-Fixtures are the recommended way to share setup, state, and utilities across tests.
-Each test gets its own fixture instance — isolation is guaranteed.
-
-### Basic Custom Fixture
+Fixtures handle setup, teardown, and dependency injection. Each test gets its own instance.
 
 ```ts
 import { test as base } from '@playwright/test';
@@ -91,16 +241,12 @@ type TestFixtures = {
 };
 
 export const test = base.extend<TestFixtures>({
-  // Fixture with setup and teardown
   todoPage: async ({ page }, use) => {
     const todoPage = new TodoPage(page);
     await todoPage.goto();
     await todoPage.addTodo('Initial item');
-
-    await use(todoPage); // test runs here
-
-    // Teardown: clean up after test
-    await todoPage.clearAll();
+    await use(todoPage);         // test runs here
+    await todoPage.clearAll();   // teardown
   },
 
   // Fixture depending on another fixture
@@ -113,10 +259,9 @@ export const test = base.extend<TestFixtures>({
 });
 ```
 
-### Fixture Options
+### Fixture Options and Overrides
 
 ```ts
-// Define configurable fixtures with default values
 type FixtureOptions = {
   defaultUser: { email: string; password: string };
 };
@@ -133,24 +278,18 @@ export const test = base.extend<TestFixtures & FixtureOptions>({
   },
 });
 
-// Override in config per-project
-export default defineConfig({
-  projects: [
-    {
-      name: 'admin',
-      use: { defaultUser: { email: 'admin@co.com', password: 'admin' } },
-    },
-  ],
-});
+// Override per-project in config
+projects: [
+  { name: 'admin', use: { defaultUser: { email: 'admin@co.com', password: 'admin' } } },
+]
 ```
 
 ### Automatic Fixtures
 
-Fixtures that run for every test without being requested:
+Run for every test without being explicitly requested:
 
 ```ts
 export const test = base.extend<{}, { autoMockAnalytics: void }>({
-  // auto: true means it runs for all tests using this fixture set
   autoMockAnalytics: [async ({ page }, use) => {
     await page.route('**/analytics/**', route => route.abort());
     await use();
@@ -158,23 +297,12 @@ export const test = base.extend<{}, { autoMockAnalytics: void }>({
 });
 ```
 
----
+### Worker Fixtures
 
-## Worker Fixtures
-
-Worker fixtures are shared across all tests running in the same worker process.
-Use for expensive one-time setup like database seeding or server startup.
+Shared across all tests in the same worker. Use for expensive setup (DB, server):
 
 ```ts
-import { test as base } from '@playwright/test';
-
-type WorkerFixtures = {
-  dbConnection: DatabaseConnection;
-  testServer: TestServer;
-};
-
 export const test = base.extend<{}, WorkerFixtures>({
-  // Worker-scoped: created once per worker, shared across tests
   dbConnection: [async ({}, use) => {
     const db = await DatabaseConnection.create();
     await db.migrate();
@@ -192,7 +320,38 @@ export const test = base.extend<{}, WorkerFixtures>({
 });
 ```
 
-Worker fixtures receive `workerInfo` with `workerIndex` for unique port allocation.
+### Fixture Composition Chains
+
+Fixtures can depend on other custom fixtures to build complex test environments:
+
+```ts
+export const test = base.extend<{
+  db: TestDB;
+  seededDB: TestDB;
+  authenticatedPage: Page;
+}>({
+  db: async ({}, use) => {
+    const db = await TestDB.connect();
+    await use(db);
+    await db.disconnect();
+  },
+
+  seededDB: async ({ db }, use) => {
+    await db.seed('fixtures/test-data.sql');
+    await use(db);
+    await db.truncateAll();
+  },
+
+  authenticatedPage: async ({ page, seededDB }, use) => {
+    const user = await seededDB.getUser('testuser');
+    await page.goto('/login');
+    await page.getByLabel('Email').fill(user.email);
+    await page.getByLabel('Password').fill(user.password);
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await use(page);
+  },
+});
+```
 
 ---
 
@@ -258,65 +417,61 @@ export const test = base.extend<{ authedRequest: APIRequestContext }>({
 
 ---
 
-## Parallel Execution Strategies
+## Test Parallelization Strategies
 
-### File-Level Parallelism (Default)
-
-Each test file runs in its own worker. Tests within a file run sequentially.
+### File-Level vs Full Parallelism
 
 ```ts
+// File-level (default): each file in its own worker, tests within a file are sequential
 export default defineConfig({
-  workers: process.env.CI ? 4 : undefined, // auto-detect locally
+  workers: process.env.CI ? 4 : undefined,
 });
-```
 
-### Full Parallelism
-
-Every test runs in parallel, even within the same file:
-
-```ts
+// Full parallelism: every test runs in parallel, even within the same file
 export default defineConfig({
   fullyParallel: true,
   workers: '50%', // use half of available CPUs
 });
 ```
 
-### Per-File Control
+### Serial Mode and Dependencies
 
 ```ts
-// This specific file runs tests serially
+// Force sequential within a describe block
 test.describe.configure({ mode: 'serial' });
 
-// Or parallel within this describe block
+// Or parallel within a specific describe
 test.describe.configure({ mode: 'parallel' });
-```
 
-### Serial with Dependency
-
-```ts
+// Serial with dependency — if one fails, rest are skipped
 test.describe.serial('purchase flow', () => {
   test('add item to cart', async ({ page }) => { /* ... */ });
   test('checkout', async ({ page }) => { /* ... */ });
   test('verify order', async ({ page }) => { /* ... */ });
-  // If 'checkout' fails, 'verify order' is skipped
 });
 ```
 
+### Worker Count Tuning
+
+| Scenario | Setting | Notes |
+|----------|---------|-------|
+| Local dev | `workers: undefined` | Auto-detect CPUs |
+| CI (small runner) | `workers: 1` or `workers: 2` | Prevent resource contention |
+| CI (large runner) | `workers: '50%'` | Half available CPUs |
+| CI (dedicated runner) | `workers: '75%'` | Leave headroom for OS |
+
 ---
 
-## Test Sharding Across CI Workers
+## Sharding
 
-Split tests across multiple CI machines for faster pipelines.
-
-### CLI Usage
+### CLI Sharding
 
 ```bash
-# Machine 1 of 4
-npx playwright test --shard=1/4
-
-# Machine 2 of 4
-npx playwright test --shard=2/4
+npx playwright test --shard=1/4   # machine 1 of 4
+npx playwright test --shard=2/4   # machine 2 of 4
 ```
+
+With `fullyParallel: true`, sharding distributes at test level. Without it, distribution is file-level — keep test files similarly sized.
 
 ### GitHub Actions Matrix Sharding
 
@@ -324,6 +479,7 @@ npx playwright test --shard=2/4
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
         shardIndex: [1, 2, 3, 4]
         shardTotal: [4]
@@ -331,18 +487,302 @@ jobs:
       - run: npx playwright test --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
 ```
 
-### Merge Sharded Reports
+### Merging Sharded Reports
+
+Configure blob reporter for sharding, then merge:
+
+```ts
+// playwright.config.ts
+reporter: process.env.CI ? 'blob' : 'html',
+```
 
 ```bash
-# After all shards complete, merge blob reports
+# After all shards complete
 npx playwright merge-reports --reporter=html ./all-blob-reports
 ```
 
-Configure blob reporter for sharding:
+### Balancing Shards
+
+- Use `fullyParallel: true` for best distribution
+- Monitor per-shard duration; rebalance by splitting large test files
+- If one shard is consistently slower, it has too many heavy tests — redistribute
+
+---
+
+## Worker Reuse and Isolation
+
+Each worker reuses the same browser instance but creates a **fresh BrowserContext per test**. This means:
+
+- Cookies, localStorage, and sessionStorage are isolated per test
+- Browser-level cache is shared within a worker (small speedup)
+- Worker fixtures persist across tests in the same worker
+
+To force full isolation (new browser per test), don't use `fullyParallel` and set `workers: 1`.
+
+---
+
+## Custom Matchers
+
+### expect.extend Basics
 
 ```ts
-export default defineConfig({
-  reporter: process.env.CI ? 'blob' : 'html',
+import { expect } from '@playwright/test';
+
+expect.extend({
+  toBeWithinRange(received: number, floor: number, ceiling: number) {
+    const pass = received >= floor && received <= ceiling;
+    return {
+      pass,
+      message: () => `expected ${received} to be within range ${floor}–${ceiling}`,
+    };
+  },
+});
+
+// Usage
+expect(price).toBeWithinRange(10, 50);
+```
+
+### Async Custom Matchers
+
+```ts
+expect.extend({
+  async toHaveResponseStatus(response: APIResponse, expected: number) {
+    const status = response.status();
+    return {
+      pass: status === expected,
+      message: () => `expected status ${expected}, got ${status}`,
+    };
+  },
+});
+
+// Usage
+const resp = await request.get('/api/health');
+await expect(resp).toHaveResponseStatus(200);
+```
+
+### Polling with toPass
+
+`expect.toPass()` retries a block until it succeeds:
+
+```ts
+await expect(async () => {
+  const response = await page.request.get('/api/status');
+  const json = await response.json();
+  expect(json.ready).toBe(true);
+}).toPass({
+  intervals: [1_000, 2_000, 5_000],
+  timeout: 30_000,
+});
+```
+
+---
+
+## Parameterized Tests
+
+### Array-Driven Parameterization
+
+```ts
+const testCases = [
+  { role: 'admin', canDelete: true },
+  { role: 'editor', canDelete: false },
+  { role: 'viewer', canDelete: false },
+];
+
+for (const { role, canDelete } of testCases) {
+  test(`${role} ${canDelete ? 'can' : 'cannot'} delete items`, async ({ page }) => {
+    await loginAs(page, role);
+    await page.goto('/items/1');
+    if (canDelete) {
+      await expect(page.getByRole('button', { name: 'Delete' })).toBeVisible();
+    } else {
+      await expect(page.getByRole('button', { name: 'Delete' })).not.toBeVisible();
+    }
+  });
+}
+```
+
+### Data-Driven from External Sources
+
+```ts
+import testData from './fixtures/users.json';
+
+for (const user of testData) {
+  test(`user ${user.name} sees correct dashboard`, async ({ page }) => {
+    await page.goto(`/dashboard?user=${user.id}`);
+    await expect(page.getByRole('heading')).toHaveText(`Welcome, ${user.name}`);
+  });
+}
+```
+
+### Describe-Level Parameterization
+
+```ts
+const browsers = ['chromium', 'firefox', 'webkit'] as const;
+const viewports = [
+  { name: 'desktop', width: 1280, height: 720 },
+  { name: 'mobile', width: 375, height: 667 },
+];
+
+for (const vp of viewports) {
+  test.describe(`${vp.name} viewport`, () => {
+    test.use({ viewport: { width: vp.width, height: vp.height } });
+
+    test('navigation is visible', async ({ page }) => {
+      await page.goto('/');
+      await expect(page.getByRole('navigation')).toBeVisible();
+    });
+  });
+}
+```
+
+---
+
+## Visual Regression Workflows
+
+### Screenshot Assertions
+
+```ts
+test('homepage visual', async ({ page }) => {
+  await page.goto('/');
+  // Full page
+  await expect(page).toHaveScreenshot('homepage.png', { fullPage: true });
+  // Component-level
+  await expect(page.locator('.hero')).toHaveScreenshot('hero-section.png');
+});
+```
+
+### Masking Dynamic Content
+
+```ts
+await expect(page).toHaveScreenshot('dashboard.png', {
+  mask: [
+    page.getByTestId('current-time'),
+    page.getByTestId('user-avatar'),
+    page.locator('.ad-banner'),
+  ],
+  maxDiffPixelRatio: 0.02,
+});
+```
+
+### Baseline Management
+
+```bash
+# Generate/update baselines
+npx playwright test --update-snapshots
+
+# Baselines stored per-platform:
+# tests/__snapshots__/test-name-chromium-linux.png
+# tests/__snapshots__/test-name-chromium-darwin.png
+```
+
+Config for snapshot tolerance:
+
+```ts
+expect: {
+  toHaveScreenshot: {
+    maxDiffPixelRatio: 0.01,  // allow 1% pixel difference
+    threshold: 0.2,           // per-pixel color threshold (0-1)
+    animations: 'disabled',   // freeze CSS animations
+  },
+},
+```
+
+### CI Visual Testing with Docker
+
+Run in Playwright Docker image for consistent font rendering across environments:
+
+```bash
+docker run --rm --ipc=host \
+  -v $(pwd):/work -w /work \
+  mcr.microsoft.com/playwright:v1.52.0-noble \
+  npx playwright test --update-snapshots
+```
+
+---
+
+## Accessibility Testing with @axe-core/playwright
+
+### Basic Setup
+
+```bash
+npm install -D @axe-core/playwright
+```
+
+```ts
+import { test, expect } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+
+test('homepage has no a11y violations', async ({ page }) => {
+  await page.goto('/');
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+```
+
+### Scoped Scanning
+
+```ts
+test('scan specific region', async ({ page }) => {
+  await page.goto('/dashboard');
+  const results = await new AxeBuilder({ page })
+    .include('#main-content')
+    .exclude('#third-party-widget')
+    .analyze();
+  expect(results.violations).toEqual([]);
+});
+```
+
+### WCAG Compliance Tags
+
+```ts
+const results = await new AxeBuilder({ page })
+  .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])  // WCAG 2.1 AA
+  .analyze();
+
+// Disable specific rules for known issues
+const results2 = await new AxeBuilder({ page })
+  .disableRules(['color-contrast', 'region'])
+  .analyze();
+```
+
+### Custom a11y Fixture
+
+```ts
+export const test = base.extend<{ makeAxeBuilder: () => AxeBuilder }>({
+  makeAxeBuilder: async ({ page }, use) => {
+    await use(() =>
+      new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa'])
+        .exclude('#known-issue')
+    );
+  },
+});
+
+// Usage
+test('form is accessible', async ({ page, makeAxeBuilder }) => {
+  await page.goto('/form');
+  const results = await makeAxeBuilder().analyze();
+  expect(results.violations).toEqual([]);
+});
+```
+
+### Violation Reporting
+
+```ts
+test('a11y check with detailed reporting', async ({ page }) => {
+  await page.goto('/');
+  const results = await new AxeBuilder({ page }).analyze();
+
+  // Generate readable report on failure
+  const violationReport = results.violations.map(v => ({
+    id: v.id,
+    impact: v.impact,
+    description: v.description,
+    nodes: v.nodes.length,
+    targets: v.nodes.map(n => n.target).flat(),
+  }));
+
+  expect(results.violations, JSON.stringify(violationReport, null, 2)).toEqual([]);
 });
 ```
 
@@ -638,64 +1078,6 @@ test('custom element fires events', async ({ page }) => {
   await page.locator('my-button').click();
   const detail = await eventPromise;
   expect(detail).toBe('clicked');
-});
-```
-
----
-
-## Accessibility Testing with axe-core
-
-Install: `npm install -D @axe-core/playwright`
-
-```ts
-import { test, expect } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
-
-test.describe('accessibility', () => {
-  test('homepage has no a11y violations', async ({ page }) => {
-    await page.goto('/');
-    const results = await new AxeBuilder({ page }).analyze();
-    expect(results.violations).toEqual([]);
-  });
-
-  test('scan specific region', async ({ page }) => {
-    await page.goto('/dashboard');
-    const results = await new AxeBuilder({ page })
-      .include('#main-content')
-      .exclude('#third-party-widget')
-      .analyze();
-    expect(results.violations).toEqual([]);
-  });
-
-  test('check specific WCAG rules', async ({ page }) => {
-    await page.goto('/form');
-    const results = await new AxeBuilder({ page })
-      .withTags(['wcag2a', 'wcag2aa', 'wcag21aa'])
-      .analyze();
-    expect(results.violations).toEqual([]);
-  });
-
-  test('disable specific rules', async ({ page }) => {
-    await page.goto('/legacy');
-    const results = await new AxeBuilder({ page })
-      .disableRules(['color-contrast', 'region'])
-      .analyze();
-    expect(results.violations).toEqual([]);
-  });
-});
-```
-
-### Custom a11y Fixture
-
-```ts
-export const test = base.extend<{ makeAxeBuilder: () => AxeBuilder }>({
-  makeAxeBuilder: async ({ page }, use) => {
-    await use(() =>
-      new AxeBuilder({ page })
-        .withTags(['wcag2a', 'wcag2aa'])
-        .exclude('#known-issue')
-    );
-  },
 });
 ```
 

@@ -1,0 +1,399 @@
+# =============================================================================
+# GitHub Actions CI/CD Workflow for Pulumi
+# =============================================================================
+#
+# This workflow provides:
+#   - Preview on pull requests (with PR comment)
+#   - Deploy on push to main
+#   - (Optional) Drift detection on a schedule
+#   - (Optional) Matrix multi-stack deployments
+#   - (Optional) Slack notifications
+#
+# Prerequisites:
+#   1. Set PULUMI_ACCESS_TOKEN as a repository or environment secret
+#   2. Configure cloud provider credentials (AWS/GCP/Azure)
+#   3. (Optional) Set up GitHub Environments for approval gates
+#
+# Replace all {{PLACEHOLDER}} values with your actual values.
+# =============================================================================
+
+name: "{{PROJECT_NAME}} — Pulumi IaC"
+
+# ---------------------------------------------------------------------------
+# Triggers
+# ---------------------------------------------------------------------------
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/**"               # Adjust to your Pulumi project path
+      - ".github/workflows/pulumi.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "infra/**"
+      - ".github/workflows/pulumi.yml"
+
+  # # Optional: scheduled drift detection (runs daily at 06:00 UTC)
+  # schedule:
+  #   - cron: "0 6 * * *"
+
+  # Manual trigger for ad-hoc deployments
+  workflow_dispatch:
+    inputs:
+      stack:
+        description: "Stack to deploy"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+      action:
+        description: "Pulumi action"
+        required: true
+        default: "preview"
+        type: choice
+        options:
+          - preview
+          - up
+          - refresh
+          - destroy
+
+# ---------------------------------------------------------------------------
+# Concurrency — prevent parallel deployments to the same stack
+# ---------------------------------------------------------------------------
+concurrency:
+  group: pulumi-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# ---------------------------------------------------------------------------
+# OIDC permissions (required for cloud provider OIDC authentication)
+# ---------------------------------------------------------------------------
+permissions:
+  id-token: write     # OIDC token for cloud auth (AWS/GCP/Azure)
+  contents: read      # Checkout repository
+  pull-requests: write # Post preview comments on PRs
+
+# ---------------------------------------------------------------------------
+# Environment variables shared across all jobs
+# ---------------------------------------------------------------------------
+env:
+  PULUMI_VERSION: "latest"       # Pin to a specific version for stability
+  WORK_DIR: "./infra"            # Directory containing Pulumi.yaml
+  NODE_VERSION: "20"             # Node.js version for the runtime
+  # PYTHON_VERSION: "3.12"       # Uncomment for Python runtime
+  # GO_VERSION: "1.22"           # Uncomment for Go runtime
+
+# =============================================================================
+# Jobs
+# =============================================================================
+jobs:
+  # ---------------------------------------------------------------------------
+  # Preview — runs on every pull request
+  # ---------------------------------------------------------------------------
+  preview:
+    name: "Preview"
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -- Node.js setup with dependency caching --
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: "${{ env.WORK_DIR }}/package-lock.json"
+
+      # # -- Python setup (uncomment for Python runtime) --
+      # - name: Setup Python
+      #   uses: actions/setup-python@v5
+      #   with:
+      #     python-version: ${{ env.PYTHON_VERSION }}
+      #     cache: "pip"
+      #     cache-dependency-path: "${{ env.WORK_DIR }}/requirements.txt"
+
+      # # -- Go setup (uncomment for Go runtime) --
+      # - name: Setup Go
+      #   uses: actions/setup-go@v5
+      #   with:
+      #     go-version: ${{ env.GO_VERSION }}
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORK_DIR }}
+        run: npm ci
+        # For Python: pip install -r requirements.txt
+        # For Go:     go mod download
+
+      # -- Cloud provider credentials --
+      # Option A: AWS OIDC (recommended)
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      # # Option B: AWS static credentials (less secure)
+      # - name: Configure AWS credentials (static)
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      # # Option C: GCP OIDC
+      # - name: Configure GCP credentials (OIDC)
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      #     service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # # Option D: Azure OIDC
+      # - name: Configure Azure credentials (OIDC)
+      #   uses: azure/login@v2
+      #   with:
+      #     client-id: ${{ secrets.AZURE_CLIENT_ID }}
+      #     tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+      #     subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # -- Pulumi Preview --
+      - name: Pulumi Preview
+        uses: pulumi/actions@v6
+        with:
+          command: preview
+          stack-name: ${{ vars.PULUMI_STACK || 'dev' }}
+          work-dir: ${{ env.WORK_DIR }}
+          comment-on-pr: true          # Posts preview diff as a PR comment
+          diff: true                   # Show property-level diffs
+          # expect-no-changes: false   # Set to true to fail on unexpected changes
+          # target: "urn:pulumi:..."   # Target specific resources
+          # message: "Preview from PR #${{ github.event.number }}"
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+  # ---------------------------------------------------------------------------
+  # Deploy — runs on push to main
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: "Deploy"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    # Optional: Use GitHub Environments for approval gates and secrets scoping.
+    # Create environments in Settings > Environments with required reviewers.
+    environment:
+      name: production                # Change to match your environment name
+      url: ${{ steps.pulumi.outputs.url || '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: "${{ env.WORK_DIR }}/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORK_DIR }}
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      # -- Pulumi Deploy --
+      - name: Pulumi Up
+        id: pulumi
+        uses: pulumi/actions@v6
+        with:
+          command: up
+          stack-name: ${{ vars.PULUMI_STACK || 'dev' }}
+          work-dir: ${{ env.WORK_DIR }}
+          diff: true
+          # refresh: true            # Refresh state before deploying
+          # message: "Deploy from ${{ github.sha }}"
+          # target: "urn:pulumi:..."
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+      # # -- Optional: Slack notification on deploy --
+      # - name: Notify Slack
+      #   if: always()
+      #   uses: slackapi/slack-github-action@v2
+      #   with:
+      #     webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #     webhook-type: incoming-webhook
+      #     payload: |
+      #       {
+      #         "text": "${{ job.status == 'success' && '✅' || '❌' }} Pulumi deploy ${{ job.status }}\nStack: ${{ vars.PULUMI_STACK || 'dev' }}\nCommit: ${{ github.sha }}\nActor: ${{ github.actor }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+      #       }
+
+  # ---------------------------------------------------------------------------
+  # Manual dispatch — for ad-hoc operations
+  # ---------------------------------------------------------------------------
+  manual:
+    name: "Manual — ${{ github.event.inputs.action }} (${{ github.event.inputs.stack }})"
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.stack }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: "${{ env.WORK_DIR }}/package-lock.json"
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORK_DIR }}
+        run: npm ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: "Pulumi ${{ github.event.inputs.action }}"
+        uses: pulumi/actions@v6
+        with:
+          command: ${{ github.event.inputs.action }}
+          stack-name: ${{ github.event.inputs.stack }}
+          work-dir: ${{ env.WORK_DIR }}
+          diff: true
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+  # # -------------------------------------------------------------------------
+  # # Drift Detection — scheduled job to catch out-of-band changes
+  # # -------------------------------------------------------------------------
+  # drift-detection:
+  #   name: "Drift Detection"
+  #   if: github.event_name == 'schedule'
+  #   runs-on: ubuntu-latest
+  #
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       stack:
+  #         - dev
+  #         - staging
+  #         - production
+  #
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: ${{ env.NODE_VERSION }}
+  #         cache: "npm"
+  #         cache-dependency-path: "${{ env.WORK_DIR }}/package-lock.json"
+  #
+  #     - name: Install dependencies
+  #       working-directory: ${{ env.WORK_DIR }}
+  #       run: npm ci
+  #
+  #     - name: Configure AWS credentials (OIDC)
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #         aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+  #
+  #     - name: Check for drift
+  #       uses: pulumi/actions@v6
+  #       with:
+  #         command: preview
+  #         stack-name: ${{ matrix.stack }}
+  #         work-dir: ${{ env.WORK_DIR }}
+  #         refresh: true
+  #         expect-no-changes: true    # Fails if drift is detected
+  #       env:
+  #         PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+  #
+  #     # Notify on drift
+  #     - name: Notify on drift
+  #       if: failure()
+  #       uses: slackapi/slack-github-action@v2
+  #       with:
+  #         webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #         webhook-type: incoming-webhook
+  #         payload: |
+  #           {
+  #             "text": "⚠️ Infrastructure drift detected!\nStack: ${{ matrix.stack }}\nRun: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+  #           }
+
+  # # -------------------------------------------------------------------------
+  # # Matrix Multi-Stack Deploy — deploy to multiple stacks in sequence/parallel
+  # # -------------------------------------------------------------------------
+  # multi-stack-deploy:
+  #   name: "Deploy — ${{ matrix.stack }}"
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-latest
+  #
+  #   strategy:
+  #     fail-fast: true              # Stop all stacks if one fails
+  #     max-parallel: 1              # Deploy sequentially (dev → staging → prod)
+  #     matrix:
+  #       stack:
+  #         - dev
+  #         - staging
+  #         - production
+  #       include:
+  #         - stack: dev
+  #           environment: development
+  #         - stack: staging
+  #           environment: staging
+  #         - stack: production
+  #           environment: production
+  #
+  #   environment:
+  #     name: ${{ matrix.environment }}
+  #
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup Node.js
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: ${{ env.NODE_VERSION }}
+  #         cache: "npm"
+  #         cache-dependency-path: "${{ env.WORK_DIR }}/package-lock.json"
+  #
+  #     - name: Install dependencies
+  #       working-directory: ${{ env.WORK_DIR }}
+  #       run: npm ci
+  #
+  #     - name: Configure AWS credentials (OIDC)
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #         aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+  #
+  #     - name: "Deploy to ${{ matrix.stack }}"
+  #       uses: pulumi/actions@v6
+  #       with:
+  #         command: up
+  #         stack-name: ${{ matrix.stack }}
+  #         work-dir: ${{ env.WORK_DIR }}
+  #         diff: true
+  #       env:
+  #         PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}

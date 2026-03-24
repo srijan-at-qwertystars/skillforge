@@ -375,10 +375,7 @@ test('chat between users', async ({ browser }) => {
 
 Built into config via `devices`. Custom viewports:
 ```typescript
-{
-  name: 'custom-mobile',
-  use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
-}
+{ name: 'custom-mobile', use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } }
 ```
 
 Geolocation and permissions:
@@ -393,36 +390,24 @@ test('geolocation', async ({ context, page }) => {
 
 ## Parallel Execution
 
-- `fullyParallel: true` in config runs all tests in parallel.
-- Each test gets its own isolated browser context.
+- `fullyParallel: true` runs all tests in parallel; each test gets isolated context.
 - Control workers: `workers: 4` or `workers: '50%'`.
-- Shard across CI machines: `npx playwright test --shard=1/4`.
-
-```yaml
-strategy:
-  matrix:
-    shard: [1/4, 2/4, 3/4, 4/4]
-steps:
-  - run: npx playwright test --shard=${{ matrix.shard }}
-```
+- Shard across CI: `npx playwright test --shard=1/4`. See `references/advanced-patterns.md` for details.
 
 ## CI/CD (GitHub Actions)
 
+Basic workflow (see `assets/ci-workflow.template.yml` for full version with caching and sharding):
+
 ```yaml
 name: Playwright Tests
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+on: [push, pull_request]
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with:
-          node-version: lts/*
+        with: { node-version: lts/* }
       - run: npm ci
       - run: npx playwright install --with-deps
       - run: npx playwright test
@@ -431,7 +416,6 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 14
 ```
 
 ## Debugging
@@ -478,3 +462,31 @@ npx playwright install                       # install browsers
 - **Don't share state between tests** — each test must be independent.
 - **Don't put assertions in page objects** — page objects are action containers.
 - **Avoid `force: true`** on clicks — it hides real UI bugs.
+
+## Reference Documentation
+
+Dense, in-depth references for advanced usage:
+
+- **`references/advanced-patterns.md`** — Page Object Model in depth (composition, inheritance, navigation returns), fixtures composition chains, test parallelization, sharding strategies, worker reuse, custom matchers (`expect.extend`, `toPass`), parameterized tests, visual regression workflows, accessibility testing with `@axe-core/playwright`, HAR recording/replay, performance metrics.
+- **`references/troubleshooting.md`** — Flaky test remediation checklist, selector stability guide, timeout tuning hierarchy, CI-specific issues (Docker `--shm-size`, GitHub Actions caching, screenshot diffs), trace file analysis (what to look for), slow test diagnosis, browser crash handling.
+- **`references/api-reference.md`** — Key Playwright APIs: Page, Locator, BrowserContext, Route (request/response interception), expect assertions, test fixtures (built-in and custom), `test.describe`/`test.step`/modifiers, full configuration options reference (`use`, `webServer`, projects).
+
+## Templates & Assets
+
+Production-ready templates to copy into projects:
+
+- **`assets/playwright.config.template.ts`** — Config with chromium/firefox/webkit projects, auth setup dependencies, CI detection, retries, reporters, `webServer`.
+- **`assets/page-object.template.ts`** — Page Object Model class template with locator patterns, action methods, navigation returns.
+- **`assets/ci-workflow.template.yml`** — GitHub Actions workflow with browser caching, artifact upload, optional sharding.
+- **`assets/base-page.ts`** — Abstract base page class with shared helpers.
+- **`assets/global-setup.ts`** — Global authentication setup with storageState.
+
+## Scripts
+
+Helper scripts for common workflows:
+
+- **`scripts/setup-project.sh`** — Initialize a Playwright project: creates config, folder structure, installs browsers. Supports `--with-auth`, `--with-axe`, `--with-ci` flags.
+- **`scripts/generate-report.sh`** — Run tests with configurable options and generate HTML report with trace artifacts. Supports `--project`, `--grep`, `--shard`, `--trace`, `--serve`.
+- **`scripts/setup-playwright-ci.sh`** — CI-focused setup: installs browsers, generates GitHub Actions workflow with sharding.
+- **`scripts/run-visual-regression.sh`** — Visual regression runner with Docker support and diff reporting.
+- **`scripts/generate-page-object.sh`** — Scaffold a Page Object class and companion test from a URL.

@@ -6,7 +6,10 @@
 - [BrowserContext](#browsercontext)
 - [Locator](#locator)
 - [expect (Assertions)](#expect-assertions)
-- [Route](#route)
+- [Request/Response Interception (Route)](#requestresponse-interception-route)
+- [Test Fixtures](#test-fixtures)
+- [test.describe / test.step](#testdescribe--teststep)
+- [Configuration Options](#configuration-options)
 - [Frame](#frame)
 - [Dialog](#dialog)
 - [Download](#download)
@@ -394,7 +397,7 @@ expect(data).toMatchSnapshot('api-response.json');
 
 ---
 
-## Route
+## Request/Response Interception (Route)
 
 Intercept and modify network requests.
 
@@ -448,6 +451,208 @@ await page.route('**/api/**', async (route) => {
 | `redirectedFrom()` | `Request \| null` | Redirect source |
 | `redirectedTo()` | `Request \| null` | Redirect target |
 | `response()` | `Promise<Response \| null>` | Associated response |
+
+---
+
+## Test Fixtures
+
+Built-in fixtures provided to every test function:
+
+| Fixture | Type | Scope | Description |
+|---------|------|-------|-------------|
+| `page` | `Page` | test | Isolated page instance |
+| `context` | `BrowserContext` | test | Browser context for this test |
+| `browser` | `Browser` | worker | Shared browser instance |
+| `browserName` | `string` | worker | `'chromium'`, `'firefox'`, or `'webkit'` |
+| `request` | `APIRequestContext` | test | API request context (shares cookies with `page`) |
+| `baseURL` | `string` | — | From config `use.baseURL` |
+
+### Custom Fixture API
+
+```ts
+import { test as base } from '@playwright/test';
+
+// test.extend<TestFixtures, WorkerFixtures>(fixtures)
+export const test = base.extend<{
+  myPage: MyPage;          // test-scoped
+}, {
+  sharedServer: TestServer; // worker-scoped
+}>({
+  // Test fixture: fresh per test
+  myPage: async ({ page }, use) => {
+    const myPage = new MyPage(page);
+    await use(myPage);
+  },
+
+  // Worker fixture: shared across tests in one worker
+  sharedServer: [async ({}, use, workerInfo) => {
+    const server = await TestServer.start(3000 + workerInfo.workerIndex);
+    await use(server);
+    await server.stop();
+  }, { scope: 'worker' }],
+});
+```
+
+Fixture options (configurable per-project):
+
+```ts
+// { option: true } makes a fixture overridable in config
+myOption: ['default-value', { option: true }],
+```
+
+Auto-fixtures (run for every test without being requested):
+
+```ts
+autoLog: [async ({ page }, use) => {
+  page.on('console', msg => console.log(msg.text()));
+  await use();
+}, { auto: true }],
+```
+
+---
+
+## test.describe / test.step
+
+### test.describe
+
+Groups tests. Supports configuration, hooks, and execution modes.
+
+```ts
+test.describe('Feature', () => {
+  test.beforeEach(async ({ page }) => { /* setup */ });
+  test.afterEach(async ({ page }) => { /* teardown */ });
+
+  test('case 1', async ({ page }) => { /* ... */ });
+  test('case 2', async ({ page }) => { /* ... */ });
+});
+```
+
+Execution modes:
+
+```ts
+test.describe.configure({ mode: 'parallel' });  // run tests in parallel
+test.describe.configure({ mode: 'serial' });    // run tests sequentially
+test.describe.configure({ mode: 'default' });   // default (file-level control)
+```
+
+Serial with skip-on-failure:
+
+```ts
+test.describe.serial('checkout flow', () => {
+  test('add to cart', async ({ page }) => { /* ... */ });
+  test('enter address', async ({ page }) => { /* ... */ });
+  test('pay', async ({ page }) => { /* ... */ }); // skipped if above fails
+});
+```
+
+### test.step
+
+Logically groups actions within a test for better reporting:
+
+```ts
+test('complete purchase', async ({ page }) => {
+  await test.step('add items to cart', async () => {
+    await page.goto('/products');
+    await page.getByRole('button', { name: 'Add to Cart' }).click();
+  });
+
+  await test.step('checkout', async () => {
+    await page.goto('/checkout');
+    await page.getByLabel('Card number').fill('4242424242424242');
+    await page.getByRole('button', { name: 'Pay' }).click();
+  });
+
+  await test.step('verify confirmation', async () => {
+    await expect(page).toHaveURL(/\/confirmation/);
+    await expect(page.getByText('Thank you')).toBeVisible();
+  });
+});
+```
+
+Steps appear in HTML report and trace viewer, making failures easier to locate.
+
+### Other test Modifiers
+
+```ts
+test.skip('not implemented yet', async ({ page }) => {});
+test.fixme('known bug #123', async ({ page }) => {});
+test.slow(); // triples timeout
+
+test('skip on webkit', async ({ page, browserName }) => {
+  test.skip(browserName === 'webkit', 'Not supported on WebKit');
+});
+
+test.only('debug this test', async ({ page }) => {});  // run only this test
+test.fail('expected failure', async ({ page }) => {});  // passes if test fails
+```
+
+---
+
+## Configuration Options
+
+### Top-Level Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `testDir` | `string` | `'.'` | Directory to scan for test files |
+| `testMatch` | `RegExp\|string` | `'**/*.spec.ts'` | Test file pattern |
+| `testIgnore` | `RegExp\|string` | — | Files to skip |
+| `timeout` | `number` | `30000` | Per-test timeout (ms) |
+| `globalTimeout` | `number` | `0` | Total run timeout |
+| `fullyParallel` | `boolean` | `false` | Parallelize within files |
+| `forbidOnly` | `boolean` | `false` | Fail if `.only` is used |
+| `retries` | `number` | `0` | Retry failed tests |
+| `workers` | `number\|string` | `'50%'` | Parallel workers |
+| `reporter` | `ReporterDescription[]` | `'list'` | Output reporters |
+| `globalSetup` | `string` | — | Global setup script path |
+| `globalTeardown` | `string` | — | Global teardown script path |
+| `failOnFlakyTests` | `boolean` | `false` | Fail if test passes on retry |
+
+### use Options (Shared Settings)
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `baseURL` | `string` | — | Prepended to `page.goto('/')` |
+| `storageState` | `string\|object` | — | Pre-set cookies/localStorage |
+| `trace` | `TraceMode` | `'off'` | `'on'`, `'off'`, `'on-first-retry'`, `'retain-on-failure'` |
+| `screenshot` | `ScreenshotMode` | `'off'` | `'on'`, `'off'`, `'only-on-failure'` |
+| `video` | `VideoMode` | `'off'` | `'on'`, `'off'`, `'on-first-retry'`, `'retain-on-failure'` |
+| `actionTimeout` | `number` | `0` | Timeout per action |
+| `navigationTimeout` | `number` | `0` | Timeout per navigation |
+| `viewport` | `{width, height}` | `1280×720` | Browser viewport size |
+| `locale` | `string` | system | Browser locale |
+| `timezoneId` | `string` | system | Browser timezone |
+| `colorScheme` | `string` | `'light'` | `'light'`, `'dark'`, `'no-preference'` |
+| `geolocation` | `{lat, long}` | — | Geolocation override |
+| `permissions` | `string[]` | — | Browser permissions to grant |
+| `httpCredentials` | `{user, pass}` | — | HTTP auth credentials |
+| `ignoreHTTPSErrors` | `boolean` | `false` | Ignore SSL errors |
+| `extraHTTPHeaders` | `object` | — | Headers for all requests |
+| `testIdAttribute` | `string` | `'data-testid'` | Custom test ID attribute |
+| `launchOptions` | `object` | — | Browser launch args, headless, etc. |
+
+### webServer Option
+
+```ts
+webServer: {
+  command: 'npm run dev',       // start command
+  url: 'http://localhost:3000', // wait for this URL
+  reuseExistingServer: !process.env.CI,
+  timeout: 120_000,             // startup timeout
+  stdout: 'pipe',               // capture stdout
+  stderr: 'pipe',
+  env: { DATABASE_URL: 'sqlite:test.db' },
+},
+```
+
+Multiple servers:
+
+```ts
+webServer: [
+  { command: 'npm run api', url: 'http://localhost:4000/health' },
+  { command: 'npm run app', url: 'http://localhost:3000' },
+],
+```
 
 ---
 

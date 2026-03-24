@@ -344,7 +344,6 @@ pulumi.runtime.setMocks({
 describe("Infrastructure", () => {
     let infra: typeof import("./index");
     beforeAll(async () => { infra = await import("./index"); });
-
     test("S3 bucket has versioning", (done) => {
         infra.bucket.versioning.apply(v => { expect(v?.enabled).toBe(true); done(); });
     });
@@ -353,11 +352,8 @@ describe("Infrastructure", () => {
 
 ### Integration Tests
 ```bash
-# Deploy test stack, validate, destroy
-pulumi up --stack test --yes
-pulumi stack output --stack test --json | jq '.bucketName'
-curl -s "$(pulumi stack output --stack test endpoint)"
-pulumi destroy --stack test --yes
+pulumi up --stack test --yes && pulumi stack output --stack test --json | jq '.bucketName'
+curl -s "$(pulumi stack output --stack test endpoint)" && pulumi destroy --stack test --yes
 ```
 
 ## CI/CD Integration (GitHub Actions)
@@ -367,6 +363,8 @@ name: Pulumi
 on:
   push: { branches: [main] }
   pull_request: { branches: [main] }
+concurrency: { group: pulumi-${{ github.ref }}, cancel-in-progress: false }
+permissions: { id-token: write, contents: read, pull-requests: write }
 jobs:
   preview:
     if: github.event_name == 'pull_request'
@@ -374,33 +372,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '20', cache: 'npm' }
       - run: npm ci
-      - uses: pulumi/actions@v5
-        with:
-          command: preview
-          stack-name: org/project/dev
-          comment-on-pr: true
+      - uses: pulumi/actions@v6
+        with: { command: preview, stack-name: dev, comment-on-pr: true, diff: true }
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '20' }
+        with: { node-version: '20', cache: 'npm' }
       - run: npm ci
-      - uses: pulumi/actions@v5
-        with:
-          command: up
-          stack-name: org/project/prod
+      - uses: pulumi/actions@v6
+        with: { command: up, stack-name: prod }
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+# See assets/github-actions.template.yml for full template with OIDC, drift detection, multi-stack matrix
 ```
 
 ## Import Existing Resources
@@ -452,8 +442,7 @@ Note: Dynamic providers do not work with pnpm or Bun runtimes.
 | Command | Purpose |
 |---------|---------|
 | `pulumi new <template>` | Scaffold project |
-| `pulumi up [--yes]` | Deploy changes |
-| `pulumi preview` | Dry-run |
+| `pulumi up [--yes]` / `pulumi preview` | Deploy / dry-run |
 | `pulumi destroy [--yes]` | Tear down stack |
 | `pulumi refresh` | Sync state with cloud |
 | `pulumi import <type> <name> <id>` | Import existing resource |
@@ -463,37 +452,48 @@ Note: Dynamic providers do not work with pnpm or Bun runtimes.
 | `pulumi watch` | Continuous deployment mode |
 | `pulumi convert --language python` | Convert YAML to code |
 
-## Provider Packages by Language
-
-```bash
-# TypeScript: npm install @pulumi/aws @pulumi/azure-native @pulumi/gcp @pulumi/kubernetes
-# Python:    pip install pulumi-aws pulumi-azure-native pulumi-gcp pulumi-kubernetes
-# Go:        go get github.com/pulumi/pulumi-aws/sdk/v6/go/aws
-# C#:        dotnet add package Pulumi.Aws Pulumi.AzureNative Pulumi.Gcp
-# Java:      com.pulumi:aws (Maven/Gradle)
-```
-
 ## Common Patterns
 
-**Stack references** (cross-stack outputs):
+**Stack references**: `const net = new pulumi.StackReference("org/network/prod"); const vpcId = net.getOutput("vpcId");`
+
+**Protect**: `{ protect: true }` · **Dependencies**: `{ dependsOn: [db] }` · **Retain on delete**: `{ retainOnDelete: true }`
+
+**Aliases** (rename without replace): `{ aliases: [{ name: "old-name" }] }`
+
+**Transforms** (new API — works with packaged components like awsx):
 ```typescript
-const network = new pulumi.StackReference("org/network/prod");
-const vpcId = network.getOutput("vpcId");
+pulumi.runtime.registerResourceTransform(args => {
+    if (args.props.tags !== undefined) {
+        return { props: { ...args.props, tags: { ...args.props.tags, Team: "platform" } }, opts: args.opts };
+    }
+    return undefined;
+});
 ```
 
-**Protect critical resources**: `{ protect: true }`
+## Skill Resources
 
-**Explicit dependencies**: `{ dependsOn: [db, cache] }`
+### Reference Docs (`references/`)
+| File | Topics |
+|------|--------|
+| `advanced-patterns.md` | Component resources, multi-stack architectures, stack references, dynamic providers, Automation API deep-dive, micro-stacks pattern, resource transforms, aliases |
+| `troubleshooting.md` | State management, drift detection, import failures, provider conflicts, dependency resolution, pending operations, stack corruption recovery, 20+ error messages |
+| `api-reference.md` | Output/Input types, apply/interpolate, ComponentResource, StackReference, Config, Provider, ResourceOptions (all options), Dynamic Providers, Assets, Logging |
+| `cloud-patterns.md` | AWS/Azure/GCP resource patterns, networking, compute, serverless, databases, Kubernetes |
 
-**Aliases** (rename without replacement):
-```typescript
-const bucket = new aws.s3.Bucket("new-name", {}, { aliases: [{ name: "old-name" }] });
-```
+### Scripts (`scripts/`)
+| Script | Usage |
+|--------|-------|
+| `init-project.sh` | `./init-project.sh --name my-infra --runtime nodejs --backend s3 --stack dev` — scaffold project with best practices |
+| `stack-ops.sh` | `./stack-ops.sh preview \| up \| destroy \| refresh \| import \| export \| status \| unlock` — safe stack operations with guards |
+| `scaffold-pulumi-project.sh` | `./scaffold-pulumi-project.sh --cloud aws --language ts --template vpc --name my-net` — cloud-specific templates |
+| `pulumi-ci-setup.sh` | `./pulumi-ci-setup.sh --platform github --cloud aws --stack prod` — generate CI/CD config |
+| `pulumi-import-resources.sh` | `./pulumi-import-resources.sh --resource-type s3 --execute` — discover and import AWS resources |
 
-**Transformations** (inject tags into all child resources):
-```typescript
-const opts = { transformations: [(args: any) => {
-    args.props.tags = { ...args.props.tags, Team: "platform" };
-    return { props: args.props, opts: args.opts };
-}]};
-```
+### Templates (`assets/`)
+| Template | Purpose |
+|----------|---------|
+| `Pulumi.yaml.template` | Project file with all options documented |
+| `component-resource.template.ts` | TypeScript ComponentResource with typed inputs/outputs |
+| `github-actions.template.yml` | CI/CD: PR preview, deploy on merge, drift detection, multi-stack matrix |
+| `index.ts` | VPC + ECS Fargate starter template |
+| `Pulumi.dev.yaml` | Stack config example with secrets and structured values |

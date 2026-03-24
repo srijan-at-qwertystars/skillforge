@@ -1,12 +1,18 @@
 ---
 name: opentelemetry-patterns
 description: >
-  Guide for implementing OpenTelemetry observability across traces, metrics, and logs.
-  USE when: setting up OpenTelemetry SDKs, implementing distributed tracing, collecting
-  metrics with OTel API, correlating logs with trace context, configuring OTel Collector
-  pipelines, instrumenting spans/attributes/events, propagating context (W3C TraceContext,
-  Baggage), configuring exporters (OTLP, Jaeger, Zipkin, Prometheus), defining sampling
-  strategies, applying semantic conventions, building observability pipelines.
+  Comprehensive guide for implementing OpenTelemetry observability across traces, metrics,
+  and logs — from SDK setup to production Collector pipelines.
+  USE when: setting up OpenTelemetry SDKs (Node.js, Python, Go, Java), implementing
+  distributed tracing, collecting metrics with OTel API, correlating logs with trace
+  context, configuring OTel Collector pipelines, instrumenting spans/attributes/events,
+  propagating context (W3C TraceContext, Baggage), configuring exporters (OTLP, Jaeger,
+  Zipkin, Prometheus), defining sampling strategies (head-based, tail-based), applying
+  semantic conventions, building observability pipelines, writing custom span processors,
+  creating metric views, using exemplars for metric-trace correlation, deploying Collector
+  in agent/gateway patterns, troubleshooting missing spans or context propagation issues,
+  managing metric cardinality, writing custom exporters, using OTTL transforms, configuring
+  connectors (spanmetrics, routing), setting up resource detectors.
   DO NOT USE when: configuring Datadog or New Relic proprietary agents without OTel,
   setting up Prometheus-only monitoring without OpenTelemetry, implementing application
   logging without tracing context, configuring vendor-specific APM agents (AppDynamics,
@@ -392,3 +398,33 @@ env:
 ```
 
 Deploy Collector as DaemonSet (agent) + Deployment (gateway). Apps → Agent (batch, head-sample) → Gateway (tail-sample, route) → Backends (Tempo, Mimir, Loki).
+
+## Additional Resources
+
+### Reference Documentation
+
+Detailed deep-dives for advanced use cases:
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Custom span processors (enrichment, redaction, filtering), metric views (rename, bucket customization, cardinality control), exemplars (metric↔trace correlation), baggage propagation patterns, multi-signal correlation (resource, log, metric→trace), span links (batch, retry, async), tail-based sampling (composite policies, multi-layer architecture), resource detectors (AWS, GCP, Azure, custom), custom exporters (Python, Node.js), advanced context propagation (custom propagators, message queues), OTTL transforms, connectors (spanmetrics, count, routing).
+
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Systematic diagnosis for: missing spans (decision tree, debug logging, ConsoleSpanExporter), context propagation breaks (async code, message queues, proxies, gRPC), high cardinality issues (dangerous vs safe attributes, cardinality budgets, View fixes), memory leaks (unclosed spans, SimpleSpanProcessor, unbounded attributes), Collector pipeline debugging (internal metrics, zpages, pprof, debug exporter), exporter failures (connection, timeout, auth), SDK initialization ordering (Node.js, Python, Java gotchas), sampling confusion.
+
+- **[references/collector-reference.md](references/collector-reference.md)** — OTel Collector deep-dive: receivers (OTLP, Jaeger, Prometheus, filelog, hostmetrics, Kafka), processors (batch, memory_limiter, filter, attributes, resource, tail_sampling, transform, k8sattributes, groupbytrace), exporters (OTLP, Prometheus, prometheusremotewrite, Loki, debug, file, loadbalancing), connectors (spanmetrics, count, routing, forward), extensions (health_check, pprof, zpages, basicauth, file_storage, bearertokenauth), deployment patterns (agent, gateway, sidecar, full architecture diagrams), distributions, configuration best practices.
+
+### Scripts
+
+Executable helper tools:
+
+- **[scripts/setup-otel.sh](scripts/setup-otel.sh)** — Automated OTel SDK setup for Node.js or Python projects. Installs packages, creates tracing boilerplate, prints run instructions. Usage: `./scripts/setup-otel.sh [node|python] --service-name my-svc`
+
+- **[scripts/collector-health.sh](scripts/collector-health.sh)** — Checks Collector health, receiver/processor/exporter metrics, queue status, resource usage. Supports `--json` output and `--watch` mode. Usage: `./scripts/collector-health.sh --host otel-collector`
+
+### Templates
+
+Ready-to-customize config files:
+
+- **[assets/otel-collector-config.template.yaml](assets/otel-collector-config.template.yaml)** — Production Collector config: OTLP receiver, memory_limiter + filter + attributes + batch processors, spanmetrics connector, multi-backend exporters (OTLP, Prometheus remote write, Loki), health/pprof/zpages extensions. Includes commented-out sections for Prometheus scraping, host metrics, filelog, and tail sampling.
+
+- **[assets/docker-compose.template.yml](assets/docker-compose.template.yml)** — Full observability stack: OTel Collector + Jaeger (traces UI) + Prometheus (metrics, exemplar-enabled) + Grafana (dashboards) + optional Loki (logs). Includes provisioning config snippets for Grafana datasources.
+
+- **[assets/tracing-setup.template.ts](assets/tracing-setup.template.ts)** — TypeScript OTel SDK initialization boilerplate with custom span processor (sensitive data redaction), metric views (histogram buckets, cardinality control), auto-instrumentation config (health check filtering), graceful shutdown handling.

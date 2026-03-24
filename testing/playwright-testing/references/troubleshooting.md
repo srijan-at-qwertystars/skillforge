@@ -3,15 +3,35 @@
 ## Table of Contents
 
 - [Flaky Test Diagnosis](#flaky-test-diagnosis)
+  - [Identifying Flaky Tests](#identifying-flaky-tests)
+  - [Common Flakiness Patterns](#common-flakiness-patterns)
+  - [Flaky Test Remediation Checklist](#flaky-test-remediation-checklist)
+- [Selector Stability](#selector-stability)
+  - [Priority Order (Most to Least Stable)](#priority-order-most-to-least-stable)
+  - [Anti-Patterns](#anti-patterns)
 - [Strict Mode Violations](#strict-mode-violations)
-- [Timing and Race Conditions](#timing-and-race-conditions)
-- [Stale Element Issues](#stale-element-issues)
-- [Selector Strategies That Avoid Flakiness](#selector-strategies-that-avoid-flakiness)
-- [Debugging Tools](#debugging-tools)
+- [Timeout Tuning](#timeout-tuning)
+  - [Timeout Hierarchy](#timeout-hierarchy)
+  - [Per-Test Timeout Overrides](#per-test-timeout-overrides)
+  - [Diagnosing Timeout Failures](#diagnosing-timeout-failures)
 - [CI-Specific Issues](#ci-specific-issues)
-- [Actionability Checks](#actionability-checks)
+  - [Docker Issues](#docker-issues)
+  - [GitHub Actions Runners](#github-actions-runners)
+  - [Missing Dependencies on Linux](#missing-dependencies-on-linux)
+  - [Screenshot Differences Across OS](#screenshot-differences-across-os)
+  - [CI Performance Degradation](#ci-performance-degradation)
+- [Trace File Analysis](#trace-file-analysis)
+  - [Enabling Traces](#enabling-traces)
+  - [Reading Trace Files](#reading-trace-files)
+  - [What to Look For in Traces](#what-to-look-for-in-traces)
+- [Slow Test Diagnosis](#slow-test-diagnosis)
+  - [Identifying Slow Tests](#identifying-slow-tests)
+  - [Common Causes and Fixes](#common-causes-and-fixes)
+- [Browser Crash Handling](#browser-crash-handling)
+- [Timing and Race Conditions](#timing-and-race-conditions)
 - [Auto-Waiting Pitfalls](#auto-waiting-pitfalls)
 - [Navigation Race Conditions](#navigation-race-conditions)
+- [Debugging Tools](#debugging-tools)
 - [File Download Edge Cases](#file-download-edge-cases)
 - [File Upload Edge Cases](#file-upload-edge-cases)
 - [Geolocation and Permissions Mocking](#geolocation-and-permissions-mocking)
@@ -88,6 +108,80 @@ await page.goto('/feed');
 await expect(page.getByText('Jan 15, 2024')).toBeVisible();
 ```
 
+### Flaky Test Remediation Checklist
+
+1. **Reproduce**: Run with `--repeat-each=10` to confirm flakiness
+2. **Capture traces**: Set `trace: 'on'` temporarily to capture every run
+3. **Check selectors**: Replace CSS/XPath with `getByRole`/`getByTestId`
+4. **Check for race conditions**: Ensure you wait for API responses before asserting UI
+5. **Check for shared state**: Each test must create its own data
+6. **Check for animations**: Wait for animations to complete or disable them:
+   ```ts
+   // Disable animations globally in config
+   use: { 
+     launchOptions: { 
+       args: ['--disable-animations'] 
+     } 
+   }
+   // Or freeze via CSS in a fixture
+   await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
+   ```
+7. **Check CI resources**: Use `--workers=1` to rule out resource contention
+8. **Use `failOnFlakyTests`**: In config to prevent flaky tests from being green:
+   ```ts
+   export default defineConfig({ failOnFlakyTests: true });
+   ```
+
+---
+
+## Selector Stability
+
+### Priority Order (Most to Least Stable)
+
+1. **Role-based** — mirrors how users/assistive tech see the page:
+   ```ts
+   page.getByRole('button', { name: 'Submit' })
+   page.getByRole('heading', { name: 'Welcome', level: 1 })
+   ```
+
+2. **Label-based** — tied to form semantics:
+   ```ts
+   page.getByLabel('Email address')
+   page.getByLabel(/password/i)
+   ```
+
+3. **Test ID** — stable, developer-controlled:
+   ```ts
+   page.getByTestId('checkout-button')
+   // Configure custom attribute: use: { testIdAttribute: 'data-cy' }
+   ```
+
+4. **Text-based** — readable but fragile to copy changes:
+   ```ts
+   page.getByText('Add to cart')
+   page.getByText(/total: \$\d+/i)
+   ```
+
+5. **CSS/XPath** — last resort, tightly coupled to DOM:
+   ```ts
+   page.locator('.btn-primary >> visible=true')
+   ```
+
+### Anti-Patterns
+
+```ts
+// ❌ Fragile — break on any DOM restructure
+page.locator('div > div:nth-child(3) > span.text')
+
+// ❌ Auto-generated class names (CSS modules, Tailwind JIT)
+page.locator('.css-1a2b3c')
+page.locator('[class*="styles_button__"]')
+
+// ✅ Resilient alternatives
+page.getByRole('button', { name: 'Add to cart' })
+page.getByTestId('add-to-cart')
+```
+
 ---
 
 ## Strict Mode Violations
@@ -130,6 +224,64 @@ await modal.getByRole('button', { name: 'Confirm' }).click();
 const form = page.locator('form#registration');
 await form.getByLabel('Name').fill('Alice');
 ```
+
+---
+
+## Timeout Tuning
+
+### Timeout Hierarchy
+
+Playwright has multiple timeout levels. Order of precedence (most specific wins):
+
+| Timeout | Default | Config Key | Scope |
+|---------|---------|------------|-------|
+| Test timeout | 30s | `timeout` | Entire test |
+| Action timeout | none | `use.actionTimeout` | Per click/fill/etc. |
+| Navigation timeout | none | `use.navigationTimeout` | Per goto/waitForURL |
+| Assertion timeout | 5s | `expect.timeout` | Per expect() call |
+| Global timeout | none | `globalTimeout` | Entire test run |
+
+```ts
+export default defineConfig({
+  timeout: 60_000,           // per-test (increase for CI)
+  globalTimeout: 600_000,    // 10 min total run cap
+  expect: { timeout: 10_000 },
+  use: {
+    actionTimeout: 15_000,
+    navigationTimeout: 30_000,
+  },
+});
+```
+
+### Per-Test Timeout Overrides
+
+```ts
+// Slow test: increase timeout for this test only
+test('long data import', async ({ page }) => {
+  test.setTimeout(120_000);
+  // ...
+});
+
+// Slow hook
+test.beforeEach(async ({ page }) => {
+  test.setTimeout(60_000);  // extends timeout for this hook
+});
+
+// Extend by a duration
+test('long test', async ({ page }) => {
+  test.slow(); // triples the timeout
+});
+```
+
+### Diagnosing Timeout Failures
+
+When you see `Test timeout of 30000ms exceeded`:
+
+1. Check trace to find which action was hanging
+2. Look for `waiting for selector` — means element doesn't match
+3. Look for `waiting for navigation` — means URL didn't change
+4. **Don't increase timeout blindly** — find the root cause
+5. If the app is genuinely slow, increase `actionTimeout` specifically
 
 ---
 
@@ -183,95 +335,6 @@ await page.waitForTimeout(3000);
 await page.waitForFunction(() => document.fonts.ready);
 await page.waitForLoadState('networkidle');
 await page.getByTestId('chart').waitFor({ state: 'visible' });
-```
-
----
-
-## Stale Element Issues
-
-Playwright locators re-query the DOM on each action, so stale elements are rare.
-However, issues can arise with `elementHandle()` or `evaluate()`.
-
-```ts
-// BAD: storing element handle (can go stale)
-const handle = await page.getByRole('button', { name: 'Next' }).elementHandle();
-// ... page navigates or re-renders ...
-await handle!.click(); // May fail with stale element
-
-// GOOD: use locators (always re-query)
-const nextBtn = page.getByRole('button', { name: 'Next' });
-// ... page navigates or re-renders ...
-await nextBtn.click(); // Always finds current element
-```
-
-### Dynamic Content
-
-```ts
-// For content that updates dynamically, use polling assertions
-await expect(page.getByTestId('counter')).toHaveText('5', { timeout: 10000 });
-
-// For lists that load incrementally
-await expect(page.getByRole('listitem')).toHaveCount(20, { timeout: 15000 });
-
-// Use expect.poll for non-locator values
-await expect.poll(async () => {
-  const resp = await page.request.get('/api/status');
-  return (await resp.json()).ready;
-}, { timeout: 30000 }).toBeTruthy();
-```
-
----
-
-## Selector Strategies That Avoid Flakiness
-
-### Priority Order (Most to Least Stable)
-
-1. **Role-based** — mirrors how users/assistive tech see the page:
-   ```ts
-   page.getByRole('button', { name: 'Submit' })
-   page.getByRole('heading', { name: 'Welcome', level: 1 })
-   page.getByRole('link', { name: 'Sign up' })
-   ```
-
-2. **Label-based** — tied to form semantics:
-   ```ts
-   page.getByLabel('Email address')
-   page.getByLabel(/password/i)
-   ```
-
-3. **Test ID** — stable, developer-controlled:
-   ```ts
-   page.getByTestId('checkout-button')
-   // Configure custom attribute:
-   // use: { testIdAttribute: 'data-cy' }
-   ```
-
-4. **Text-based** — readable but fragile to copy changes:
-   ```ts
-   page.getByText('Add to cart')
-   page.getByText(/total: \$\d+/i) // regex for dynamic text
-   ```
-
-5. **CSS/XPath** — last resort, tightly coupled to DOM structure:
-   ```ts
-   page.locator('.btn-primary >> visible=true')
-   page.locator('css=article >> text=Read more')
-   ```
-
-### Anti-Patterns
-
-```ts
-// ❌ Fragile selectors — break on any DOM change
-page.locator('div > div:nth-child(3) > span.text')
-page.locator('#app > main > section:first-of-type button')
-
-// ❌ Auto-generated class names (CSS modules, Tailwind JIT)
-page.locator('.css-1a2b3c')
-page.locator('[class*="styles_button__"]')
-
-// ✅ Resilient alternatives
-page.getByRole('button', { name: 'Add to cart' })
-page.getByTestId('add-to-cart')
 ```
 
 ---
@@ -373,49 +436,82 @@ page.on('pageerror', error => {
 
 ## CI-Specific Issues
 
-### Missing Dependencies on Linux
-
-```bash
-# Install system dependencies for all browsers
-npx playwright install --with-deps
-
-# For specific browser only
-npx playwright install chromium --with-deps
-```
-
-Ubuntu/Debian packages needed (auto-installed by `--with-deps`):
-`libatk1.0-0`, `libatk-bridge2.0-0`, `libcups2`, `libdrm2`, `libxkbcommon0`, `libxdamage1`, `libgbm1`, `libpango-1.0-0`, `libcairo2`, `libasound2`, `libnspr4`, `libnss3`
-
 ### Docker Issues
 
 ```dockerfile
-# Use official Playwright Docker image
+# Use official Playwright Docker image (recommended for CI)
 FROM mcr.microsoft.com/playwright:v1.52.0-noble
 
-# If building custom image, install deps
+# If building custom image
 RUN npx playwright install --with-deps
 ```
 
 Common Docker pitfalls:
-- Run as non-root: `--user 1001` or `USER pwuser` in Dockerfile
-- Shared memory: `--ipc=host` or `--shm-size=2gb` to avoid crashes
-- Missing fonts: install `fonts-noto` for consistent text rendering
+- **Shared memory crashes**: Use `--ipc=host` or `--shm-size=2gb`
+- **Run as non-root**: `--user 1001` or `USER pwuser` in Dockerfile
+- **Missing fonts**: Install `fonts-noto` for consistent rendering
+- **File permissions**: Mount volumes with correct UID/GID
+
+```yaml
+# docker-compose example
+services:
+  tests:
+    image: mcr.microsoft.com/playwright:v1.52.0-noble
+    ipc: host
+    volumes:
+      - .:/work
+    working_dir: /work
+    command: npx playwright test
+```
+
+### GitHub Actions Runners
+
+Common issues on `ubuntu-latest`:
+
+1. **Insufficient resources**: Default runners have 2 CPUs, 7GB RAM
+   - Reduce workers: `workers: 1` or `workers: 2`
+   - Use larger runners for speed: `runs-on: ubuntu-latest-8-cores`
+
+2. **Browser not found**: Always install after cache miss
+   ```yaml
+   - name: Cache Playwright browsers
+     uses: actions/cache@v4
+     id: pw-cache
+     with:
+       path: ~/.cache/ms-playwright
+       key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+   - if: steps.pw-cache.outputs.cache-hit != 'true'
+     run: npx playwright install --with-deps
+   - if: steps.pw-cache.outputs.cache-hit == 'true'
+     run: npx playwright install-deps
+   ```
+
+3. **Always upload artifacts** (even on success):
+   ```yaml
+   - uses: actions/upload-artifact@v4
+     if: ${{ !cancelled() }}
+     with:
+       name: playwright-report
+       path: playwright-report/
+       retention-days: 14
+   ```
+
+### Missing Dependencies on Linux
+
+```bash
+npx playwright install --with-deps           # all browsers
+npx playwright install chromium --with-deps   # specific browser
+```
+
+Key packages auto-installed: `libatk1.0-0`, `libatk-bridge2.0-0`, `libcups2`, `libdrm2`, `libxkbcommon0`, `libgbm1`, `libpango-1.0-0`, `libasound2`, `libnss3`
 
 ### Screenshot Differences Across OS
 
-Screenshots differ between Linux, macOS, and Windows due to font rendering.
-
-```ts
-// Platform-specific snapshots (auto-managed)
-await expect(page).toHaveScreenshot('homepage.png', {
-  maxDiffPixelRatio: 0.02, // allow 2% difference
-});
-// Snapshots stored in: tests/__snapshots__/test-name-chromium-linux.png
-```
+Screenshots differ between Linux, macOS, Windows due to font rendering.
 
 Solutions:
 - Run screenshot tests in Docker for consistency
-- Use `maxDiffPixelRatio` or `maxDiffPixels` for tolerance
+- Use `maxDiffPixelRatio` for tolerance
 - Use `mask` to hide dynamic content:
   ```ts
   await expect(page).toHaveScreenshot({
@@ -423,34 +519,135 @@ Solutions:
   });
   ```
 
-### CI Timeouts
+### CI Performance Degradation
+
+If tests are consistently slower in CI:
+
+1. **Limit workers**: `workers: process.env.CI ? 1 : undefined`
+2. **Increase timeouts**: `timeout: process.env.CI ? 60_000 : 30_000`
+3. **Disable video**: `video: 'off'` (recording is expensive)
+4. **Use blob reporter**: Lighter than HTML during shard runs
+5. **Throttle locally** to reproduce: Use CDP network/CPU throttling
+
+---
+
+## Trace File Analysis
+
+### Enabling Traces
 
 ```ts
-// Increase timeouts for slower CI machines
-export default defineConfig({
-  timeout: 60_000,        // per-test timeout (default 30s)
-  expect: {
-    timeout: 10_000,      // assertion timeout (default 5s)
-  },
-  use: {
-    actionTimeout: 15_000, // per-action timeout (default none)
-    navigationTimeout: 30_000,
-  },
-});
+// playwright.config.ts
+use: {
+  trace: 'on-first-retry',       // only on retry (recommended)
+  // trace: 'retain-on-failure', // keep trace on any failure
+  // trace: 'on',                // always (expensive, for debugging)
+}
 ```
 
-### GitHub Actions Artifacts
-
-Always upload reports on failure:
-
-```yaml
-- uses: actions/upload-artifact@v4
-  if: ${{ !cancelled() }}
-  with:
-    name: playwright-report
-    path: playwright-report/
-    retention-days: 14
+Per-test override:
+```ts
+test.use({ trace: 'on' }); // enable for all tests in this file
 ```
+
+### Reading Trace Files
+
+```bash
+# Open trace viewer (local GUI)
+npx playwright show-trace test-results/my-test/trace.zip
+
+# Open trace from URL
+npx playwright show-trace https://ci.example.com/artifacts/trace.zip
+
+# Online viewer (no install needed)
+# Upload trace.zip to https://trace.playwright.dev
+```
+
+### What to Look For in Traces
+
+The trace viewer shows tabs for:
+
+| Tab | What It Shows | Debugging Use |
+|-----|---------------|---------------|
+| **Actions** | Each Playwright action with timing | Find which action hung or took too long |
+| **Metadata** | Browser, viewport, test name | Verify correct project/config was used |
+| **Network** | All HTTP requests/responses | Find missing/slow API calls |
+| **Console** | Browser console.log/error | Find JS errors causing UI issues |
+| **Source** | Test source code at each step | Correlate actions to test lines |
+| **Snapshots** | Before/after DOM snapshots | See exact DOM state at each action |
+
+**Common findings**:
+- Action waiting too long → element not matching selector
+- Network request pending → backend timeout, mock missing
+- Console error before action → JS exception breaking the page
+- Snapshot shows overlay → element blocked by another element
+
+---
+
+## Slow Test Diagnosis
+
+### Identifying Slow Tests
+
+```bash
+# Run with duration reporting
+npx playwright test --reporter=list
+
+# Show slowest tests
+npx playwright test --reporter=json | jq '.suites[].specs[].tests[] | {title: .title, duration: .results[0].duration}' | sort -t: -k2 -n -r
+```
+
+### Common Causes and Fixes
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Slow globally | Too many workers on weak CI | Reduce `workers` |
+| One slow test | `waitForTimeout()` call | Replace with element/network wait |
+| Slow setup | Login via UI in every test | Use `storageState` for auth |
+| Slow navigation | Waiting for `networkidle` | Use `domcontentloaded` instead |
+| Slow assertions | Large `timeout` on assertions | Fix selector, reduce timeout |
+| Slow screenshots | Full-page screenshots | Limit to specific components |
+
+**Profile with traces**: Enable `trace: 'on'` and inspect the timeline to see exactly where time is spent.
+
+---
+
+## Browser Crash Handling
+
+Browser crashes manifest as:
+- `browserType.launch: Browser closed unexpectedly`
+- `Target page, context or browser has been closed`
+- `Protocol error: Connection closed`
+
+### Common Causes and Fixes
+
+1. **Out of memory (OOM)**: Most common in CI
+   ```bash
+   # Docker: increase shared memory
+   docker run --shm-size=2gb ...
+   # Or use host IPC
+   docker run --ipc=host ...
+   ```
+
+2. **Too many browser instances**: Reduce workers
+   ```ts
+   workers: process.env.CI ? 1 : undefined,
+   ```
+
+3. **GPU issues in headless mode** (Chromium):
+   ```ts
+   use: {
+     launchOptions: {
+       args: ['--disable-gpu', '--disable-dev-shm-usage'],
+     },
+   }
+   ```
+
+4. **Crash recovery in tests**:
+   ```ts
+   // Playwright auto-creates new contexts per test.
+   // If a browser crashes, the test fails but the next test
+   // gets a fresh browser. Use retries to handle transient crashes.
+   retries: process.env.CI ? 2 : 0,
+   ```
 
 ---
 

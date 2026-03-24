@@ -281,6 +281,6 @@
 | DevOps | conventional-commits | Conventional Commits spec: commit message format, types (feat/fix/chore), breaking changes, commitlint, Husky hooks, commitizen, semantic-release integration, monorepo conventions. Use for commit conventions. NOT for git basics, rebase/merge, or PR review. | tested |
 | DevOps | packer-images | HashiCorp Packer: HCL2 templates, builders (AWS/Azure/GCP/Docker/VMware), provisioners (shell/Ansible/Chef), post-processors, multi-cloud builds, CI/CD pipelines, image testing. Use for Packer/golden images. NOT for Dockerfiles, Terraform, or Vagrant. | tested |
 | Messaging | nats-messaging | NATS messaging: core pub/sub, JetStream streams/consumers, Key-Value/Object stores, clustering, NKey/JWT auth, subject wildcards, leaf nodes, monitoring. Use for NATS. NOT for RabbitMQ, Kafka, Redis pub/sub, or SQS/SNS. | tested |
-| testing | playwright-testing | End-to-end browser testing with Playwright — setup, locators, fixtures, POM, visual regression, network mocking, CI/CD, debugging | created |
-| infrastructure | pulumi-iac | Infrastructure as Code with Pulumi using real programming languages — stacks, state, secrets, Automation API, CrossGuard, component resources | created |
-| monitoring | opentelemetry-patterns | Distributed observability with OpenTelemetry — traces, metrics, logs, Collector pipelines, sampling, context propagation, semantic conventions | created |
+| testing | playwright-testing | End-to-end browser testing with Playwright — setup, locators, fixtures, POM, visual regression, network mocking, CI/CD, debugging | enriched |
+| infrastructure | pulumi-iac | Infrastructure as Code with Pulumi using real programming languages — stacks, state, secrets, Automation API, CrossGuard, component resources | enriched |
+| monitoring | opentelemetry-patterns | Distributed observability with OpenTelemetry — traces, metrics, logs, Collector pipelines, sampling, context propagation, semantic conventions | enriched |

@@ -1,0 +1,184 @@
+# =============================================================================
+# Pulumi.yaml — Project configuration file
+# =============================================================================
+#
+# This file defines metadata and settings for a Pulumi project. It must live in
+# the root of your project directory. Each field is documented below with all
+# available options and defaults.
+#
+# Reference: https://www.pulumi.com/docs/concepts/projects/project-file/
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# name (required)
+# ---------------------------------------------------------------------------
+# Unique identifier for the project. Used as a namespace in the state backend.
+# Must be a non-empty string; alphanumerics, hyphens, and underscores only.
+name: {{PROJECT_NAME}}
+
+# ---------------------------------------------------------------------------
+# runtime (required)
+# ---------------------------------------------------------------------------
+# The language runtime for this project. Can be a simple string or an object
+# with additional options.
+#
+# Simple form (just the runtime name):
+#   runtime: nodejs
+#
+# Object form (runtime with options):
+runtime:
+  name: nodejs          # One of: nodejs, python, go, dotnet, java, yaml
+  options:
+    # --- Node.js options ---
+    typescript: true     # Enable TypeScript support (default: true for nodejs)
+    # packagemanager: npm  # Package manager: npm | yarn | pnpm (default: npm)
+
+    # --- Python options (uncomment if runtime is python) ---
+    # virtualenv: venv     # Virtual environment directory name
+    # typechecker: mypy    # Type checker: mypy | pyright (optional)
+    # toolchain: pip       # Toolchain: pip | poetry | uv (default: pip)
+
+    # --- Go options (uncomment if runtime is go) ---
+    # binary: bin/infra    # Pre-built binary path (skips go build)
+    # buildTarget: ./cmd   # Go build target directory
+
+    # --- .NET options (uncomment if runtime is dotnet) ---
+    # binary: bin/Program  # Pre-built binary path
+
+    # --- Java options (uncomment if runtime is java) ---
+    # buildTarget: app     # Maven/Gradle project directory
+
+# ---------------------------------------------------------------------------
+# description (optional, recommended)
+# ---------------------------------------------------------------------------
+# Human-readable description of what this project provisions.
+description: Infrastructure managed by Pulumi — {{PROJECT_NAME}}
+
+# ---------------------------------------------------------------------------
+# main (optional)
+# ---------------------------------------------------------------------------
+# Specifies the directory that contains the program's entry point, relative to
+# this file. Defaults to "." (the directory containing Pulumi.yaml).
+# Useful for monorepos or when the Pulumi program is in a subdirectory.
+#
+# main: infra/
+
+# ---------------------------------------------------------------------------
+# stackConfigDir (optional)
+# ---------------------------------------------------------------------------
+# Directory containing stack-specific config files (Pulumi.<stack>.yaml).
+# Defaults to "." (same directory as Pulumi.yaml).
+#
+# stackConfigDir: stacks/
+
+# ---------------------------------------------------------------------------
+# config (optional)
+# ---------------------------------------------------------------------------
+# Default configuration values applied to all stacks. Individual stacks can
+# override these in their Pulumi.<stack>.yaml files.
+#
+# Config can define:
+#   - Simple key-value defaults
+#   - Schema-validated config with types and constraints
+#   - Structured namespaced configuration
+config:
+  # Tags applied to all resources (if the provider supports it)
+  pulumi:tags:
+    value:
+      pulumi:template: {{PROJECT_NAME}}
+      managed-by: pulumi
+
+  # # Example: define config schema with types and defaults
+  # {{PROJECT_NAME}}:region:
+  #   type: string
+  #   default: us-east-1
+  #   description: "AWS region to deploy into"
+  #
+  # {{PROJECT_NAME}}:instanceCount:
+  #   type: integer
+  #   default: 2
+  #   description: "Number of instances to provision"
+  #
+  # {{PROJECT_NAME}}:enableMonitoring:
+  #   type: boolean
+  #   default: true
+  #
+  # # Secret config (always encrypted in state)
+  # {{PROJECT_NAME}}:dbPassword:
+  #   type: string
+  #   secret: true
+  #   description: "Database password — stored encrypted"
+
+# ---------------------------------------------------------------------------
+# backend (optional)
+# ---------------------------------------------------------------------------
+# Override the default state backend. By default, Pulumi uses the Pulumi Cloud
+# (app.pulumi.com). Uncomment one of the following to use a self-managed backend.
+#
+# backend:
+#   url: https://app.pulumi.com                    # Pulumi Cloud (default)
+#   url: s3://my-pulumi-state-bucket               # AWS S3
+#   url: s3://my-bucket?region=us-west-2&awssdk=v2 # S3 with options
+#   url: gs://my-pulumi-state-bucket               # Google Cloud Storage
+#   url: azblob://my-pulumi-container              # Azure Blob Storage
+#   url: file://~/.pulumi-state                    # Local filesystem
+#   url: file:///absolute/path/to/state            # Local filesystem (absolute)
+
+# ---------------------------------------------------------------------------
+# options (optional)
+# ---------------------------------------------------------------------------
+# Project-level options that apply to all stacks.
+#
+# options:
+#   # Automatically refresh state before every preview/update.
+#   # Ensures state matches actual cloud resources. Adds latency.
+#   refresh: always    # "always" or omit for default behavior
+#
+#   # Protect all resources by default. Prevents accidental deletion.
+#   # Individual resources can opt out with { protect: false }.
+#   protect: true
+
+# ---------------------------------------------------------------------------
+# plugins (optional)
+# ---------------------------------------------------------------------------
+# Pin specific versions of Pulumi provider or language plugins.
+# Ensures reproducible deployments across environments.
+#
+# plugins:
+#   providers:
+#     - name: aws
+#       version: 6.0.0
+#       # path: /custom/plugin/path  # Optional: custom plugin binary path
+#     - name: gcp
+#       version: 7.0.0
+#     - name: azure-native
+#       version: 2.0.0
+#     - name: kubernetes
+#       version: 4.0.0
+#     - name: docker
+#       version: 4.0.0
+#     - name: random
+#       version: 4.0.0
+#   languages:
+#     - name: nodejs
+#       version: 0.0.1
+#       path: /custom/sdk/path
+
+# ---------------------------------------------------------------------------
+# template (optional)
+# ---------------------------------------------------------------------------
+# Metadata used when this project is published as a Pulumi template.
+# Templates allow others to create new projects from this one.
+#
+# template:
+#   description: A starter template for AWS infrastructure
+#   quickstart: |
+#     1. Run `pulumi config set aws:region us-east-1`
+#     2. Run `pulumi up`
+#   config:
+#     aws:region:
+#       description: The AWS region to deploy into
+#       default: us-east-1
+#     instanceType:
+#       description: EC2 instance type
+#       default: t3.micro
