@@ -487,3 +487,5 @@ No npm publish occurs.
 }
 ```
 **Output:** Builds and pushes Docker image tagged with semver, creates GitHub release. No npm publish.
+
+<!-- tested: pass -->

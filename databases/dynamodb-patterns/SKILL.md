@@ -413,3 +413,4 @@ Reusable templates in the `assets/` directory:
 - **[assets/cloudformation-table.yaml](assets/cloudformation-table.yaml)** — Production-ready CloudFormation template for a DynamoDB table with: two GSIs (GSI1, GSI2), auto-scaling on all indexes, Point-in-Time Recovery, DynamoDB Streams, Contributor Insights, TTL, CloudWatch alarms for throttling and system errors. Parameterized for billing mode, capacity ranges, and environment.
 
 - **[assets/single-table-schema.json](assets/single-table-schema.json)** — Complete single-table design schema document for a SaaS project management app. Documents 8 entity types (Tenant, User, TenantMembership, Project, Task, Comment, Notification, AuditLog), their key patterns, GSI mappings (including sparse indexes), 14 access patterns with query specifications, TTL strategy, and capacity estimates.
+<!-- tested: needs-fix -->

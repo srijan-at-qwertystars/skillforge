@@ -462,3 +462,5 @@ Production-ready config templates in `assets/` — copy, search for `CHANGEME`, 
 | `assets/reverse-proxy.conf` | Full reverse proxy with SSL termination, caching, rate limiting, security headers, static asset optimization |
 | `assets/load-balancer.conf` | Load balancer with multiple algorithms, health checks, sticky sessions, WebSocket support, failover to backup servers |
 | `assets/security-headers.conf` | Include file with X-Frame-Options, HSTS, CSP, Permissions-Policy, CORP/COOP/COEP — drop into any server block |
+
+<!-- tested: pass -->
