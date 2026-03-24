@@ -392,3 +392,5 @@ spec:
         image: myco/orders:latest
         env: [{ name: INVENTORY_URL, value: "http://localhost:6000" }]
 ```
+
+<!-- tested: pass -->

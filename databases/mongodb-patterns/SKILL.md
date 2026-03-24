@@ -497,3 +497,5 @@ Templates and configurations in `assets/`:
 | [docker-compose-mongo.yml](assets/docker-compose-mongo.yml) | Docker Compose for 3-node replica set with auto-init and Mongo Express UI |
 | [mongosh-snippets.js](assets/mongosh-snippets.js) | Helper functions for mongosh: collection stats, schema shape, index usage, slow queries, replica lag, field distribution, large docs |
 | [atlas-terraform.tf](assets/atlas-terraform.tf) | Terraform config for Atlas: project, cluster, users, network access, search index, alerts |
+
+<!-- tested: pass -->

@@ -436,3 +436,5 @@ Production-ready templates in `assets/`:
 - **[electron-forge-config.ts](assets/electron-forge-config.ts)** — Complete Forge config with Vite plugin, auto-unpack-natives, Electron Fuses, makers for all platforms (DMG, Squirrel, deb, rpm), macOS notarization, and GitHub Releases publisher.
 - **[github-actions-electron.yml](assets/github-actions-electron.yml)** — CI/CD workflow building on macOS (x64+arm64), Windows, and Linux. Lint/test stage, code signing with secrets, artifact upload, and draft GitHub Release creation on version tags.
 - **[electron-builder-config.yml](assets/electron-builder-config.yml)** — Comprehensive electron-builder YAML config with ASAR settings, platform targets (dmg, nsis, portable, AppImage, deb, rpm), code signing, auto-update publishing, custom protocols, and extra resources.
+
+<!-- tested: pass -->
