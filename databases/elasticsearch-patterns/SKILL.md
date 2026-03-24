@@ -418,3 +418,31 @@ POST /_query
 - **Scroll for user-facing pagination**: holds server resources. Use PIT + search_after.
 - **Large blobs in `_source`**: ES is not a blob store. Store references only.
 - **Ignoring cluster health**: monitor `_cluster/health` and `_cat` APIs. Yellow = replicas unassigned.
+
+## Additional Resources
+
+### Reference Guides (`references/`)
+
+| File | Covers |
+|------|--------|
+| [advanced-patterns.md](references/advanced-patterns.md) | ILM policies, data streams, CCS/CCR, snapshot/restore, searchable snapshots, runtime fields, field aliases, ingest pipelines (grok/dissect/enrich), transforms, rollups, async search, PIT API, ES\|QL deep dive, vector search (HNSW tuning, quantization), ELSER semantic search, relevance tuning (function_score, rescoring, LTR) |
+| [troubleshooting.md](references/troubleshooting.md) | Cluster yellow/red diagnosis, unassigned shards, allocation failures, disk watermarks, mapping explosion, field limits, circuit breaker errors, slow log analysis, indexing bottlenecks, GC pressure, node disconnections, split brain, upgrade issues, reindex failures, analyzer debugging |
+| [operations-guide.md](references/operations-guide.md) | Cluster sizing (nodes/shards/heap), capacity planning, rolling upgrades, index template versioning, alias-based zero-downtime reindexing, backup strategies (SLM), monitoring (cluster/node/index stats, cat APIs), Watcher/Kibana alerting, security hardening, audit logging, hot-warm-cold-frozen architecture |
+
+### Scripts (`scripts/`)
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [es-health-check.sh](scripts/es-health-check.sh) | Cluster diagnostics: health, nodes, shards, disk, thread pools | `./scripts/es-health-check.sh [ES_URL]` |
+| [index-management.sh](scripts/index-management.sh) | Create/delete/reindex indices, alias swaps | `./scripts/index-management.sh create myindex --shards 3` |
+| [es-local.sh](scripts/es-local.sh) | Local ES 8.x + Kibana via Docker, with sample data | `./scripts/es-local.sh start && ./scripts/es-local.sh seed` |
+
+### Templates (`assets/`)
+
+| File | Description |
+|------|-------------|
+| [docker-compose.yml](assets/docker-compose.yml) | ES 8.x + Kibana dev environment (optional Logstash) |
+| [index-template.json](assets/index-template.json) | Production index template with mappings, settings, ILM, analyzers |
+| [ingest-pipeline.json](assets/ingest-pipeline.json) | Log processing pipeline: grok, dissect, date, GeoIP, user-agent |
+| [search-template.json](assets/search-template.json) | Parameterized search with highlighting, aggregations, facets |
+| [ilm-policy.json](assets/ilm-policy.json) | Hot→warm→cold→frozen→delete ILM policy |

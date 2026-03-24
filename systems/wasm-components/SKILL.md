@@ -308,6 +308,7 @@ self.onmessage = (e) => {
 ```
 
 Use `SharedArrayBuffer` + `Atomics` for shared WASM memory between workers (requires COOP/COEP headers).
+
 ## Server-Side WASM Runtimes
 
 | Runtime    | Language | Key strengths                              | WASI P2 | Component Model |
@@ -495,3 +496,5 @@ Test HTTP handler components: `wasmtime serve -S cli component.wasm &` then `cur
 | C/C++        | emcc              | (default)                  | Browser module  |
 | C/C++        | clang (WASI SDK)  | `--target=wasm32-wasi`     | WASI P1 module  |
 | AssemblyScript| asc              | (default)                  | Browser module  |
+
+## Additional Resources

@@ -1,0 +1,93 @@
+# Production fly.toml — Fly.io Application Configuration
+#
+# Copy and customize for your application.
+# Docs: https://fly.io/docs/reference/configuration/
+
+app = "my-app"
+primary_region = "iad"
+
+# --- Build ---
+[build]
+  dockerfile = "Dockerfile"
+  # image = "ghcr.io/org/my-app:latest"    # Use pre-built image instead
+  # [build.args]
+  #   NODE_ENV = "production"
+
+# --- Deploy Strategy ---
+[deploy]
+  strategy = "canary"                       # rolling | immediate | canary | bluegreen
+  release_command = "bin/migrate"            # Runs once before deploy (migrations)
+  wait_timeout = "5m"
+
+# --- HTTP Service ---
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"               # "stop" | "suspend" | false
+  auto_start_machines = true
+  min_machines_running = 1                  # 0 for scale-to-zero
+  processes = ["web"]                       # Only "web" process group
+
+  [http_service.concurrency]
+    type = "requests"                       # "requests" | "connections"
+    soft_limit = 200
+    hard_limit = 250
+
+  # --- Health Checks (HTTP) ---
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "15s"
+    method = "GET"
+    timeout = "5s"
+    path = "/health"
+
+# --- Process Groups ---
+[processes]
+  web = "node dist/server.js"
+  worker = "node dist/worker.js"
+
+# --- Machine-Level Checks ---
+[checks]
+  [checks.worker_health]
+    type = "http"
+    port = 9091
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+    processes = ["worker"]
+
+# --- Persistent Storage ---
+[mounts]
+  source = "app_data"                       # Volume name
+  destination = "/data"                     # Mount path inside container
+
+# --- Environment Variables (non-secret) ---
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+  PRIMARY_REGION = "iad"
+  LOG_LEVEL = "info"
+  # Secrets: use `fly secrets set KEY=value` instead
+
+# --- Prometheus Metrics ---
+[metrics]
+  port = 9091
+  path = "/metrics"
+
+# --- Static Files (served by Fly Proxy directly) ---
+[[statics]]
+  guest_path = "/app/public"
+  url_prefix = "/static"
+
+# --- VM Configuration ---
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+  processes = ["web"]
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "1024mb"
+  processes = ["worker"]

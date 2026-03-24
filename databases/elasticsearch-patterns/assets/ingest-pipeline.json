@@ -1,0 +1,167 @@
+{
+  "_comment": "Sample ingest pipeline — apply with PUT _ingest/pipeline/log_processing",
+  "description": "Process application logs: parse structured fields, extract timestamps, enrich with GeoIP, set routing",
+  "version": 1,
+  "processors": [
+    {
+      "set": {
+        "description": "Set ingest timestamp",
+        "field": "_ingest.timestamp",
+        "value": "{{{_ingest.timestamp}}}"
+      }
+    },
+    {
+      "grok": {
+        "description": "Parse log line into structured fields",
+        "field": "message",
+        "patterns": [
+          "%{TIMESTAMP_ISO8601:log_timestamp} %{LOGLEVEL:log.level} \\[%{DATA:thread}\\] %{JAVACLASS:logger} - %{GREEDYDATA:log_message}",
+          "%{COMBINEDAPACHELOG}",
+          "%{SYSLOGLINE}"
+        ],
+        "ignore_failure": true,
+        "tag": "grok_parse"
+      }
+    },
+    {
+      "dissect": {
+        "description": "Fallback: parse simple key=value logs",
+        "if": "ctx.log_message == null && ctx.message != null && ctx.message.contains('=')",
+        "field": "message",
+        "pattern": "%{ts} %{+ts} %{level} %{msg}",
+        "append_separator": " ",
+        "ignore_failure": true,
+        "tag": "dissect_parse"
+      }
+    },
+    {
+      "date": {
+        "description": "Parse timestamp to @timestamp",
+        "if": "ctx.log_timestamp != null",
+        "field": "log_timestamp",
+        "formats": [
+          "ISO8601",
+          "yyyy-MM-dd HH:mm:ss,SSS",
+          "yyyy-MM-dd HH:mm:ss.SSS",
+          "dd/MMM/yyyy:HH:mm:ss Z",
+          "epoch_millis"
+        ],
+        "target_field": "@timestamp",
+        "timezone": "UTC",
+        "ignore_failure": true
+      }
+    },
+    {
+      "set": {
+        "description": "Default @timestamp to ingest time",
+        "if": "ctx['@timestamp'] == null",
+        "field": "@timestamp",
+        "value": "{{{_ingest.timestamp}}}"
+      }
+    },
+    {
+      "rename": {
+        "description": "Normalize log level field",
+        "if": "ctx.log?.level == null && ctx.level != null",
+        "field": "level",
+        "target_field": "log.level",
+        "ignore_failure": true
+      }
+    },
+    {
+      "lowercase": {
+        "description": "Normalize log level to lowercase",
+        "if": "ctx.log?.level != null",
+        "field": "log.level",
+        "ignore_failure": true
+      }
+    },
+    {
+      "convert": {
+        "description": "Convert HTTP status to integer",
+        "if": "ctx.response != null",
+        "field": "response",
+        "target_field": "http.status_code",
+        "type": "integer",
+        "ignore_failure": true
+      }
+    },
+    {
+      "convert": {
+        "description": "Convert bytes to long",
+        "if": "ctx.bytes != null",
+        "field": "bytes",
+        "target_field": "http.response.bytes",
+        "type": "long",
+        "ignore_failure": true
+      }
+    },
+    {
+      "user_agent": {
+        "description": "Parse user agent string",
+        "if": "ctx.agent != null",
+        "field": "agent",
+        "target_field": "user_agent",
+        "ignore_failure": true
+      }
+    },
+    {
+      "geoip": {
+        "description": "Enrich client IP with geolocation",
+        "if": "ctx.clientip != null",
+        "field": "clientip",
+        "target_field": "source.geo",
+        "ignore_missing": true,
+        "ignore_failure": true
+      }
+    },
+    {
+      "set": {
+        "description": "Tag error-level logs",
+        "if": "ctx.log?.level != null && (ctx.log.level == 'error' || ctx.log.level == 'fatal' || ctx.log.level == 'critical')",
+        "field": "event.severity",
+        "value": "high"
+      }
+    },
+    {
+      "script": {
+        "description": "Calculate message length for analytics",
+        "if": "ctx.message != null",
+        "source": "ctx.message_length = ctx.message.length();"
+      }
+    },
+    {
+      "remove": {
+        "description": "Clean up temporary parsing fields",
+        "field": ["log_timestamp", "level", "agent", "response", "bytes", "timestamp"],
+        "ignore_missing": true
+      }
+    }
+  ],
+  "on_failure": [
+    {
+      "set": {
+        "field": "event.kind",
+        "value": "pipeline_error"
+      }
+    },
+    {
+      "set": {
+        "field": "error.message",
+        "value": "Pipeline processing failed: {{{_ingest.on_failure_message}}}"
+      }
+    },
+    {
+      "set": {
+        "field": "error.processor_type",
+        "value": "{{{_ingest.on_failure_processor_type}}}"
+      }
+    },
+    {
+      "set": {
+        "field": "error.processor_tag",
+        "value": "{{{_ingest.on_failure_processor_tag}}}"
+      }
+    }
+  ]
+}

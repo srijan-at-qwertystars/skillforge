@@ -1,0 +1,76 @@
+# LiteFS configuration for distributed SQLite on Fly.io
+#
+# Place this file at the root of your project as litefs.yml.
+# LiteFS runs as the entrypoint and proxies your application.
+#
+# Architecture:
+#   - Primary node (in PRIMARY_REGION) handles all writes.
+#   - Replica nodes get async replication (typically <100ms lag).
+#   - LiteFS proxy transparently forwards write requests to primary via fly-replay.
+#
+# Setup:
+#   1. Add to Dockerfile:
+#      COPY --from=flyio/litefs:0.5 /usr/local/bin/litefs /usr/local/bin/litefs
+#   2. Set ENTRYPOINT ["litefs", "mount"]
+#   3. Set [mounts] in fly.toml for /data
+#   4. Set PRIMARY_REGION in fly.toml [env]
+#
+# Docs: https://fly.io/docs/litefs/
+
+# FUSE mount point — your app reads/writes SQLite here
+fuse:
+  dir: "/litefs"
+
+# Internal data directory — LiteFS stores replication data here
+# Must be on a persistent Fly Volume
+data:
+  dir: "/data/litefs"
+
+# Proxy configuration — LiteFS sits between Fly Proxy and your app
+proxy:
+  # LiteFS listens on this address (set as internal_port in fly.toml)
+  addr: ":8080"
+  # Your app listens on this address
+  target: "localhost:8081"
+  # Primary SQLite database file to monitor for writes
+  db: "app.db"
+  # Passthrough: requests to these paths skip write detection
+  passthrough:
+    - "*.css"
+    - "*.js"
+    - "*.png"
+    - "*.jpg"
+    - "*.svg"
+    - "*.ico"
+    - "*.woff"
+    - "*.woff2"
+    - "/health"
+    - "/metrics"
+
+# Lease configuration — determines which node is primary
+lease:
+  type: "consul"
+  # Advertise this node's address for replication
+  advertise-url: "http://${HOSTNAME}.vm.${FLY_APP_NAME}.internal:20202"
+  # Only nodes in PRIMARY_REGION can become primary
+  candidate: ${FLY_REGION == PRIMARY_REGION}
+  # Auto-promote candidate when no primary exists
+  promote: true
+  # Consul connection (Fly provides built-in Consul)
+  consul:
+    url: "${FLY_CONSUL_URL}"
+    key: "litefs/${FLY_APP_NAME}"
+
+# Exec — commands to run after LiteFS mount is ready
+# Use if-candidate to run different commands on primary vs replica
+exec:
+  - cmd: "node server.js"
+    if-candidate: true
+  - cmd: "node server.js --readonly"
+    if-candidate: false
+
+# Tracing (optional) — useful for debugging replication
+# tracing:
+#   path: "/data/litefs/trace"
+#   max-count: 10
+#   max-size: "64mb"

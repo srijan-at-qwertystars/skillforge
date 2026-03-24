@@ -1,0 +1,43 @@
+/// WIT Interface Template — Hello World Component
+///
+/// This template defines a minimal Component Model interface.
+/// Edit the package name, interface, and world to match your project.
+///
+/// Build with: cargo component build --release
+/// Inspect with: wasm-tools component wit output.wasm
+
+package example:hello-world@0.1.0;
+
+/// The greeting interface — exported by the component
+interface greetings {
+    /// A greeting record with metadata
+    record greeting {
+        message: string,
+        timestamp: u64,
+    }
+
+    /// Generate a greeting for the given name
+    greet: func(name: string) -> greeting;
+
+    /// Generate a greeting with a custom template
+    /// The template should contain "{name}" as a placeholder
+    greet-custom: func(name: string, template: string) -> result<greeting, string>;
+}
+
+/// Configuration interface — imported from the host
+interface config {
+    /// Get a configuration value by key
+    get: func(key: string) -> option<string>;
+
+    /// Get all configuration keys
+    list-keys: func() -> list<string>;
+}
+
+/// The world defines the complete contract for this component
+world hello {
+    /// Host provides configuration
+    import config;
+
+    /// Component provides greeting functionality
+    export greetings;
+}

@@ -432,51 +432,57 @@ Expose Prometheus metrics in `fly.toml` via `[metrics]` section (`port`, `path`)
 
 ## Examples
 
-### Deploy a new Node.js app:
+### Deploy a Node.js app:
 ```
-User: Deploy my Node.js app to Fly.io
-
-Steps:
 1. fly launch --name my-node-app --region iad --no-deploy
 2. Edit fly.toml: set internal_port to match your app
-3. fly deploy
-4. fly status  # Verify running
-5. fly logs    # Check for errors
+3. fly deploy && fly status && fly logs
 ```
 
-### Add Postgres and deploy Rails app:
+### Rails app with Postgres:
 ```
-User: Set up Rails app with Postgres on Fly.io
-
-Steps:
 1. fly launch --name my-rails-app --region iad
 2. fly postgres create --name my-rails-db --region iad
 3. fly postgres attach my-rails-db -a my-rails-app
-4. Set fly.toml:
-   [deploy]
-     release_command = "bin/rails db:migrate"
+4. Add to fly.toml: [deploy] release_command = "bin/rails db:migrate"
 5. fly deploy
-6. fly logs  # Verify migrations ran
 ```
 
-### Scale app across 3 regions:
+### Scale across 3 regions:
 ```
-User: Scale my app to US, Europe, and Asia
-
-Steps:
-1. fly scale count 2 --region iad    # US East
-2. fly scale count 2 --region cdg    # Paris
-3. fly scale count 2 --region nrt    # Tokyo
-4. fly status  # Confirm 6 Machines across 3 regions
+fly scale count 2 --region iad && fly scale count 2 --region cdg && fly scale count 2 --region nrt
 ```
 
 ### Set up CI/CD:
 ```
-User: Auto-deploy on push to main
-
-Steps:
-1. fly tokens create deploy -x 999999h
-2. Add FLY_API_TOKEN to GitHub Secrets
-3. Create .github/workflows/fly-deploy.yml (see CI/CD section above)
-4. Push to main — deployment triggers automatically
+1. fly tokens create deploy -x 999999h → add as FLY_API_TOKEN in GitHub Secrets
+2. Copy assets/github-actions-deploy.yml to .github/workflows/
 ```
+
+## Additional Resources
+
+### Reference Guides (`references/`)
+
+| File | Topics |
+|------|--------|
+| `references/advanced-patterns.md` | Machines API deep dive (create, update, exec, wait, cordon), Fly Launch vs Machines comparison, GPU machines, Tigris object storage, LiteFS distributed SQLite, multi-region Postgres with read replicas, extensions (Sentry, Upstash), process groups, statics, Fly Proxy headers, Prometheus custom metrics, Terraform provider |
+| `references/troubleshooting.md` | Deployment failures, health check timeouts, machine not starting, volume attachment errors, DNS resolution in private networking, certificate provisioning delays, cross-region connection timeouts, OOM kills, disk space exhaustion, Postgres failover, slow cold starts, deploy rollback, WireGuard tunnel issues, billing surprises |
+| `references/multi-region-guide.md` | Anycast routing behavior, region selection strategies, read replicas with fly-replay, write forwarding patterns, regional routing strategies, data locality, edge caching, CDN integration, latency-based routing, cross-region Postgres replication, LiteFS SQLite replication, cost considerations per region |
+
+### Executable Scripts (`scripts/`)
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/fly-init.sh` | Initialize Fly app: detect framework, generate fly.toml + Dockerfile + .dockerignore, configure health checks | `./scripts/fly-init.sh <app-name> [framework]` |
+| `scripts/fly-scale.sh` | Scale machines across regions: scale-up, scale-down, add-region, remove-region, status | `./scripts/fly-scale.sh <action> -a <app> -r <region> -c <count>` |
+| `scripts/fly-db-setup.sh` | Set up Postgres cluster with optional HA and read replicas | `./scripts/fly-db-setup.sh <db-name> <region> [replicas...] --attach <app>` |
+
+### Template Assets (`assets/`)
+
+| File | Description |
+|------|-------------|
+| `assets/fly.toml` | Production fly.toml with HTTP service, health checks, auto-stop, mounts, process groups, metrics, statics, canary deploy strategy |
+| `assets/Dockerfile` | Multi-stage Dockerfile with non-root user, health check, dumb-init signal handling, layer caching |
+| `assets/docker-compose.yml` | Local dev environment with Postgres + Redis mimicking Fly services and env vars |
+| `assets/github-actions-deploy.yml` | GitHub Actions workflow with staging (on push) and production (on release) deploy pipelines |
+| `assets/litefs.yml` | LiteFS config for distributed SQLite: FUSE mount, proxy, Consul lease, write forwarding |

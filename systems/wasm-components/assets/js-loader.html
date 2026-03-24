@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WASM Loader</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    #status { padding: 0.5rem; border-radius: 4px; margin: 1rem 0; }
+    .loading { background: #fff3cd; color: #856404; }
+    .ready { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+    pre { background: #f5f5f5; padding: 1rem; border-radius: 4px; overflow-x: auto; }
+    button { padding: 0.5rem 1rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>WebAssembly Module Loader</h1>
+  <div id="status" class="loading">Loading WASM module...</div>
+  <div id="output"></div>
+
+  <script type="module">
+    /**
+     * WASM Loader — Browser template with streaming compilation and error handling.
+     *
+     * Usage:
+     *   1. Replace "module.wasm" with your WASM file path
+     *   2. Adjust importObject for your module's imports
+     *   3. Call exported functions via wasmExports
+     *
+     * Requirements:
+     *   - Serve with correct MIME type: application/wasm
+     *   - For threads: add COOP/COEP headers
+     */
+
+    const WASM_URL = "module.wasm";
+
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("output");
+
+    function setStatus(msg, type = "loading") {
+      statusEl.textContent = msg;
+      statusEl.className = type;
+    }
+
+    function log(msg) {
+      const pre = document.createElement("pre");
+      pre.textContent = typeof msg === "object" ? JSON.stringify(msg, null, 2) : String(msg);
+      outputEl.appendChild(pre);
+    }
+
+    // Import object — customize for your module's imports
+    const memory = new WebAssembly.Memory({ initial: 1, maximum: 256 }); // 64KiB–16MiB
+
+    const importObject = {
+      env: {
+        memory,
+        // Example: logging from WASM
+        console_log: (ptr, len) => {
+          const bytes = new Uint8Array(memory.buffer, ptr, len);
+          console.log("[wasm]", new TextDecoder().decode(bytes));
+        },
+        abort: () => { throw new Error("WASM abort called"); },
+      },
+      // Uncomment for WASI modules (use a WASI shim library for full support):
+      // wasi_snapshot_preview1: { fd_write: () => 0, proc_exit: () => {} },
+    };
+
+    async function loadWasm() {
+      // Feature detection
+      if (typeof WebAssembly === "undefined") {
+        throw new Error("WebAssembly is not supported in this browser");
+      }
+
+      const startTime = performance.now();
+
+      // Prefer streaming compilation (compiles while downloading)
+      let instance, module;
+
+      if (WebAssembly.instantiateStreaming) {
+        try {
+          const result = await WebAssembly.instantiateStreaming(
+            fetch(WASM_URL),
+            importObject
+          );
+          instance = result.instance;
+          module = result.module;
+        } catch (e) {
+          // Fall back if MIME type is wrong or streaming fails
+          if (e instanceof TypeError) {
+            console.warn("Streaming compilation failed (check MIME type), falling back to ArrayBuffer");
+            const response = await fetch(WASM_URL);
+            if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            const bytes = await response.arrayBuffer();
+            const result = await WebAssembly.instantiate(bytes, importObject);
+            instance = result.instance;
+            module = result.module;
+          } else {
+            throw e;
+          }
+        }
+      } else {
+        // Old browser path
+        const response = await fetch(WASM_URL);
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const bytes = await response.arrayBuffer();
+
+        // Validate before instantiating
+        if (!WebAssembly.validate(bytes)) {
+          throw new Error("Invalid WASM binary");
+        }
+
+        const result = await WebAssembly.instantiate(bytes, importObject);
+        instance = result.instance;
+        module = result.module;
+      }
+
+      const loadTime = (performance.now() - startTime).toFixed(1);
+
+      // Log module info
+      const imports = WebAssembly.Module.imports(module);
+      const exports = WebAssembly.Module.exports(module);
+      console.log(`WASM loaded in ${loadTime}ms`);
+      console.log("Imports:", imports);
+      console.log("Exports:", exports);
+
+      return { instance, module, loadTime, imports, exports };
+    }
+
+    // --- Main ---
+    try {
+      const { instance, loadTime, exports: moduleExports } = await loadWasm();
+
+      setStatus(`✅ WASM loaded in ${loadTime}ms`, "ready");
+
+      // List exports
+      log(`Module exports: ${moduleExports.map(e => `${e.name} (${e.kind})`).join(", ")}`);
+
+      // Make exports globally accessible for console testing
+      window.wasmExports = instance.exports;
+      window.wasmMemory = memory;
+
+      // Example: call an exported function
+      if (instance.exports.add) {
+        const result = instance.exports.add(2, 3);
+        log(`add(2, 3) = ${result}`);
+      }
+
+      log("Exports available as window.wasmExports in the console.");
+    } catch (err) {
+      setStatus(`❌ ${err.message}`, "error");
+      console.error("WASM load error:", err);
+
+      if (err.message.includes("MIME")) {
+        log("Hint: Ensure your server sends .wasm files with Content-Type: application/wasm");
+      }
+      if (err instanceof WebAssembly.CompileError) {
+        log("Hint: The WASM binary may be corrupted or built for an unsupported feature set");
+      }
+      if (err instanceof WebAssembly.LinkError) {
+        log("Hint: Check that all imports are provided in the importObject");
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+# WASM Development Environment
+#
+# Provides Wasmtime, wasm-tools, and wasm-opt (binaryen) for building,
+# inspecting, and optimizing WebAssembly modules.
+#
+# Usage:
+#   docker compose run --rm wasm-dev bash
+#   docker compose run --rm wasm-dev wasmtime run /workspace/app.wasm
+#   docker compose run --rm wasm-dev wasm-tools validate /workspace/component.wasm
+#
+# Mount your project at /workspace by editing the volumes below.
+
+services:
+  wasm-dev:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM rust:1.82-bookworm
+
+        # System dependencies
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl \
+            binaryen \
+            wabt \
+            xxd \
+            jq \
+            && rm -rf /var/lib/apt/lists/*
+
+        # Wasmtime
+        RUN curl https://wasmtime.dev/install.sh -sSf | bash
+        ENV PATH="/root/.wasmtime/bin:${PATH}"
+
+        # WASM tools (Rust)
+        RUN cargo install wasm-tools cargo-component wasm-pack
+
+        # WASM targets
+        RUN rustup target add wasm32-unknown-unknown wasm32-wasip1 wasm32-wasip2
+
+        WORKDIR /workspace
+    volumes:
+      - .:/workspace
+      # Cache cargo registry between runs
+      - wasm-cargo-registry:/usr/local/cargo/registry
+      - wasm-cargo-git:/usr/local/cargo/git
+    working_dir: /workspace
+
+  # Optional: Spin development server
+  spin-dev:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM rust:1.82-bookworm
+
+        RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+            rm -rf /var/lib/apt/lists/*
+
+        # Install Spin
+        RUN curl -fsSL https://developer.fermyon.com/downloads/install.sh | bash && \
+            mv spin /usr/local/bin/
+
+        # Rust WASM targets
+        RUN rustup target add wasm32-wasip1
+
+        WORKDIR /workspace
+    volumes:
+      - .:/workspace
+    ports:
+      - "3000:3000"
+    command: ["spin", "up", "--listen", "0.0.0.0:3000"]
+    profiles:
+      - spin  # Only start with: docker compose --profile spin up
+
+volumes:
+  wasm-cargo-registry:
+  wasm-cargo-git:

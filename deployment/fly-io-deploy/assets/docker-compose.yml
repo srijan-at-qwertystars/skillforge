@@ -1,0 +1,80 @@
+# docker-compose.yml — Local development environment mimicking Fly.io services
+#
+# Usage:
+#   docker compose up -d        # Start all services
+#   docker compose logs -f app  # Follow app logs
+#   docker compose down -v      # Stop and remove volumes
+#
+# Services:
+#   - app:      Your application (builds from local Dockerfile)
+#   - postgres: PostgreSQL database (mimics Fly Postgres)
+#   - redis:    Redis cache (mimics Upstash Redis on Fly)
+#
+# The app service receives the same environment variables that
+# Fly.io would inject, so your code works identically in both environments.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      HOST: "0.0.0.0"
+      NODE_ENV: "development"
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/app_dev"
+      REDIS_URL: "redis://redis:6379"
+      # Simulate Fly.io environment variables
+      FLY_APP_NAME: "my-app"
+      FLY_REGION: "local"
+      FLY_MACHINE_ID: "local-dev"
+      PRIMARY_REGION: "local"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - app_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  app_data:
+  postgres_data:
+  redis_data:

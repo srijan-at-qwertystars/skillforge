@@ -152,6 +152,6 @@
 | python | fastapi-patterns | FastAPI web framework — async APIs, dependency injection, auth, WebSockets, deployment | tested |
 | messaging | kafka-streaming | Apache Kafka streaming — producers, consumers, Kafka Streams, Connect, Schema Registry | tested |
 | devops | ansible-automation | Ansible automation — playbooks, roles, inventory, Vault, Molecule testing, AWX | tested |
-| databases | elasticsearch-patterns | Elasticsearch 8.x — Query DSL, mappings, analyzers, aggregations, vector search, ELK stack | created |
-| deployment | fly-io-deploy | Fly.io deployment — Machines, flyctl, multi-region, volumes, databases, autoscaling | created |
-| systems | wasm-components | WebAssembly — WASI, Component Model, WIT, Rust/Go/C++ toolchains, server-side runtimes | created |
+| databases | elasticsearch-patterns | Elasticsearch 8.x — Query DSL, mappings, analyzers, aggregations, vector search, ELK stack | enriched |
+| deployment | fly-io-deploy | Fly.io deployment — Machines, flyctl, multi-region, volumes, databases, autoscaling | enriched |
+| systems | wasm-components | WebAssembly — WASI, Component Model, WIT, Rust/Go/C++ toolchains, server-side runtimes | enriched |

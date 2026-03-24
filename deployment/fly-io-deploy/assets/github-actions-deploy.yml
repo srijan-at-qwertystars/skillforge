@@ -1,0 +1,102 @@
+# GitHub Actions workflow for Fly.io deployment
+#
+# Features:
+#   - Staging deploy on push to main
+#   - Production deploy on release or manual trigger
+#   - Concurrency control (one deploy at a time per environment)
+#   - Health check verification after deploy
+#
+# Setup:
+#   1. Generate deploy token: fly tokens create deploy -x 999999h
+#   2. Add secrets in GitHub repo Settings > Secrets:
+#      - FLY_API_TOKEN (required)
+#   3. Create separate fly configs:
+#      - fly.staging.toml (staging app)
+#      - fly.toml (production app)
+
+name: Fly.io Deploy
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deploy environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  # ---- Staging Deploy (on push to main) ----
+  staging:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to staging
+        run: flyctl deploy --config fly.staging.toml --remote-only --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Verify staging deployment
+        run: |
+          sleep 10
+          flyctl status --config fly.staging.toml
+          # Optional: hit health endpoint
+          STAGING_URL=$(flyctl info --config fly.staging.toml --json | jq -r '.Hostname')
+          if [ -n "$STAGING_URL" ] && [ "$STAGING_URL" != "null" ]; then
+            curl -sf "https://${STAGING_URL}/health" || echo "Warning: health check failed"
+          fi
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+  # ---- Production Deploy (on release or manual) ----
+  production:
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false          # Never cancel prod deploys
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy to production
+        run: flyctl deploy --remote-only --strategy canary --wait-timeout 300
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Verify production deployment
+        run: |
+          sleep 10
+          flyctl status
+          flyctl checks list
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Production deployment failed! Check Fly.io dashboard."
+          flyctl releases -a $(grep '^app' fly.toml | sed 's/app = "\(.*\)"/\1/')
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

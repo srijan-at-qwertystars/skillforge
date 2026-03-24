@@ -1,0 +1,157 @@
+{
+  "_comment": "Production index template — apply with PUT _index_template/my_template",
+  "_meta": {
+    "description": "Production-ready index template with ILM, optimized settings, and strict mappings",
+    "version": 1,
+    "updated": "2024-01-15"
+  },
+  "index_patterns": ["app-data-*"],
+  "priority": 200,
+  "composed_of": [],
+  "template": {
+    "settings": {
+      "number_of_shards": 3,
+      "number_of_replicas": 1,
+      "refresh_interval": "5s",
+      "codec": "best_compression",
+      "index.lifecycle.name": "app_data_policy",
+      "index.lifecycle.rollover_alias": "app-data",
+
+      "index.mapping.total_fields.limit": 500,
+      "index.mapping.depth.limit": 5,
+      "index.mapping.nested_objects.limit": 5000,
+
+      "index.merge.scheduler.max_thread_count": 1,
+      "index.translog.durability": "request",
+      "index.translog.flush_threshold_size": "512mb",
+
+      "index.search.slowlog.threshold.query.warn": "5s",
+      "index.search.slowlog.threshold.query.info": "2s",
+      "index.indexing.slowlog.threshold.index.warn": "10s",
+      "index.indexing.slowlog.threshold.index.info": "5s",
+
+      "analysis": {
+        "analyzer": {
+          "text_analyzer": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase", "asciifolding", "english_stemmer"]
+          },
+          "keyword_lowercase": {
+            "type": "custom",
+            "tokenizer": "keyword",
+            "filter": ["lowercase", "trim"]
+          },
+          "autocomplete_index": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase", "autocomplete_edge"]
+          },
+          "autocomplete_search": {
+            "type": "custom",
+            "tokenizer": "standard",
+            "filter": ["lowercase"]
+          }
+        },
+        "filter": {
+          "english_stemmer": {
+            "type": "stemmer",
+            "language": "english"
+          },
+          "autocomplete_edge": {
+            "type": "edge_ngram",
+            "min_gram": 2,
+            "max_gram": 15
+          }
+        }
+      }
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "id": {
+          "type": "keyword"
+        },
+        "title": {
+          "type": "text",
+          "analyzer": "text_analyzer",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 256
+            },
+            "autocomplete": {
+              "type": "text",
+              "analyzer": "autocomplete_index",
+              "search_analyzer": "autocomplete_search"
+            }
+          }
+        },
+        "description": {
+          "type": "text",
+          "analyzer": "text_analyzer"
+        },
+        "category": {
+          "type": "keyword"
+        },
+        "tags": {
+          "type": "keyword"
+        },
+        "status": {
+          "type": "keyword"
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "score": {
+          "type": "scaled_float",
+          "scaling_factor": 100
+        },
+        "is_active": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "updated_at": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "owner": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "keyword" },
+            "name": {
+              "type": "text",
+              "fields": { "keyword": { "type": "keyword" } }
+            },
+            "email": { "type": "keyword" }
+          }
+        },
+        "metadata": {
+          "type": "flattened"
+        },
+        "location": {
+          "type": "geo_point"
+        },
+        "embedding": {
+          "type": "dense_vector",
+          "dims": 768,
+          "index": true,
+          "similarity": "cosine",
+          "index_options": {
+            "type": "int8_hnsw",
+            "m": 16,
+            "ef_construction": 100
+          }
+        }
+      }
+    },
+    "aliases": {
+      "app-data": {
+        "is_write_index": true
+      }
+    }
+  }
+}

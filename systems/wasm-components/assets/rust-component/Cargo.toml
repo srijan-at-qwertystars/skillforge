@@ -1,0 +1,36 @@
+[package]
+name = "my-wasm-component"
+version = "0.1.0"
+edition = "2021"
+description = "A WebAssembly component built with cargo-component"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Component Model bindings (auto-generated from WIT)
+wit-bindgen-rt = "0.39.0"
+
+# Common WASM-friendly dependencies (uncomment as needed):
+# serde = { version = "1", default-features = false, features = ["derive"] }
+# serde_json = { version = "1", default-features = false, features = ["alloc"] }
+# anyhow = { version = "1", default-features = false }
+# bytes = { version = "1", default-features = false }
+
+[profile.release]
+opt-level = "s"        # optimize for size ("z" for minimum size)
+lto = true             # link-time optimization — eliminates dead code
+strip = true           # strip debug symbols
+codegen-units = 1      # single codegen unit for better optimization
+panic = "abort"        # no unwinding — saves ~10-30KB
+
+[package.metadata.component]
+package = "example:my-component"
+
+[package.metadata.component.dependencies]
+# Add WIT package dependencies here if pulling from a registry
+# "wasi:http" = "0.2.0"
+
+[package.metadata.component.target]
+# Target world from your WIT files
+# world = "example:my-component/my-world"

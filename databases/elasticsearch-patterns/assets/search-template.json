@@ -1,0 +1,146 @@
+{
+  "_comment": "Parameterized search template — register with PUT _scripts/product_search",
+  "script": {
+    "lang": "mustache",
+    "source": {
+      "size": "{{size}}{{^size}}10{{/size}}",
+      "from": "{{from}}{{^from}}0{{/from}}",
+      "_source": ["title", "description", "category", "tags", "score", "created_at", "owner.name"],
+      "query": {
+        "bool": {
+          "must": [
+            {
+              "multi_match": {
+                "query": "{{query_text}}",
+                "fields": ["title^3", "title.autocomplete^1", "description^1", "tags^2"],
+                "type": "best_fields",
+                "fuzziness": "{{fuzziness}}{{^fuzziness}}AUTO{{/fuzziness}}",
+                "minimum_should_match": "{{minimum_should_match}}{{^minimum_should_match}}75%{{/minimum_should_match}}"
+              }
+            }
+          ],
+          "filter": [
+            "{{#category}}",
+            { "term": { "category": "{{category}}" } },
+            "{{/category}}",
+            "{{#status}}",
+            { "term": { "status": "{{status}}" } },
+            "{{/status}}",
+            "{{#date_from}}",
+            { "range": { "created_at": { "gte": "{{date_from}}" } } },
+            "{{/date_from}}",
+            "{{#date_to}}",
+            { "range": { "created_at": { "lte": "{{date_to}}" } } },
+            "{{/date_to}}",
+            "{{#is_active}}",
+            { "term": { "is_active": true } },
+            "{{/is_active}}"
+          ],
+          "should": [
+            "{{#boost_recent}}",
+            {
+              "range": {
+                "created_at": {
+                  "gte": "now-30d",
+                  "boost": 1.5
+                }
+              }
+            },
+            "{{/boost_recent}}"
+          ]
+        }
+      },
+      "highlight": {
+        "pre_tags": ["<em>"],
+        "post_tags": ["</em>"],
+        "fields": {
+          "title": {
+            "number_of_fragments": 1,
+            "fragment_size": 200
+          },
+          "description": {
+            "number_of_fragments": 2,
+            "fragment_size": 150
+          }
+        }
+      },
+      "aggs": {
+        "{{#include_aggs}}categories{{/include_aggs}}": {
+          "terms": {
+            "field": "category",
+            "size": 20
+          }
+        },
+        "{{#include_aggs}}tags{{/include_aggs}}": {
+          "terms": {
+            "field": "tags",
+            "size": 30
+          }
+        },
+        "{{#include_aggs}}score_stats{{/include_aggs}}": {
+          "stats": {
+            "field": "score"
+          }
+        },
+        "{{#include_aggs}}over_time{{/include_aggs}}": {
+          "date_histogram": {
+            "field": "created_at",
+            "calendar_interval": "{{date_interval}}{{^date_interval}}month{{/date_interval}}"
+          }
+        }
+      },
+      "sort": [
+        "{{#sort_field}}",
+        { "{{sort_field}}": { "order": "{{sort_order}}{{^sort_order}}desc{{/sort_order}}" } },
+        "{{/sort_field}}",
+        "_score"
+      ]
+    },
+    "params": {
+      "query_text": "",
+      "size": 10,
+      "from": 0,
+      "fuzziness": "AUTO",
+      "minimum_should_match": "75%"
+    }
+  },
+  "_usage_examples": {
+    "simple_search": {
+      "method": "POST /app-data/_search/template",
+      "body": {
+        "id": "product_search",
+        "params": {
+          "query_text": "wireless headphones",
+          "size": 20
+        }
+      }
+    },
+    "filtered_search": {
+      "method": "POST /app-data/_search/template",
+      "body": {
+        "id": "product_search",
+        "params": {
+          "query_text": "laptop",
+          "category": "electronics",
+          "date_from": "2024-01-01",
+          "is_active": true,
+          "include_aggs": true,
+          "boost_recent": true,
+          "size": 10
+        }
+      }
+    },
+    "sorted_search": {
+      "method": "POST /app-data/_search/template",
+      "body": {
+        "id": "product_search",
+        "params": {
+          "query_text": "gaming",
+          "sort_field": "score",
+          "sort_order": "desc",
+          "size": 50
+        }
+      }
+    }
+  }
+}
