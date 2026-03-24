@@ -469,3 +469,5 @@ Templates, configs, and boilerplate in `assets/`:
 - **[node-producer-consumer.js](assets/node-producer-consumer.js)** — Node.js (amqplib) producer/consumer with confirm channels, channel pooling, exponential backoff reconnection, and graceful shutdown.
 
 - **[definitions.json](assets/definitions.json)** — RabbitMQ definitions export with vhosts (/production, /staging, /test), per-service users with granular permissions, topic permissions, exchanges (orders, payments, notifications, DLX, unrouted), quorum queues with DLX and retry chains, bindings, and policies (TTL, delivery limits).
+
+<!-- tested: pass -->

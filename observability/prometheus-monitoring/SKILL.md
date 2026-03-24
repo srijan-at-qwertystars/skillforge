@@ -494,3 +494,5 @@ Configure Prometheus as data source: URL `http://prometheus:9090`, access Server
 - **`assets/recording-rules.yml`** — CPU, memory, disk, network, HTTP rates/latency, SLO burn rate windows.
 - **`assets/alerting-rules.yml`** — Multi-window burn-rate SLO alerts, node health, disk prediction, self-monitoring.
 - **`assets/docker-compose.yml`** — Full monitoring stack with health checks and persistent volumes.
+
+<!-- tested: needs-fix -->

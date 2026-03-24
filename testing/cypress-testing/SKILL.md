@@ -383,7 +383,7 @@ Key `cypress.config.ts` options:
 | `requestTimeout` | 5000 | Timeout for `cy.wait()` on routes |
 | `responseTimeout` | 30000 | Timeout for server responses |
 | `retries` | `{runMode:0,openMode:0}` | Auto-retry failed tests |
-| `video` | true | Record video of runs |
+| `video` | false | Record video of runs (was `true` before Cypress 13) |
 | `screenshotOnRunFailure` | true | Capture screenshot on failure |
 | `experimentalMemoryManagement` | false | Reduce OOM in large suites |
 | `testIsolation` | true | Clear state between tests |
@@ -442,3 +442,5 @@ Reusable templates in `assets/`:
 | [github-actions-cypress.yml](assets/github-actions-cypress.yml) | GitHub Actions workflow with parallel E2E (3 containers), component tests, caching, artifact upload, status check |
 | [e2e-spec-template.cy.ts](assets/e2e-spec-template.cy.ts) | E2E spec template: auth setup, API stubbing, happy path, error handling, edge cases, retry patterns |
 | [component-spec-template.cy.tsx](assets/component-spec-template.cy.tsx) | React component test template: rendering, callbacks, API interactions, a11y, responsive, visual snapshots |
+
+<!-- tested: pass -->
