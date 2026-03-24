@@ -497,3 +497,5 @@ npm pkg set scripts.commit="cz"
 
 # 7. Test
 echo "feat: initial setup" | npx commitlint
+
+<!-- tested: pass -->

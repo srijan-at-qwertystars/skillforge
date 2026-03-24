@@ -498,3 +498,4 @@ nats bench test.subject --pub 5 --sub 5 --msgs 1000000   # Benchmark
 | [kubernetes-helm-values.yaml](assets/kubernetes-helm-values.yaml) | Helm values: JetStream, clustering, TLS, monitoring, PDB, topology spread |
 | [go-client-example.go](assets/go-client-example.go) | Go client example |
 | [python-client-example.py](assets/python-client-example.py) | Python client example |
+<!-- tested: pass -->

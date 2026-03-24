@@ -472,3 +472,4 @@ build {
 packer init . && packer validate . && packer build .
 # → ami-0abc123def456 written to manifest.json
 ```
+<!-- tested: pass -->
