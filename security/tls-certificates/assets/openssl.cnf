@@ -1,0 +1,210 @@
+# =============================================================================
+# OpenSSL Configuration Template
+# =============================================================================
+#
+# Usage:
+#   openssl req -new -config openssl.cnf -keyout key.pem -out request.csr
+#   openssl ca -config openssl.cnf -in request.csr -out cert.pem
+#   openssl req -x509 -config openssl.cnf -newkey rsa:4096 -out ca.crt
+#
+# Sections:
+#   [ca]                — CA operations (openssl ca)
+#   [req]               — CSR generation (openssl req)
+#   [server_cert]       — Server certificate extensions
+#   [client_cert]       — Client certificate extensions (mTLS)
+#   [v3_ca]             — Root CA extensions
+#   [v3_intermediate]   — Intermediate CA extensions
+#   [san]               — Subject Alternative Names
+# =============================================================================
+
+# --- Default CA section ---
+[ca]
+default_ca = CA_default
+
+[CA_default]
+# Directory structure (adjust paths as needed)
+dir               = /etc/pki/CA
+certs             = $dir/certs
+crl_dir           = $dir/crl
+new_certs_dir     = $dir/newcerts
+database          = $dir/index.txt
+serial            = $dir/serial
+RANDFILE          = $dir/.rand
+
+# CA certificate and key
+certificate       = $dir/ca.crt
+private_key       = $dir/private/ca.key
+
+# CRL settings
+crlnumber         = $dir/crlnumber
+crl               = $dir/crl/ca.crl
+crl_extensions    = crl_ext
+default_crl_days  = 30
+
+# Certificate defaults
+default_md        = sha256
+default_days      = 365
+preserve          = no
+policy            = policy_match
+unique_subject    = no
+
+# Copy extensions from CSR (needed for SANs)
+copy_extensions   = copy
+
+[policy_match]
+countryName             = match
+stateOrProvinceName     = optional
+organizationName        = match
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+[policy_anything]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = optional
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+# --- Request (CSR) section ---
+[req]
+default_bits        = 2048
+default_md          = sha256
+distinguished_name  = req_distinguished_name
+string_mask         = utf8only
+req_extensions      = v3_req
+x509_extensions     = v3_ca           # For self-signed (-x509)
+prompt              = yes
+
+[req_distinguished_name]
+countryName                     = Country Name (2 letter code)
+countryName_default             = US
+countryName_min                 = 2
+countryName_max                 = 2
+
+stateOrProvinceName             = State or Province Name
+stateOrProvinceName_default     = California
+
+localityName                    = Locality Name
+localityName_default            = San Francisco
+
+organizationName                = Organization Name
+organizationName_default        = My Organization
+
+organizationalUnitName          = Organizational Unit Name
+organizationalUnitName_default  = IT
+
+commonName                      = Common Name
+commonName_max                  = 64
+
+emailAddress                    = Email Address
+emailAddress_max                = 64
+
+# --- Extensions ---
+
+# Root CA extensions
+[v3_ca]
+basicConstraints        = critical, CA:TRUE
+keyUsage                = critical, keyCertSign, cRLSign
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always, issuer
+# nameConstraints       = permitted;DNS:.example.com  # optional: restrict CA scope
+
+# Intermediate CA extensions
+[v3_intermediate]
+basicConstraints        = critical, CA:TRUE, pathlen:0
+keyUsage                = critical, keyCertSign, cRLSign
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always, issuer
+authorityInfoAccessOCSP = OCSP;URI:http://ocsp.example.com
+# crlDistributionPoints = URI:http://crl.example.com/intermediate.crl
+
+# Generic request extensions
+[v3_req]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature, keyEncipherment
+subjectAltName          = @san
+
+# Server certificate extensions
+[server_cert]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = serverAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid, issuer
+subjectAltName          = @san
+authorityInfoAccessOCSP = OCSP;URI:http://ocsp.example.com
+# crlDistributionPoints = URI:http://crl.example.com/intermediate.crl
+# tlsfeature            = status_request   # OCSP Must-Staple
+
+# Client certificate extensions (for mTLS)
+[client_cert]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature
+extendedKeyUsage        = clientAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid, issuer
+
+# Combined server + client auth (for services that do both)
+[server_client_cert]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = serverAuth, clientAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid, issuer
+subjectAltName          = @san
+
+# CRL extensions
+[crl_ext]
+authorityKeyIdentifier  = keyid:always
+
+# --- Subject Alternative Names ---
+# Customize this section for your domains
+[san]
+DNS.1 = example.com
+DNS.2 = www.example.com
+DNS.3 = api.example.com
+DNS.4 = *.example.com
+IP.1  = 127.0.0.1
+IP.2  = ::1
+# email.1 = admin@example.com
+
+# --- OCSP Signing ---
+[ocsp]
+basicConstraints        = CA:FALSE
+keyUsage                = critical, digitalSignature
+extendedKeyUsage        = OCSPSigning
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid, issuer
+
+# =============================================================================
+# Quick Reference Commands:
+#
+# Generate RSA key + CSR:
+#   openssl req -new -config openssl.cnf -newkey rsa:2048 -nodes \
+#     -keyout server.key -out server.csr
+#
+# Generate ECDSA key + CSR:
+#   openssl ecparam -genkey -name prime256v1 -noout -out server.key
+#   openssl req -new -config openssl.cnf -key server.key -out server.csr
+#
+# Self-signed CA:
+#   openssl req -x509 -config openssl.cnf -newkey rsa:4096 -nodes \
+#     -keyout ca.key -out ca.crt -days 3650 -extensions v3_ca
+#
+# Sign server cert with CA:
+#   openssl ca -config openssl.cnf -in server.csr -out server.crt \
+#     -extensions server_cert
+#
+# Sign client cert with CA:
+#   openssl ca -config openssl.cnf -in client.csr -out client.crt \
+#     -extensions client_cert
+#
+# Generate CRL:
+#   openssl ca -config openssl.cnf -gencrl -out ca.crl
+#
+# Revoke certificate:
+#   openssl ca -config openssl.cnf -revoke cert.pem
+# =============================================================================

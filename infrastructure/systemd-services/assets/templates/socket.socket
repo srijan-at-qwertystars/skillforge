@@ -1,0 +1,46 @@
+# Template: Socket Activation — Socket Unit
+# Listens for connections and starts the paired service on demand.
+#
+# Usage:
+#   1. Copy to /etc/systemd/system/myapp.socket
+#   2. Also copy the matching myapp.service
+#   3. Replace __PLACEHOLDERS__
+#   4. Enable the SOCKET (not the service):
+#      sudo systemctl enable --now myapp.socket
+#   5. Verify: ss -tlnp | grep __PORT__
+
+[Unit]
+Description=__DESCRIPTION__ Socket
+
+[Socket]
+# TCP port listener
+ListenStream=__PORT__
+
+# Uncomment for Unix domain socket instead:
+# ListenStream=/run/__NAME__/__NAME__.sock
+# SocketMode=0660
+# SocketUser=__USER__
+# SocketGroup=__USER__
+
+# Accept=no: single long-running service (default, recommended)
+# Accept=yes: spawn one instance per connection (requires @.service template)
+Accept=no
+
+# Connection queue size before service is ready
+Backlog=128
+
+# TCP optimization
+NoDelay=yes
+
+# Named fd (use sd_listen_fds_with_names() to identify)
+FileDescriptorName=http
+
+# Limit connections (optional)
+# MaxConnections=100
+# MaxConnectionsPerSource=10
+
+# IP access control (optional)
+# FreeBind=yes
+
+[Install]
+WantedBy=sockets.target

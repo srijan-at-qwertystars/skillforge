@@ -1,0 +1,70 @@
+# Template: Socket Activation — Service Unit
+# Started on-demand by the matching .socket unit when connections arrive.
+# Do NOT enable this service directly — enable the .socket instead.
+#
+# Usage:
+#   1. Copy to /etc/systemd/system/myapp.service (same name as .socket)
+#   2. Replace __PLACEHOLDERS__
+#   3. Your application must accept the socket fd (fd 3) passed by systemd.
+#      Check $LISTEN_FDS and $LISTEN_FDNAMES environment variables.
+
+[Unit]
+Description=__DESCRIPTION__
+Requires=__NAME__.socket
+After=__NAME__.socket
+
+[Service]
+Type=notify
+User=__USER__
+Group=__USER__
+
+# The service receives the listening socket as fd 3
+ExecStart=__EXEC_START__
+NonBlocking=yes
+
+# Environment
+EnvironmentFile=-/etc/__NAME__/env
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+
+# Resource limits
+MemoryMax=1G
+TasksMax=256
+LimitNOFILE=65536
+
+# Logging
+SyslogIdentifier=__NAME__
+
+# Directories
+StateDirectory=__NAME__
+LogsDirectory=__NAME__
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

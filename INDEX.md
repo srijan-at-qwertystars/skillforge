@@ -227,6 +227,6 @@
 | infrastructure | nginx-config | Nginx configuration — server blocks, reverse proxy, SSL/TLS, load balancing, caching, rate limiting | tested |
 | database | redis-patterns | Redis patterns — data structures, caching, pub/sub, streams, distributed locks, Lua scripting | tested |
 | infrastructure | linux-networking | Linux networking — interfaces, firewall, TCP debugging, DNS, VPN, routing, SSH tunneling | tested |
-| security | tls-certificates | TLS certificates — SSL/HTTPS setup, Let's Encrypt, openssl debugging, mTLS, certificate chains | created |
-| infrastructure | systemd-services | Systemd services — unit files, timers, socket activation, security hardening, resource limits | created |
-| infrastructure | ssh-tunneling | SSH tunneling — port forwarding, jump hosts, SOCKS proxy, key management, autossh | created |
+| security | tls-certificates | TLS certificates — SSL/HTTPS setup, Let's Encrypt, openssl debugging, mTLS, certificate chains | enriched |
+| infrastructure | systemd-services | Systemd services — unit files, timers, socket activation, security hardening, resource limits | enriched |
+| infrastructure | ssh-tunneling | SSH tunneling — port forwarding, jump hosts, SOCKS proxy, key management, autossh | enriched |

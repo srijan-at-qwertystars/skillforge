@@ -1,0 +1,99 @@
+# /etc/systemd/system/autossh-tunnel.service
+#
+# Systemd service template for persistent SSH tunnel via autossh.
+#
+# Setup:
+#   1. Install autossh: sudo apt install autossh (or brew install autossh)
+#   2. Copy this file to /etc/systemd/system/autossh-tunnel.service
+#   3. Customize the ExecStart line with your tunnel parameters
+#   4. Create the tunnel user: sudo useradd -r -m -s /usr/sbin/nologin tunnel
+#   5. Generate SSH key: sudo -u tunnel ssh-keygen -t ed25519 -f /home/tunnel/.ssh/id_ed25519 -N ""
+#   6. Deploy key to remote: sudo -u tunnel ssh-copy-id -i /home/tunnel/.ssh/id_ed25519.pub user@remote
+#   7. Accept host key: sudo -u tunnel ssh -o StrictHostKeyChecking=accept-new user@remote exit
+#   8. Enable and start: sudo systemctl enable --now autossh-tunnel
+#
+# Management:
+#   sudo systemctl start autossh-tunnel
+#   sudo systemctl stop autossh-tunnel
+#   sudo systemctl restart autossh-tunnel
+#   sudo systemctl status autossh-tunnel
+#   journalctl -u autossh-tunnel -f
+#
+# Multiple tunnels:
+#   Copy and rename for each tunnel:
+#   autossh-tunnel-db.service, autossh-tunnel-redis.service, etc.
+
+[Unit]
+Description=Persistent SSH Tunnel via autossh
+Documentation=man:autossh(1) man:ssh(1)
+After=network-online.target
+Wants=network-online.target
+
+# Restart policies
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=tunnel
+Group=tunnel
+
+# Environment
+Environment="AUTOSSH_GATETIME=0"
+Environment="AUTOSSH_LOGFILE=/var/log/autossh-tunnel.log"
+
+# ─── CUSTOMIZE THIS LINE ───
+# Local port forward example (access remote DB at localhost:5432):
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -L 5432:db.internal:5432 \
+  -o "ServerAliveInterval=30" \
+  -o "ServerAliveCountMax=3" \
+  -o "ExitOnForwardFailure=yes" \
+  -o "StrictHostKeyChecking=accept-new" \
+  -o "UserKnownHostsFile=/home/tunnel/.ssh/known_hosts" \
+  -i /home/tunnel/.ssh/id_ed25519 \
+  tunnel@bastion.example.com
+
+# ─── OTHER EXAMPLES ───
+# Remote (reverse) tunnel:
+# ExecStart=/usr/bin/autossh -M 0 -N \
+#   -R 2222:localhost:22 \
+#   -o "ServerAliveInterval=30" \
+#   -o "ServerAliveCountMax=3" \
+#   -o "ExitOnForwardFailure=yes" \
+#   -i /home/tunnel/.ssh/id_ed25519 \
+#   tunnel@public-server.example.com
+
+# SOCKS proxy:
+# ExecStart=/usr/bin/autossh -M 0 -N \
+#   -D 1080 \
+#   -o "ServerAliveInterval=30" \
+#   -o "ServerAliveCountMax=3" \
+#   -o "ExitOnForwardFailure=yes" \
+#   -i /home/tunnel/.ssh/id_ed25519 \
+#   tunnel@proxy-server.example.com
+
+# Multiple forwards:
+# ExecStart=/usr/bin/autossh -M 0 -N \
+#   -L 5432:db.internal:5432 \
+#   -L 6379:redis.internal:6379 \
+#   -L 3306:mysql.internal:3306 \
+#   -o "ServerAliveInterval=30" \
+#   -o "ServerAliveCountMax=3" \
+#   -o "ExitOnForwardFailure=yes" \
+#   -i /home/tunnel/.ssh/id_ed25519 \
+#   tunnel@bastion.example.com
+
+# Restart on failure
+Restart=always
+RestartSec=10
+
+# Security hardening for the service
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/home/tunnel/.ssh
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

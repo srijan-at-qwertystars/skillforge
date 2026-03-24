@@ -1,0 +1,47 @@
+# Template: Timer Service (paired with .timer)
+# This service is triggered by the matching .timer unit.
+# Do NOT enable this service directly — enable the .timer instead.
+#
+# Usage:
+#   1. Copy to /etc/systemd/system/mytask.service (same name as .timer)
+#   2. Replace __PLACEHOLDERS__
+#   3. Test manually: sudo systemctl start mytask.service
+
+[Unit]
+Description=__DESCRIPTION__
+
+[Service]
+Type=oneshot
+User=__USER__
+Group=__USER__
+ExecStart=__EXEC_START__
+
+# Performance tuning (be nice to other processes)
+Nice=19
+IOSchedulingClass=idle
+CPUSchedulingPolicy=idle
+
+# Logging
+SyslogIdentifier=__NAME__
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0077
+
+# Allow read/write to specific paths if needed:
+# ReadWritePaths=/var/spool/__NAME__

@@ -1,0 +1,34 @@
+# Template: Timer Unit (cron replacement)
+# Pair with the matching .service file of the same name.
+#
+# Usage:
+#   1. Copy to /etc/systemd/system/mytask.timer
+#   2. Also copy the matching mytask.service
+#   3. Replace __PLACEHOLDERS__
+#   4. Validate: systemd-analyze calendar "__ON_CALENDAR__"
+#   5. Enable the TIMER (not the service):
+#      sudo systemctl enable --now mytask.timer
+#   6. List timers: systemctl list-timers
+
+[Unit]
+Description=__DESCRIPTION__ Timer
+
+[Timer]
+# Calendar schedule (see: man systemd.time)
+# Examples: daily, hourly, *-*-* 02:30:00, Mon..Fri *-*-* 09:00:00, *:0/15
+OnCalendar=__ON_CALENDAR__
+
+# Also run N time after boot (optional, remove if not needed)
+# OnBootSec=15min
+
+# Run missed events that occurred while the system was off
+Persistent=true
+
+# Add random jitter to avoid thundering herd
+RandomizedDelaySec=5min
+
+# Timer accuracy (lower = more precise but more wakeups)
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

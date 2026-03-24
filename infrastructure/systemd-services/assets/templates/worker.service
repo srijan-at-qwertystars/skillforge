@@ -1,0 +1,74 @@
+# Template: Background Worker Service
+# Suitable for queue consumers, data processors, and background jobs.
+#
+# Usage:
+#   1. Copy to /etc/systemd/system/myworker.service
+#   2. Replace __PLACEHOLDERS__ with actual values
+#   3. sudo systemctl daemon-reload && sudo systemctl enable --now myworker.service
+
+[Unit]
+Description=__DESCRIPTION__
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+
+# Environment
+EnvironmentFile=/etc/__NAME__/env
+EnvironmentFile=-/etc/__NAME__/env.local
+
+# Process management
+ExecStart=__EXEC_START__
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+# Send SIGTERM first, allow graceful shutdown of in-flight work
+FinalKillSignal=SIGKILL
+
+# Resource limits
+MemoryMax=512M
+MemoryHigh=384M
+CPUQuota=100%
+TasksMax=128
+LimitNOFILE=65536
+
+# Logging
+SyslogIdentifier=__NAME__
+StandardOutput=journal
+StandardError=journal
+
+# Directories
+StateDirectory=__NAME__
+LogsDirectory=__NAME__
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

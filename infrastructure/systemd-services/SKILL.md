@@ -424,3 +424,19 @@ UMask=0077
 [Install]
 WantedBy=multi-user.target
 ```
+## Reference Documents
+In-depth guides in the `references/` directory:
+- **`references/advanced-patterns.md`** — Socket activation deep dive, watchdog (WatchdogSec/sd_notify), cgroup resource controls (CPUWeight, IOWeight, MemoryHigh, Slices), transient units (systemd-run), portable services, systemd-nspawn containers, systemd-resolved/networkd integration, condition directives (ConditionPathExists, ConditionACPower, ConditionVirtualization, etc.), and instantiated unit patterns with template specifiers.
+- **`references/troubleshooting.md`** — Boot time analysis (systemd-analyze blame/critical-chain/plot), failed service diagnosis workflow, complete exit code reference, dependency cycle resolution, service ordering issues, journalctl filtering (by unit, priority, time range, boot, process), coredump management (systemd-coredump/coredumpctl), emergency/rescue mode, SELinux/AppArmor conflict resolution, and common failure patterns with fixes.
+- **`references/security-reference.md`** — Complete security hardening directive reference (ProtectSystem, ProtectHome, PrivateDevices, ProtectKernelTunables, ProtectControlGroups, RestrictNamespaces, RestrictSUIDSGID, SystemCallFilter), systemd-analyze security scoring interpretation, seccomp filter groups, capability management, namespace isolation, network isolation, hardening profiles by use case (web app, worker, batch job, network daemon), and a progressive hardening checklist.
+## Scripts
+Executable tools in the `scripts/` directory:
+- **`scripts/service-generator.sh`** — Interactive unit file generator with presets for web apps, workers, and cron replacements. Supports `--preset web|worker|cron` and configurable security hardening levels.
+- **`scripts/systemd-security-audit.sh`** — Audits services for 24 security directives, scores each unit with a letter grade, and suggests specific improvements. Supports `--all`, `--json`, and `--threshold` options.
+- **`scripts/service-monitor.sh`** — Monitors service health: restart counts, memory/CPU usage, task counts, and failure alerts. Supports `--watch` for continuous monitoring, `--alert-restarts`, `--alert-memory`, and `--json` output.
+## Templates
+Copy-paste ready unit files in the `assets/templates/` directory:
+- **`assets/templates/web-app.service`** — Web application template (Node/Python/Go) with full security hardening, resource limits, watchdog, and placeholder documentation.
+- **`assets/templates/worker.service`** — Background worker template with restart policies, graceful shutdown, and security hardening.
+- **`assets/templates/timer.timer`** + **`assets/templates/timer.service`** — Timer unit pair for cron replacement with persistent scheduling, jitter, and low-priority execution.
+- **`assets/templates/socket.socket`** + **`assets/templates/socket.service`** — Socket activation pair with named fd support, backlog configuration, and connection limits.

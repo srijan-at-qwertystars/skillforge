@@ -1,0 +1,190 @@
+# ~/.ssh/config — Production SSH Configuration Template
+#
+# Copy relevant sections to your ~/.ssh/config and customize.
+# Ensure permissions: chmod 600 ~/.ssh/config
+#
+# Sections:
+#   1. Global defaults (apply to all hosts)
+#   2. Bastion / Jump host
+#   3. Internal hosts via bastion
+#   4. Per-environment patterns
+#   5. Database tunnels
+#   6. Multiplexing for repeated connections
+#   7. Restricted/special-purpose connections
+
+# ═══════════════════════════════════════════
+# 1. Global Defaults
+# ═══════════════════════════════════════════
+Host *
+    # Security
+    AddKeysToAgent yes
+    IdentitiesOnly yes
+    ForwardAgent no
+    HashKnownHosts yes
+    StrictHostKeyChecking ask
+    VisualHostKey yes
+
+    # Connection stability
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    TCPKeepAlive yes
+    ConnectTimeout 10
+
+    # Multiplexing (shared connections)
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    ControlPersist 10m
+
+    # Disable unused features
+    ForwardX11 no
+    ForwardX11Trusted no
+
+# ═══════════════════════════════════════════
+# 2. Bastion / Jump Host
+# ═══════════════════════════════════════════
+Host bastion
+    HostName bastion.example.com
+    User ops
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519_bastion
+    ForwardAgent no
+
+    # Multiplexing with longer persist for bastion
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-bastion-%r@%h:%p
+    ControlPersist 30m
+
+# ═══════════════════════════════════════════
+# 3. Internal Hosts via Bastion
+# ═══════════════════════════════════════════
+
+# Application servers
+Host app-*.internal
+    ProxyJump bastion
+    User deploy
+    IdentityFile ~/.ssh/id_ed25519_deploy
+
+Host app-web-01.internal
+    HostName 10.0.1.10
+
+Host app-web-02.internal
+    HostName 10.0.1.11
+
+Host app-api-01.internal
+    HostName 10.0.2.10
+
+# ═══════════════════════════════════════════
+# 4. Per-Environment Patterns
+# ═══════════════════════════════════════════
+
+# Production (strict settings)
+Host *.prod.internal
+    ProxyJump bastion
+    User deploy
+    IdentityFile ~/.ssh/id_ed25519_prod
+    StrictHostKeyChecking yes
+    LogLevel VERBOSE
+
+# Staging
+Host *.staging.internal
+    ProxyJump bastion
+    User staging
+    IdentityFile ~/.ssh/id_ed25519_staging
+
+# Development (relaxed for ephemeral hosts)
+Host *.dev.internal
+    ProxyJump bastion
+    User dev
+    IdentityFile ~/.ssh/id_ed25519_dev
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+
+# ═══════════════════════════════════════════
+# 5. Database Tunnels
+# ═══════════════════════════════════════════
+
+# PostgreSQL tunnel
+Host tunnel-postgres
+    HostName bastion.example.com
+    User ops
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519_bastion
+    LocalForward 5432 db-primary.internal:5432
+    LocalForward 5433 db-replica.internal:5432
+    RequestTTY no
+    # Connect: psql -h localhost -p 5432 -U dbuser mydb
+
+# Redis tunnel
+Host tunnel-redis
+    HostName bastion.example.com
+    User ops
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519_bastion
+    LocalForward 6379 redis.internal:6379
+    RequestTTY no
+
+# Kubernetes API tunnel
+Host tunnel-k8s
+    HostName bastion.example.com
+    User ops
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519_bastion
+    LocalForward 6443 k8s-api.internal:6443
+    RequestTTY no
+
+# ═══════════════════════════════════════════
+# 6. SOCKS Proxy
+# ═══════════════════════════════════════════
+Host socks-proxy
+    HostName bastion.example.com
+    User ops
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519_bastion
+    DynamicForward 1080
+    RequestTTY no
+    # Use: curl --socks5-hostname localhost:1080 http://internal.corp
+
+# ═══════════════════════════════════════════
+# 7. Multi-Hop / Deep Internal Access
+# ═══════════════════════════════════════════
+
+# Middle tier
+Host middleware
+    HostName 10.0.5.10
+    ProxyJump bastion
+    User ops
+    IdentityFile ~/.ssh/id_ed25519_ops
+
+# Deep internal (two hops)
+Host deep-internal
+    HostName 10.10.0.5
+    ProxyJump bastion,middleware
+    User admin
+    IdentityFile ~/.ssh/id_ed25519_admin
+
+# ═══════════════════════════════════════════
+# 8. Special Purpose
+# ═══════════════════════════════════════════
+
+# Git over SSH (GitHub/GitLab)
+Host github.com
+    HostName github.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_github
+    IdentitiesOnly yes
+
+Host gitlab.example.com
+    HostName gitlab.example.com
+    User git
+    IdentityFile ~/.ssh/id_ed25519_gitlab
+    Port 22
+
+# CI/CD runner
+Host ci-runner
+    HostName ci.example.com
+    User ci
+    IdentityFile ~/.ssh/id_ed25519_ci
+    ForwardAgent no
+    StrictHostKeyChecking yes
+    BatchMode yes

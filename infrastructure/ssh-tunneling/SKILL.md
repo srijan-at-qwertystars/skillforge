@@ -148,6 +148,8 @@ Host deep-internal
 
 ## SSH Config File (~/.ssh/config)
 
+See [`assets/ssh-config-template`](assets/ssh-config-template) for a full production template.
+
 ```ssh-config
 # Global defaults
 Host *
@@ -167,17 +169,6 @@ Host prod
     Port 2222
     IdentityFile ~/.ssh/id_ed25519_prod
     ForwardAgent no
-
-# Wildcard environments
-Host *.staging
-    User staging-deploy
-    IdentityFile ~/.ssh/id_ed25519_staging
-    StrictHostKeyChecking yes
-
-Host *.dev
-    User dev
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
 ```
 
 ## Connection Multiplexing
@@ -346,41 +337,24 @@ ssh> -KL 8080               # Cancel local forward
 
 ## SSH Hardening (sshd_config)
 
-```ssh-config
-# /etc/ssh/sshd_config
+See [`assets/sshd-hardened.conf`](assets/sshd-hardened.conf) for a complete hardened template
+and [`references/security-hardening.md`](references/security-hardening.md) for crypto rationale.
 
-# Authentication
+```ssh-config
+# /etc/ssh/sshd_config — Key settings
 PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
 AuthenticationMethods publickey
-PermitEmptyPasswords no
 MaxAuthTries 3
-
-# User/Group restrictions
 AllowUsers alice bob deploy
-# Or: AllowGroups ssh-users
-
-# Network
-Port 2222
-AddressFamily inet
-ListenAddress 0.0.0.0
-LoginGraceTime 30
-
-# Forwarding restrictions
 AllowTcpForwarding local
 X11Forwarding no
 AllowAgentForwarding no
-GatewayPorts no
-PermitTunnel no
-
-# Session limits
-MaxSessions 5
-ClientAliveInterval 300
-ClientAliveCountMax 2
-
-# Logging
 LogLevel VERBOSE
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com
 ```
 
 ### fail2ban for SSH
@@ -494,3 +468,32 @@ sshfs -o ProxyJump=user@bastion user@app:/var/log /mnt/logs
 # Persistent database tunnel via systemd + autossh
 autossh -M 0 -N -L 5432:db:5432 user@bastion -o ExitOnForwardFailure=yes
 ```
+
+---
+
+## Additional Resources
+
+### References (Deep-Dive Guides)
+
+| File | Description |
+|------|-------------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | SSH certificates (CA setup, signing, principals), SSH over HTTPS (stunnel/socat), reverse tunnels for IoT/NAT, SSH multiplexing internals, SOCKS proxy chaining, SSH VPN (tun/tap), Docker/Kubernetes integration, SSHPiper multi-tenant bastion |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Systematic SSH debugging: timeout analysis, key auth failures, agent forwarding, tunnel diagnosis, "channel open failed" errors, broken pipe fixes, DNS in tunnels, MTU issues, SELinux/firewall, sshd_config mistakes |
+| [`references/security-hardening.md`](references/security-hardening.md) | Hardened crypto config (KEX, ciphers, MACs), key rotation strategies, SSH CA vs authorized_keys at scale, bastion architecture, session recording, 2FA (TOTP, FIDO2/U2F), audit tools, port knocking, AllowUsers/AllowGroups patterns |
+
+### Scripts (Executable Tools)
+
+| File | Description |
+|------|-------------|
+| [`scripts/ssh-tunnel-manager.sh`](scripts/ssh-tunnel-manager.sh) | Create, list, destroy, and auto-reconnect persistent SSH tunnels with optional systemd integration |
+| [`scripts/ssh-key-setup.sh`](scripts/ssh-key-setup.sh) | Automated key generation, deployment, agent setup, and SSH config entry creation for new hosts |
+| [`scripts/ssh-audit.sh`](scripts/ssh-audit.sh) | Audit local or remote SSH server configuration: cipher strength, key types, auth methods, security recommendations |
+
+### Assets (Copy-Paste Ready)
+
+| File | Description |
+|------|-------------|
+| [`assets/ssh-config-template`](assets/ssh-config-template) | Production `~/.ssh/config` with bastion, multiplexing, per-host keys, tunnels, and SOCKS proxy patterns |
+| [`assets/sshd-hardened.conf`](assets/sshd-hardened.conf) | Hardened `sshd_config` template with modern crypto, strict auth, access control, and per-group overrides |
+| [`assets/autossh.service`](assets/autossh.service) | Systemd service template for persistent SSH tunnels via autossh with security hardening |
+| [`assets/ssh-ca-setup.md`](assets/ssh-ca-setup.md) | Step-by-step SSH Certificate Authority setup: CA generation, user/host signing, client trust, revocation, Vault integration |

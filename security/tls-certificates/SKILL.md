@@ -170,17 +170,14 @@ openssl verify -CAfile ca-bundle.crt -untrusted intermediate.crt server.crt
 
 ### Install certbot
 ```bash
-# Ubuntu/Debian
-sudo apt install certbot python3-certbot-nginx
-# With DNS plugin (Cloudflare example)
-sudo apt install python3-certbot-dns-cloudflare
+sudo apt install certbot python3-certbot-nginx    # Ubuntu/Debian
+sudo apt install python3-certbot-dns-cloudflare   # DNS plugin
 ```
 
 ### Issue certificate (HTTP-01 challenge)
 ```bash
 sudo certbot certonly --nginx -d example.com -d www.example.com
-# Or standalone
-sudo certbot certonly --standalone -d example.com
+sudo certbot certonly --standalone -d example.com  # standalone
 ```
 
 ### Wildcard certificate (DNS-01 challenge required)
@@ -190,16 +187,9 @@ sudo certbot certonly --dns-cloudflare \
   -d '*.example.com' -d example.com
 ```
 
-Cloudflare credentials file (`chmod 600`):
-```ini
-dns_cloudflare_api_token = YOUR_API_TOKEN
-```
-
 ### Renewal automation
 ```bash
-# Test renewal
-sudo certbot renew --dry-run
-# Cron (runs twice daily, only renews within 30 days of expiry)
+sudo certbot renew --dry-run  # test
 0 0,12 * * * /usr/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx"
 ```
 
@@ -309,17 +299,16 @@ curl --cert client.crt --key client.key --cacert ca.crt https://secure.example.c
 
 Server fetches and caches OCSP response, attaches to TLS handshake.
 
-### Nginx
 ```nginx
+# Nginx
 ssl_stapling on;
 ssl_stapling_verify on;
 ssl_trusted_certificate /etc/ssl/chain.pem;
 resolver 8.8.8.8 8.8.4.4 valid=300s;
-resolver_timeout 5s;
 ```
 
-### Test OCSP stapling
 ```bash
+# Test OCSP stapling
 openssl s_client -connect example.com:443 -servername example.com -status </dev/null 2>/dev/null \
   | grep -A 5 "OCSP Response"
 ```
@@ -342,26 +331,17 @@ Header always set Strict-Transport-Security "max-age=63072000; includeSubDomains
 
 ## Certificate Transparency (CT)
 
-- All public CAs must log certificates to CT logs (append-only public ledgers).
-- Browsers require SCTs (Signed Certificate Timestamps) for trust.
-- Monitor CT logs for unauthorized issuance of your domains:
+All public CAs must log certificates to CT logs. Browsers require SCTs for trust.
 ```bash
-# Search CT logs via crt.sh
 curl -s "https://crt.sh/?q=%25.example.com&output=json" | jq '.[].common_name'
 ```
 
 ## Certificate Pinning
 
-Pin a certificate's SPKI hash to reject unexpected certs even from trusted CAs.
-
-### Generate SPKI pin
+Pin SPKI hash to reject unexpected certs. **HPKP is deprecated**; use pinning only in mobile apps or API clients. Prefer CT monitoring + CAA records for web.
 ```bash
-openssl x509 -in cert.pem -pubkey -noout \
-  | openssl pkey -pubin -outform DER \
-  | openssl dgst -sha256 -binary | base64
+openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform DER | openssl dgst -sha256 -binary | base64
 ```
-
-- Always include a backup pin. HPKP is deprecated in browsers; use pinning only in mobile apps or API clients. Prefer CT monitoring + CAA records for web.
 
 ## CAA DNS Records
 
@@ -395,7 +375,6 @@ Automated Certificate Management Environment (RFC 8555). Used by Let's Encrypt.
 
 ## cert-manager for Kubernetes
 
-### Install
 ```bash
 kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.3/cert-manager.yaml
 ```
@@ -418,43 +397,25 @@ spec:
           class: nginx
 ```
 
-### Certificate resource
-```yaml
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: example-com-tls
-  namespace: default
-spec:
-  secretName: example-com-tls
-  issuerRef:
-    name: letsencrypt-prod
-    kind: ClusterIssuer
-  dnsNames:
-  - example.com
-  - www.example.com
-```
-
 ### Ingress annotation (auto-issue)
 ```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
 metadata:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
   tls:
-  - hosts:
-    - example.com
+  - hosts: ["example.com"]
     secretName: example-com-tls
 ```
 
-### Troubleshoot cert-manager
+### Troubleshoot
 ```bash
 kubectl get certificate,certificaterequest,order,challenge -A
 kubectl describe certificate example-com-tls
 kubectl logs -n cert-manager deploy/cert-manager -f
 ```
+
+> Full cert-manager details (Certificate resources, DNS-01 solvers, etc.) in [references/acme-reference.md](references/acme-reference.md).
 
 ## Quick Reference: Nginx TLS Configuration
 
@@ -462,22 +423,17 @@ kubectl logs -n cert-manager deploy/cert-manager -f
 server {
     listen 443 ssl http2;
     server_name example.com;
-
     ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
-
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
     ssl_prefer_server_ciphers off;
-
     ssl_session_timeout 1d;
     ssl_session_cache shared:TLS:10m;
     ssl_session_tickets off;
-
     ssl_stapling on;
     ssl_stapling_verify on;
     ssl_trusted_certificate /etc/letsencrypt/live/example.com/chain.pem;
-
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
 }
 ```
@@ -496,3 +452,45 @@ server {
 - [ ] CT log monitoring for unauthorized issuance
 - [ ] ECDSA P-256 keys preferred over RSA for new deployments
 - [ ] mTLS configured for service-to-service communication where needed
+
+---
+
+## Additional Resources
+
+### Reference Guides (`references/`)
+
+- **[Advanced TLS Patterns](references/advanced-patterns.md)** — mTLS setup patterns (API gateway, service mesh, Envoy), TLS 1.3 0-RTT replay protection, CT monitoring, DANE/TLSA, HPKP alternatives, short-lived certs with Vault, rotation strategies, wildcard vs SAN, cross-signing, revocation (CRL/OCSP/Stapling/Must-Staple).
+
+- **[Troubleshooting Guide](references/troubleshooting.md)** — Chain verification failures, hostname mismatches, expired cert detection, mixed content, OCSP failures, cipher negotiation, TLS version incompatibility, SNI issues, trust store differences (OS/browser/Java/Python/Node/Go), OpenSSL debugging cookbook.
+
+- **[ACME / Let's Encrypt Reference](references/acme-reference.md)** — ACME protocol flow, certbot DNS plugins (Cloudflare, Route 53, DigitalOcean, GCP), challenge comparison (HTTP-01/DNS-01/TLS-ALPN-01), rate limits, renewal hooks, cert-manager for K8s, acme.sh, Caddy auto-HTTPS.
+
+### Scripts (`scripts/`)
+
+Executable shell scripts for certificate operations:
+
+- **[cert-check.sh](scripts/cert-check.sh)** — Certificate inspector that checks expiry, chain validity, SANs, key strength, OCSP status, TLS version support, and CT logs for any domain or local cert file.
+  ```bash
+  ./scripts/cert-check.sh example.com
+  ./scripts/cert-check.sh -f /path/to/cert.pem
+  ```
+
+- **[self-signed-ca.sh](scripts/self-signed-ca.sh)** — Creates a complete CA hierarchy: root CA, intermediate CA, server certificate with SANs, client certificate for mTLS, chain bundles, and PKCS#12 files.
+  ```bash
+  ./scripts/self-signed-ca.sh ./pki myapp.internal
+  ```
+
+- **[cert-renew-monitor.sh](scripts/cert-renew-monitor.sh)** — Monitors certificates for expiration with configurable warning/critical thresholds, Slack alerts, JSON output, and optional certbot auto-renewal.
+  ```bash
+  ./scripts/cert-renew-monitor.sh -f domains.txt -w 30 -c 7 --slack
+  ```
+
+### Assets (`assets/`)
+
+Copy-paste ready configuration templates:
+
+- **[openssl.cnf](assets/openssl.cnf)** — Comprehensive OpenSSL configuration template covering CA operations, CSR generation, server/client/mTLS certificate extensions, SANs, and OCSP signing.
+
+- **[certbot-hooks/](assets/certbot-hooks/)** — Post-renewal deploy hooks for Nginx, Apache, and HAProxy. Each tests config before reloading and logs results.
+
+- **[cipher-suites.md](assets/cipher-suites.md)** — Recommended cipher suite configurations for Modern (TLS 1.3 only), Intermediate (TLS 1.2+1.3, recommended), and Old (legacy) compatibility profiles, with complete configs for Nginx, Apache, HAProxy, and Caddy.
