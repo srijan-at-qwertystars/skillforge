@@ -1,222 +1,289 @@
 ---
 name: mongodb-patterns
-description:
-  positive: "Use when user works with MongoDB, asks about document schema design, embedding vs referencing, MongoDB indexes, aggregation pipeline, transactions, Mongoose ODM, or MongoDB Atlas features."
-  negative: "Do NOT use for PostgreSQL, MySQL, Redis, or other databases. Do NOT use for general NoSQL concepts without MongoDB specifics."
+description: >
+  MongoDB 7.x/8.x patterns: CRUD, aggregation ($match, $group, $lookup, $unwind,
+  $project, $merge), indexing (compound, text, geospatial, TTL, partial, wildcard),
+  schema design (embedding vs referencing, polymorphic, bucket, outlier), replica
+  sets, sharding, transactions, change streams, Atlas Search/Vector Search,
+  Mongoose ODM, performance tuning (explain, profiler, $queryStats), security
+  (SCRAM-SHA-256, x.509, RBAC, Queryable Encryption).
+  TRIGGERS: MongoDB, mongosh, aggregation pipeline, MongoDB Atlas, MongoDB replica
+  set, mongoose, BSON, MongoDB indexes, change streams, mongod, $lookup, sharding
+  key, ObjectId, GridFS, MongoDB Compass.
+  NOT for PostgreSQL, MySQL, Redis, DynamoDB, CouchDB, or general NoSQL concepts
+  without MongoDB context.
 ---
 
-# MongoDB Patterns & Best Practices
+# MongoDB Patterns
 
-## Schema Design: Embedding vs Referencing
+## CRUD Operations
 
-Use embedding when:
-- One-to-few or one-to-one relationships
-- Data is always read together
-- Child data has no independent meaning
-- Document stays well under 16 MB limit
+### Insert
+```javascript
+// insertOne returns { acknowledged, insertedId }
+db.orders.insertOne({ item: "widget", qty: 25, price: 9.99, tags: ["sale"] });
 
-Use referencing when:
-- One-to-many or many-to-many relationships
-- Data is read independently or shared across documents
-- Child documents grow unboundedly
-- Frequent updates to the referenced data
-
-```js
-// Embedded: user with addresses (one-to-few)
-{
-  _id: ObjectId("..."),
-  name: "Alice",
-  addresses: [
-    { street: "123 Main", city: "Portland", type: "home" },
-    { street: "456 Oak", city: "Seattle", type: "work" }
-  ]
-}
-
-// Referenced: orders pointing to products (many-to-many)
-// orders collection
-{ _id: ObjectId("..."), userId: ObjectId("..."), productIds: [ObjectId("..."), ObjectId("...")] }
-// products collection
-{ _id: ObjectId("..."), name: "Widget", price: 29.99 }
+// insertMany with ordered:false continues on error
+db.orders.insertMany([
+  { item: "bolt", qty: 100, price: 1.50 },
+  { item: "nut", qty: 200, price: 0.75 }
+], { ordered: false });
 ```
 
-## Common Schema Design Patterns
-### Attribute Pattern
-Collapse many similar fields into a key-value array. Use for products with variable attributes.
-```js
-{ _id: 1, name: "Jacket", attributes: [
-    { k: "color", v: "blue" },
-    { k: "size", v: "L" },
-    { k: "material", v: "nylon" }
-]}
-// Index: { "attributes.k": 1, "attributes.v": 1 }
-```
-### Bucket Pattern
-Group time-series or event data into fixed-size buckets. Reduce document count and index overhead.
-```js
-{ sensorId: "temp-01", date: ISODate("2025-01-15"),
-  readings: [
-    { ts: ISODate("2025-01-15T00:00:00Z"), val: 22.5 },
-    { ts: ISODate("2025-01-15T00:05:00Z"), val: 22.7 }
-  ],
-  count: 2, sum: 45.2 }
-```
-### Computed Pattern
-Pre-calculate aggregated values on write to avoid expensive reads.
-```js
-{ productId: ObjectId("..."), totalReviews: 142, avgRating: 4.3 }
-// Update on new review:
-db.products.updateOne({ _id: productId }, {
-  $inc: { totalReviews: 1 },
-  $set: { avgRating: newAvg }
-})
-```
-### Extended Reference Pattern
-Copy frequently accessed fields from the referenced document to avoid $lookup.
-```js
-// Order stores denormalized customer info
-{ _id: ObjectId("..."), customerId: ObjectId("..."),
-  customerName: "Alice", customerEmail: "alice@example.com",
-  items: [...], total: 89.99 }
-```
-### Outlier Pattern
-Handle documents that exceed normal array bounds by flagging and overflowing.
-```js
-{ _id: "popular-post", title: "Viral Article", commentCount: 50000,
-  hasOverflow: true,
-  comments: [ /* first 500 comments */ ] }
-// Overflow collection stores the rest
-{ postId: "popular-post", page: 2, comments: [ /* next 500 */ ] }
-```
-### Subset Pattern
-Store a subset (e.g., most recent items) in the main document; full data lives elsewhere.
-```js
-{ _id: ObjectId("..."), title: "Product X",
-  recentReviews: [ /* last 10 reviews */ ] }
-// Full reviews in separate collection
-```
-### Polymorphic Pattern
-Store different entity types in a single collection distinguished by a type field.
-```js
-{ type: "car", make: "Toyota", wheels: 4, doors: 4 }
-{ type: "truck", make: "Ford", wheels: 6, payload: 5000 }
-// Query all vehicles: db.vehicles.find({ make: "Toyota" })
+### Read
+```javascript
+// Projection: include fields (1) or exclude (0), never mix except _id
+db.orders.find({ qty: { $gte: 50 } }, { item: 1, qty: 1, _id: 0 });
+
+// Cursor methods chain: filter → sort → skip → limit
+db.orders.find({ price: { $lt: 10 } }).sort({ qty: -1 }).skip(10).limit(5);
 ```
 
-## Indexing Strategies
-### Index Types
-```js
-// Compound index — follow ESR rule (Equality, Sort, Range)
-db.orders.createIndex({ status: 1, createdAt: -1, amount: 1 })
+### Update
+```javascript
+// updateOne with upsert — creates doc if no match
+db.orders.updateOne(
+  { item: "widget" },
+  { $set: { qty: 30 }, $currentDate: { lastModified: true } },
+  { upsert: true }
+);
 
-// Multikey index — automatically indexes array elements
-db.posts.createIndex({ tags: 1 })
+// findOneAndUpdate returns the modified document
+db.orders.findOneAndUpdate(
+  { item: "bolt" },
+  { $inc: { qty: -10 } },
+  { returnDocument: "after", projection: { item: 1, qty: 1 } }
+);
 
-// Text index — full-text search
-db.articles.createIndex({ title: "text", body: "text" })
-
-// Wildcard index — dynamic or unpredictable field names
-db.logs.createIndex({ "metadata.$**": 1 })
-
-// Partial index — index only matching documents, smaller and faster
-db.users.createIndex({ email: 1 }, { partialFilterExpression: { active: true } })
-
-// TTL index — auto-delete documents after expiry
-db.sessions.createIndex({ createdAt: 1 }, { expireAfterSeconds: 3600 })
-
-// Unique index — enforce uniqueness
-db.users.createIndex({ email: 1 }, { unique: true })
+// bulkWrite for mixed operations (MongoDB 8.0: 56% faster bulk writes)
+db.orders.bulkWrite([
+  { updateMany: { filter: { price: { $lt: 2 } }, update: { $set: { discount: true } } } },
+  { deleteMany: { filter: { qty: 0 } } }
+]);
 ```
-### ESR Rule for Compound Indexes
-Order fields as: **Equality → Sort → Range** for optimal performance.
-```js
-// Query: find active orders, sort by date, filter amount > 100
-db.orders.find({ status: "active", amount: { $gt: 100 } }).sort({ createdAt: -1 })
 
-// Optimal index (ESR):
-db.orders.createIndex({ status: 1, createdAt: -1, amount: 1 })
-// status = Equality, createdAt = Sort, amount = Range
+### Delete
+```javascript
+db.orders.deleteOne({ item: "obsolete" });
+db.orders.deleteMany({ qty: { $lt: 1 }, status: "cancelled" });
 ```
-### Index Optimization
-```js
-// Use explain() to verify index usage
-db.orders.find({ status: "active" }).explain("executionStats")
-// Look for: stage: "IXSCAN" (good), stage: "COLLSCAN" (bad)
 
-// Covered query — all fields in the index, no document fetch
-db.orders.find({ status: "active" }, { status: 1, createdAt: 1, _id: 0 })
-// Requires index: { status: 1, createdAt: 1 }
-
-// Check index usage stats
-db.orders.aggregate([{ $indexStats: {} }])
-
-// Index prefix rule: index { a: 1, b: 1, c: 1 } supports queries on
-// { a }, { a, b }, { a, b, c } — but NOT { b, c } alone
-```
+---
 
 ## Aggregation Pipeline
+
 ### Core Stages
-```js
-db.orders.aggregate([
-  // $match — filter early to reduce pipeline volume
-  { $match: { status: "completed", date: { $gte: ISODate("2025-01-01") } } },
+```javascript
+db.sales.aggregate([
+  // $match: filter early to reduce pipeline data volume
+  { $match: { status: "completed", date: { $gte: ISODate("2024-01-01") } } },
 
-  // $project — include/exclude fields, compute new ones
-  { $project: { customerId: 1, total: 1, month: { $month: "$date" } } },
-
-  // $group — aggregate values
-  { $group: { _id: "$customerId", totalSpent: { $sum: "$total" }, count: { $sum: 1 } } },
-
-  // $sort and $limit — always pair $limit after $sort
-  { $sort: { totalSpent: -1 } },
-  { $limit: 10 }
-])
-```
-### $lookup (Join)
-```js
-db.orders.aggregate([
+  // $lookup: left outer join
   { $lookup: {
-      from: "customers",
-      localField: "customerId",
+      from: "products",
+      localField: "productId",
       foreignField: "_id",
-      as: "customer"
+      as: "product"
   }},
-  { $unwind: "$customer" }  // flatten single-element array
-])
-// Always index the foreignField in the joined collection
+
+  // $unwind: deconstruct array (preserveNullAndEmptyArrays keeps non-matches)
+  { $unwind: { path: "$product", preserveNullAndEmptyArrays: true } },
+
+  // $group: aggregate values
+  { $group: {
+      _id: { category: "$product.category", month: { $month: "$date" } },
+      totalRevenue: { $sum: { $multiply: ["$qty", "$price"] } },
+      avgOrderSize: { $avg: "$qty" },
+      orderCount: { $sum: 1 }
+  }},
+
+  // $project: reshape output
+  { $project: {
+      _id: 0,
+      category: "$_id.category",
+      month: "$_id.month",
+      totalRevenue: { $round: ["$totalRevenue", 2] },
+      avgOrderSize: 1,
+      orderCount: 1
+  }},
+
+  // $sort then $limit
+  { $sort: { totalRevenue: -1 } },
+  { $limit: 10 }
+]);
 ```
-### $facet (Multiple Aggregations in One Pass)
-```js
-db.products.aggregate([
-  { $facet: {
-      priceRanges: [
-        { $bucket: { groupBy: "$price", boundaries: [0, 25, 50, 100, Infinity] } }
-      ],
-      topRated: [
-        { $sort: { rating: -1 } }, { $limit: 5 }
-      ],
-      totalCount: [
-        { $count: "count" }
-      ]
+
+### Advanced: $merge for Materialized Views
+```javascript
+// Write aggregation results to a collection (upsert mode)
+db.sales.aggregate([
+  { $group: { _id: "$region", total: { $sum: "$amount" } } },
+  { $merge: {
+      into: "regional_summaries",
+      on: "_id",
+      whenMatched: "replace",
+      whenNotMatched: "insert"
   }}
-])
+]);
 ```
-### $merge (Write Results to Collection)
-```js
-db.orders.aggregate([
-  { $group: { _id: "$customerId", lifetimeValue: { $sum: "$total" } } },
-  { $merge: { into: "customer_stats", on: "_id", whenMatched: "replace" } }
-])
+
+### Window Functions (MongoDB 5.0+)
+```javascript
+db.scores.aggregate([
+  { $setWindowFields: {
+      partitionBy: "$department",
+      sortBy: { score: -1 },
+      output: {
+        rank: { $denseRank: {} },
+        avgDeptScore: { $avg: "$score", window: { documents: ["unbounded", "unbounded"] } }
+      }
+  }}
+]);
+// Input:  { dept: "eng", user: "A", score: 95 }, { dept: "eng", user: "B", score: 90 }
+// Output: { dept: "eng", user: "A", score: 95, rank: 1, avgDeptScore: 92.5 }, ...
 ```
-### Pipeline Optimization Rules
-- Place `$match` first to leverage indexes and reduce data volume.
-- Use `$project` early to drop unnecessary fields.
-- Pair `$sort` with `$limit` immediately after.
-- Enable `allowDiskUse: true` for large datasets exceeding 100 MB memory limit.
-- Use `explain("executionStats")` to inspect pipeline stages.
+
+---
+
+## Indexing Strategies
+
+### Compound Index (ESR Rule: Equality → Sort → Range)
+```javascript
+// Query: find active users in region, sorted by createdAt
+// Optimal order: equality(status, region) → sort(createdAt) → range(age)
+db.users.createIndex({ status: 1, region: 1, createdAt: -1, age: 1 });
+```
+
+### Text Index
+```javascript
+db.articles.createIndex({ title: "text", body: "text" }, { weights: { title: 10, body: 1 } });
+db.articles.find({ $text: { $search: "\"mongodb\" aggregation -deprecated" } },
+                  { score: { $meta: "textScore" } }).sort({ score: { $meta: "textScore" } });
+```
+
+### Geospatial (2dsphere)
+```javascript
+db.places.createIndex({ location: "2dsphere" });
+db.places.find({ location: {
+  $near: { $geometry: { type: "Point", coordinates: [-73.97, 40.77] }, $maxDistance: 5000 }
+}});
+```
+
+### TTL Index (Auto-expire documents)
+```javascript
+// Documents expire 30 days after createdAt
+db.sessions.createIndex({ createdAt: 1 }, { expireAfterSeconds: 2592000 });
+```
+
+### Partial Index (Index subset of documents)
+```javascript
+// Only index active orders — smaller index, faster writes
+db.orders.createIndex(
+  { customerId: 1, orderDate: -1 },
+  { partialFilterExpression: { status: "active" } }
+);
+```
+
+### Wildcard Index (Dynamic/polymorphic schemas)
+```javascript
+db.products.createIndex({ "attributes.$**": 1 });
+// Supports queries on any subfield: attributes.color, attributes.size, etc.
+```
+
+---
+
+## Schema Design Patterns
+
+### Embedding vs Referencing Decision Matrix
+| Factor               | Embed                        | Reference                    |
+|----------------------|------------------------------|------------------------------|
+| Read pattern         | Data read together           | Data read independently      |
+| Cardinality          | 1:few or 1:many (bounded)    | 1:many (unbounded), many:many|
+| Document size        | Combined < 16MB              | Risk of exceeding 16MB       |
+| Write pattern        | Infrequent child updates     | Frequent independent updates |
+| Atomicity needed     | Yes (single-doc atomicity)   | Can use transactions         |
+
+### Polymorphic Pattern
+```javascript
+// Single collection, different shapes, shared base fields
+{ _id: 1, type: "book", title: "MongoDB Guide", isbn: "978-...", pages: 400 }
+{ _id: 2, type: "video", title: "MongoDB Course", url: "https://...", duration: 3600 }
+// Query all: db.media.find({ title: /MongoDB/ })
+// Query specific: db.media.find({ type: "book", pages: { $gt: 300 } })
+```
+
+### Bucket Pattern (Time-series / IoT)
+```javascript
+// Group measurements into time buckets — reduces document count
+{ sensorId: "temp-01", bucketStart: ISODate("2024-06-01T00:00:00Z"), count: 60,
+  measurements: [{ ts: ISODate("...T00:00Z"), value: 22.5 }, ...],
+  summary: { min: 22.1, max: 23.4, avg: 22.8 } }
+// Native time-series collections (7.x/8.x — automatic bucketing, 200% faster aggs in 8.0):
+db.createCollection("temperatures", {
+  timeseries: { timeField: "ts", metaField: "sensorId", granularity: "minutes" }
+});
+```
+
+### Outlier Pattern
+```javascript
+// Main doc (99%): { _id: "movie1", title: "Film", fans: ["u1","u2"], fanCount: 2 }
+// Outlier (1%): { _id: "movie2", title: "Blockbuster", hasOverflow: true, fanCount: 500000 }
+// Overflow: separate collection { movieId: "movie2", fans: ["u3", ...] }
+```
+
+### Subset Pattern
+```javascript
+// Embed only recent subset; full data in separate collection
+{ _id: "p1", name: "Widget", recentReviews: [/* last 10 */], reviewCount: 2847 }
+// Full reviews: db.reviews.find({ productId: "p1" })
+```
+
+---
+
+## Replica Sets
+
+```javascript
+// Initialize a 3-node replica set
+rs.initiate({
+  _id: "myRS",
+  members: [
+    { _id: 0, host: "mongo1:27017", priority: 2 },  // preferred primary
+    { _id: 1, host: "mongo2:27017", priority: 1 },
+    { _id: 2, host: "mongo3:27017", priority: 1 }
+  ]
+});
+
+// Read preference: balance reads across secondaries
+db.orders.find().readPref("secondaryPreferred");
+
+// Write concern: majority ensures durability
+db.orders.insertOne({ item: "x" }, { writeConcern: { w: "majority", wtimeout: 5000 } });
+```
+
+---
+
+## Sharding
+
+```javascript
+// Enable sharding on database and shard a collection
+sh.enableSharding("ecommerce");
+
+// Hashed shard key: even distribution, no range queries on shard key
+sh.shardCollection("ecommerce.orders", { customerId: "hashed" });
+
+// Ranged shard key: supports range queries, risk of hot spots
+sh.shardCollection("ecommerce.logs", { timestamp: 1 });
+
+// Compound shard key: balance distribution + query isolation
+sh.shardCollection("ecommerce.events", { tenantId: 1, eventDate: 1 });
+```
+**Shard key selection rules**: high cardinality, low frequency, non-monotonic. Avoid `_id` (ObjectId) as sole ranged shard key — causes insert hotspot on last chunk. MongoDB 8.0 supports resharding up to 50x faster.
+
+---
 
 ## Transactions
-### Multi-Document Transactions
-```js
+
+```javascript
 const session = client.startSession();
 try {
   session.startTransaction({
@@ -225,248 +292,205 @@ try {
     readPreference: "primary"
   });
 
-  await db.collection("accounts").updateOne(
-    { _id: fromId }, { $inc: { balance: -amount } }, { session }
-  );
-  await db.collection("accounts").updateOne(
-    { _id: toId }, { $inc: { balance: amount } }, { session }
-  );
-  await db.collection("transfers").insertOne(
-    { from: fromId, to: toId, amount, date: new Date() }, { session }
-  );
+  const accounts = client.db("bank").collection("accounts");
+  await accounts.updateOne({ _id: "A" }, { $inc: { balance: -100 } }, { session });
+  await accounts.updateOne({ _id: "B" }, { $inc: { balance: 100 } }, { session });
 
   await session.commitTransaction();
-} catch (error) {
+} catch (e) {
   await session.abortTransaction();
-  throw error;
+  throw e;
 } finally {
-  session.endSession();
+  await session.endSession();
 }
-```
-### Transaction Retry Logic
-```js
-async function runWithRetry(txnFunc, client, maxRetries = 3) {
-  const session = client.startSession();
-  try {
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        await session.withTransaction(txnFunc, {
-          readConcern: { level: "snapshot" },
-          writeConcern: { w: "majority" }
-        });
-        return; // success
-      } catch (error) {
-        if (error.hasErrorLabel("TransientTransactionError") && attempt < maxRetries - 1) {
-          continue; // retry
-        }
-        throw error;
-      }
-    }
-  } finally {
-    session.endSession();
-  }
-}
-```
-### Transaction Guidelines
-- Keep transactions short — long-running transactions hold locks and degrade performance.
-- Limit to 1000 documents modified per transaction when possible.
-- Require replica set or sharded cluster (not standalone).
-- Use `session.withTransaction()` for automatic retry on transient errors.
-- Prefer single-document atomicity when possible — no transaction needed.
-
-## Mongoose ODM Patterns
-### Schema Definition with Validation
-```js
-const userSchema = new mongoose.Schema({
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-  name: { type: String, required: true, minlength: 2, maxlength: 100 },
-  role: { type: String, enum: ["user", "admin", "moderator"], default: "user" },
-  profile: {
-    bio: { type: String, maxlength: 500 },
-    avatar: String
-  },
-  createdAt: { type: Date, default: Date.now, immutable: true }
-}, { timestamps: true });
-```
-### Virtuals
-```js
-userSchema.virtual("displayName").get(function () {
-  return `${this.name} (${this.role})`;
-});
-// Enable virtuals in JSON: { toJSON: { virtuals: true } }
-```
-### Middleware (Hooks)
-```js
-userSchema.pre("save", async function (next) {
-  if (this.isModified("password")) {
-    this.password = await bcrypt.hash(this.password, 12);
-  }
-  next();
-});
-
-userSchema.post("findOneAndDelete", async function (doc) {
-  if (doc) await Comment.deleteMany({ userId: doc._id });
-});
-```
-### Populate (Reference Resolution)
-```js
-const postSchema = new mongoose.Schema({
-  author: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-  title: String, body: String
-});
-
-// Populate on query
-const posts = await Post.find().populate("author", "name email").lean();
-```
-### Lean Queries
-Use `.lean()` for read-only operations — returns plain JS objects, skips Mongoose overhead.
-```js
-const users = await User.find({ active: true }).lean(); // 2-5x faster reads
-```
-### Discriminators (Inheritance)
-```js
-const eventSchema = new mongoose.Schema({ date: Date, location: String });
-const Event = mongoose.model("Event", eventSchema);
-
-const ClickEvent = Event.discriminator("ClickEvent",
-  new mongoose.Schema({ element: String, page: String }));
-const PurchaseEvent = Event.discriminator("PurchaseEvent",
-  new mongoose.Schema({ productId: ObjectId, amount: Number }));
-// All stored in "events" collection with __t discriminator key
+// Keep transactions short (<60s default timeout). Avoid cross-shard when possible.
+// MongoDB 8.0: batch inserts in transactions generate fewer oplog entries.
 ```
 
-## Query Optimization
-### Projection — Fetch Only Needed Fields
-```js
-db.users.find({ active: true }, { name: 1, email: 1, _id: 0 })
-```
-### Cursor-Based Pagination (Prefer Over skip/limit)
-```js
-// First page
-const page1 = await db.orders.find().sort({ _id: 1 }).limit(20).toArray();
-
-// Next page — use last document's _id as cursor
-const lastId = page1[page1.length - 1]._id;
-const page2 = await db.orders.find({ _id: { $gt: lastId } }).sort({ _id: 1 }).limit(20).toArray();
-```
-### Read Preferences
-```js
-// Read from secondaries for analytics (eventual consistency)
-db.reports.find().readPref("secondaryPreferred");
-
-// Read from primary for real-time data (strong consistency)
-db.accounts.find().readPref("primary");
-```
+---
 
 ## Change Streams
 
-```js
-const pipeline = [{ $match: { operationType: { $in: ["insert", "update"] } } }];
-const changeStream = db.collection("orders").watch(pipeline, { fullDocument: "updateLookup" });
-
-changeStream.on("change", (change) => {
-  console.log(change.operationType, change.fullDocument);
+```javascript
+// Watch for real-time changes — resume on failure with resumeToken
+const pipeline = [
+  { $match: { "fullDocument.status": "urgent", operationType: { $in: ["insert", "update"] } } }
+];
+const changeStream = db.collection("tickets").watch(pipeline, {
+  fullDocument: "updateLookup",       // include full doc on updates
+  fullDocumentBeforeChange: "required" // MongoDB 6.0+: include pre-image
 });
 
-// Resume after failure using resume token
-const resumeToken = change._id;
-const resumed = collection.watch(pipeline, { resumeAfter: resumeToken });
-```
-### Change Stream Guidelines
-- Require replica set or sharded cluster.
-- Store resume tokens persistently for crash recovery.
-- Use pipeline filters to reduce event volume.
-- Prefer `next()` over event emitters in serverless contexts.
-- Use `fullDocument: "updateLookup"` only when needed — adds a read per event.
+changeStream.on("change", (event) => {
+  console.log(event.operationType, event.fullDocument);
+  // Store event._id (resumeToken) for crash recovery
+});
 
-## Sharding Strategies
-### Shard Key Selection Criteria
-- **High cardinality** — many distinct values to distribute evenly.
-- **Low frequency** — no single value dominates writes.
-- **Non-monotonic** — avoid sequential keys (e.g., ObjectId, timestamps) for ranged sharding.
-### Hashed vs Ranged Sharding
-```js
-// Hashed — even distribution, no range queries on shard key
-sh.shardCollection("mydb.events", { userId: "hashed" })
-
-// Ranged — supports range queries, risk of hot spots with sequential keys
-sh.shardCollection("mydb.logs", { timestamp: 1 })
-
-// Compound shard key — balance distribution with query targeting
-sh.shardCollection("mydb.orders", { region: 1, orderId: 1 })
+// Resume after failure:
+const resumedStream = db.collection("tickets").watch(pipeline, {
+  resumeAfter: savedResumeToken
+});
 ```
-### Zone Sharding (Data Locality)
-```js
-// Assign data to specific shards by region
-sh.addShardTag("shard01", "US")
-sh.addTagRange("mydb.users", { region: "US" }, { region: "US~" }, "US")
+
+---
+
+## Atlas Features
+
+```javascript
+// Atlas Search (Lucene-based full-text search)
+db.products.aggregate([
+  { $search: {
+      index: "product_search",
+      compound: {
+        must: [{ text: { query: "wireless", path: "description" } }],
+        filter: [{ range: { path: "price", gte: 10, lte: 100 } }]
+      }
+  }},
+  { $limit: 20 },
+  { $project: { name: 1, price: 1, score: { $meta: "searchScore" } } }
+]);
+
+// Atlas Vector Search (MongoDB 7.0+, enhanced in 8.0 with quantized vectors)
+db.docs.aggregate([
+  { $vectorSearch: {
+      index: "vector_index",
+      path: "embedding",
+      queryVector: [0.1, 0.2, ...],  // 1536-dim for OpenAI embeddings
+      numCandidates: 150,
+      limit: 10
+  }}
+]);
 ```
+
+---
+
+## Mongoose ODM Patterns
+
+```javascript
+import mongoose from 'mongoose';
+const { Schema, model } = mongoose;
+
+const userSchema = new Schema({
+  email:    { type: String, required: true, unique: true, lowercase: true, trim: true },
+  name:     { type: String, required: true, maxlength: 100 },
+  role:     { type: String, enum: ['user', 'admin', 'moderator'], default: 'user' },
+  profile:  { bio: String, avatar: String },
+  teamId:   { type: Schema.Types.ObjectId, ref: 'Team' },
+}, { timestamps: true, toJSON: { virtuals: true } });
+
+userSchema.virtual('isAdmin').get(function() { return this.role === 'admin'; });
+userSchema.pre('save', async function(next) { /* middleware */ next(); });
+userSchema.statics.findByEmail = function(email) {
+  return this.findOne({ email: email.toLowerCase() });
+};
+const User = model('User', userSchema);
+
+// Populate references; lean() returns plain objects (2-5x faster)
+const user = await User.findById(id).populate('teamId', 'name -_id').lean();
+
+// Aggregation passes pipeline directly to MongoDB driver
+const stats = await User.aggregate([
+  { $group: { _id: "$role", count: { $sum: 1 } } }
+]);
+```
+
+---
+
+## Performance Tuning
+
+### Explain Plans
+```javascript
+// Use "executionStats" to see actual performance
+db.orders.find({ status: "active" }).explain("executionStats");
+// Key metrics:
+//   executionStats.totalDocsExamined — should be close to nReturned
+//   executionStats.executionStages.stage — IXSCAN good, COLLSCAN bad
+//   queryPlanner.winningPlan.inputStage — shows index used
+
+// Aggregation explain
+db.orders.explain("executionStats").aggregate([...]);
+```
+
+### Database Profiler
+```javascript
+// Level 0: off, 1: slow ops, 2: all ops
+db.setProfilingLevel(1, { slowms: 100 });
+// MongoDB 8.0: use workingMillis for server processing time (excludes network)
+db.system.profile.find({ millis: { $gt: 100 } }).sort({ ts: -1 }).limit(5);
+```
+
+### $queryStats (MongoDB 7.0+, Atlas M10+)
+```javascript
+db.adminCommand({
+  aggregate: 1,
+  pipeline: [{ $queryStats: {} }, { $sort: { "metrics.lastExecutionMicros": -1 } }],
+  cursor: {}
+});
+```
+
+### Common Fixes
+- **COLLSCAN → IXSCAN**: Add index matching query predicates (ESR rule)
+- **High docsExamined/nReturned ratio**: Refine index or add covered query projection
+- **Sort in memory**: Add sort fields to index; avoid in-memory sorts >100MB
+- **$lookup slow**: Index the foreign field; consider embedding if read-heavy
+
+---
 
 ## Security
-### Authentication and Authorization
-```js
-// Create user with role-based access
-db.createUser({
-  user: "appUser",
-  pwd: "securePassword",
-  roles: [{ role: "readWrite", db: "myapp" }]
-})
 
-// Enable authentication in mongod.conf
-// security:
-//   authorization: enabled
-```
-### Field-Level Encryption (Client-Side)
-```js
-// MongoDB CSFLE — encrypt sensitive fields before storage
-const encryptedFieldsMap = {
-  "mydb.users": {
-    fields: [
-      { path: "ssn", bsonType: "string", keyId: dataKeyId,
-        queries: { queryType: "equality" } },
-      { path: "medicalRecord", bsonType: "object", keyId: dataKeyId }
-    ]
-  }
-};
-// Use AutoEncryptionOpts in MongoClient for transparent encryption
-```
-### Security Checklist
-- Enable authentication and RBAC in all environments.
-- Use TLS/SSL for all connections. Enable audit logging for compliance.
-- Restrict network access with IP allowlists or VPC peering.
-- Rotate credentials regularly. Use SCRAM-SHA-256 or x.509 certificates.
-- Apply field-level encryption for PII and sensitive data.
+### Authentication
+```javascript
+// SCRAM-SHA-256 (default in 7.x/8.x)
+mongosh "mongodb://user:pass@host:27017/mydb?authMechanism=SCRAM-SHA-256"
 
-## Common Anti-Patterns
-### Unbounded Arrays
-Never let arrays grow without limit. Use the bucket or outlier pattern instead.
-```js
-// BAD: pushing to an unbounded array
-db.posts.updateOne({ _id: postId }, { $push: { comments: newComment } })
-// Array grows forever → exceeds 16 MB → performance degrades
-
-// GOOD: separate collection or bucket pattern
-db.comments.insertOne({ postId, text: "...", createdAt: new Date() })
-```
-### Missing Indexes
-Run `explain()` on every query in production. A COLLSCAN on a large collection causes full table scans.
-```js
-// Detect missing indexes
-db.orders.find({ customerId: id }).explain("executionStats")
-// If totalDocsExamined >> nReturned, add an index
-```
-### Unnecessary $lookup
-Avoid $lookup in hot paths. Denormalize with the extended reference pattern for frequently joined data.
-### Over-Normalization
-Do not replicate a relational schema in MongoDB. Embed data read together.
-### Deep Pagination with skip()
-`skip(10000)` scans and discards 10,000 documents. Use cursor-based pagination.
-### Large Documents as Queues
-Do not use MongoDB as a message queue. Use change streams or a dedicated queue.
-### Ignoring Write Concern
-Use `w: "majority"` for critical writes. Default `w: 1` risks data loss on failover.
-```js
-db.payments.insertOne(doc, { writeConcern: { w: "majority", j: true } })
+// x.509 certificate auth
+mongosh --tls --tlsCertificateKeyFile client.pem \
+  --tlsCAFile ca.pem --authenticationMechanism MONGODB-X509
 ```
 
-<!-- tested: pass -->
+### Role-Based Access Control (RBAC)
+```javascript
+db.createUser({ user: "appUser", pwd: passwordPrompt(),
+  roles: [{ role: "readWrite", db: "ecommerce" }, { role: "read", db: "analytics" }]
+});
+
+// Custom role: read + specific collection write
+db.createRole({
+  role: "orderProcessor",
+  privileges: [{
+    resource: { db: "ecommerce", collection: "orders" },
+    actions: ["find", "update", "insert"]
+  }],
+  roles: [{ role: "read", db: "ecommerce" }]
+});
+```
+
+### Queryable Encryption (MongoDB 7.0+)
+```javascript
+const encryptedClient = new MongoClient(uri, { autoEncryption: {
+  keyVaultNamespace: "encryption.__keyVault",
+  kmsProviders: { aws: { accessKeyId: "...", secretAccessKey: "..." } },
+  encryptedFieldsMap: { "mydb.patients": { fields: [
+    { path: "ssn", bsonType: "string", queries: { queryType: "equality" } },
+    { path: "billing.amount", bsonType: "int", queries: { queryType: "range" } } // 8.0: range queries
+  ]}}
+}});
+```
+
+---
+
+## Quick Reference: mongosh Commands
+
+```javascript
+show dbs                          // list databases
+use mydb                          // switch database
+show collections                  // list collections
+db.stats()                        // database statistics
+db.coll.getIndexes()              // list indexes
+db.coll.createIndex({f:1})        // create index
+db.coll.countDocuments({f:"v"})   // count with filter
+db.coll.estimatedDocumentCount()  // fast approximate count
+db.currentOp()                    // running operations
+db.killOp(opId)                   // kill an operation
+sh.status()                       // sharding status
+```
