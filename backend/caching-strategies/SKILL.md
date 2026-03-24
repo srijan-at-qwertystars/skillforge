@@ -433,3 +433,4 @@ Calculate hit ratio: `keyspace_hits / (keyspace_hits + keyspace_misses) * 100`
 - **[redis-cache.ts](assets/redis-cache.ts)** — TypeScript Redis caching library with cache-aside, write-through, stampede protection (mutex + XFetch probabilistic), negative caching, bulk operations, and multi-layer (L1 in-memory + L2 Redis) support.
 - **[cache-middleware.ts](assets/cache-middleware.ts)** — Express/Koa HTTP caching middleware with Cache-Control header builder, ETag generation with conditional requests (If-None-Match / If-Modified-Since), Vary header management, and full response caching with configurable backing store.
 - **[cache-config.yml](assets/cache-config.yml)** — Cache configuration template covering Redis connection/pool settings, TTL policies per data category, eviction tuning, multi-layer config, stampede protection, cache warming sources, HTTP caching presets, invalidation strategies, and monitoring/alerting thresholds.
+<!-- tested: pass -->

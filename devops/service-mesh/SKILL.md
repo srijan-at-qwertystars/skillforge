@@ -495,3 +495,5 @@ spec:
 - **[virtualservice.yaml](assets/virtualservice.yaml)** — Traffic splitting, header routing, retries, timeouts, fault injection, DestinationRule subsets.
 - **[peer-auth.yaml](assets/peer-auth.yaml)** — PeerAuthentication (STRICT/PERMISSIVE/port-level) and AuthorizationPolicy (deny-all, ALLOW, JWT RBAC).
 - **[gateway.yaml](assets/gateway.yaml)** — TLS termination, multiple hosts, mutual TLS, HTTP→HTTPS redirect, CORS, VirtualService bindings.
+
+<!-- tested: pass -->

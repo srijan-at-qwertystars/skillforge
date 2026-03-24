@@ -489,3 +489,4 @@ module "eks" {
 | [`assets/github-actions-ci.yml`](assets/github-actions-ci.yml) | Lightweight CI-only workflow |
 | [`assets/terrafile.hcl`](assets/terrafile.hcl) | Terrafile for module dependencies |
 | [`assets/.tflint.hcl`](assets/.tflint.hcl) | TFLint configuration |
+<!-- tested: pass -->

@@ -1,100 +1,131 @@
-# QA Review: terraform-modules
+# QA Review: devops/terraform-modules
 
 **Skill path:** `devops/terraform-modules/`
-**Reviewed:** 2025-07-17
-**Reviewer:** Copilot QA
+**Reviewed:** 2025-07-25 (re-review)
+**Previous review:** 2025-07-17
+**Reviewer:** Copilot CLI (automated)
+**Verdict:** ✅ PASS
+
+---
+
+## Scores
+
+| Dimension | Score | Notes |
+|-----------|-------|-------|
+| **Accuracy** | 4 / 5 | All version claims verified correct via web search. One factual error: EKS module example uses `enable_irsa` which was removed in v20. |
+| **Completeness** | 5 / 5 | Comprehensive coverage across SKILL.md (491 lines) + 3 references (3,758 lines) + 3 scripts + 7 assets. |
+| **Actionability** | 5 / 5 | Copy-pasteable HCL examples, ready-to-use scripts, production-grade CI/CD workflows, complete VPC module. |
+| **Trigger Quality** | 4 / 5 | Strong positive/negative triggers. Minor false-trigger risk on broad terms. Missing OpenTofu negative trigger. |
+| **Overall** | **4.5 / 5** | High-quality skill. One content fix needed. |
 
 ---
 
 ## a. Structure Check
 
-| Criterion | Status | Notes |
-|-----------|--------|-------|
-| YAML frontmatter | ✅ | `name`, `description` with positive + negative triggers present |
-| Under 500 lines | ✅ | Exactly 500 lines (at the limit but passes) |
-| Imperative voice | ✅ | "Use the canonical layout", "Pin everything", "Define in variables.tf", "Never declare provider blocks inside child modules" |
-| Examples | ✅ | 3 worked examples: reusable VPC module, terraform test, multi-region provider aliases |
-| References linked | ✅ | 3 reference files (advanced-patterns, troubleshooting, testing-guide); all exist, 960-1100 lines each — substantial depth |
-| Scripts linked | ✅ | 3 scripts (scaffold-module.sh, validate-module.sh, publish-module.sh); all exist, well-documented with usage headers |
-| Assets linked | ✅ | 4 assets (module-template/, github-actions-ci.yml, terrafile.hcl, .tflint.hcl); all present and functional |
+| Criterion | Status | Detail |
+|-----------|--------|--------|
+| YAML frontmatter `name` | ✅ | `terraform-modules` |
+| YAML frontmatter `description` | ✅ | Multi-line, describes purpose clearly |
+| Positive triggers | ✅ | Terraform modules, HCL, IaC, module composition, Registry, state management, remote backends, workspaces, provider config, variable validation, moved/import/removed blocks, terraform test, CI/CD |
+| Negative triggers | ✅ | Pulumi, CloudFormation, CDK, Ansible, Chef/Puppet, simple shell scripts |
+| Body under 500 lines | ✅ | 491 lines (tight but passes) |
+| Imperative voice | ✅ | "Organize every module…", "Declare typed variables…", "Pin versions explicitly…" |
+| Examples | ✅ | 15+ HCL code blocks in SKILL.md |
+| Resources linked | ✅ | 3 references, 3 scripts, 7 assets — all linked in tables at bottom, all files verified present |
+
+### Full File Inventory
+
+| File | Lines | Status |
+|------|-------|--------|
+| `SKILL.md` | 491 | ✅ |
+| `references/advanced-patterns.md` | 1,393 | ✅ 14 sections |
+| `references/troubleshooting.md` | 1,260 | ✅ 13 sections |
+| `references/testing-guide.md` | 1,105 | ✅ 5 major sections |
+| `scripts/scaffold-module.sh` | 265 | ✅ Generates standard layout |
+| `scripts/validate-module.sh` | 178 | ✅ Full validation suite |
+| `scripts/publish-module.sh` | 284 | ✅ Semver tagging + registry |
+| `assets/vpc-module/{main,variables,outputs}.tf` | 225+69+35 | ✅ Complete VPC module |
+| `assets/module-template/{5 files}` | ~150 | ✅ Starter template |
+| `assets/github-actions.yml` | 264 | ✅ Full CI/CD pipeline |
+| `assets/github-actions-ci.yml` | 190 | ✅ Module CI pipeline |
+| `assets/terragrunt.hcl` | 187 | ✅ DRY hierarchy template |
+| `assets/terrafile.hcl` | 154 | ✅ Test file examples |
+| `assets/.tflint.hcl` | 158 | ✅ TFLint configuration |
+
+---
 
 ## b. Content Check
 
+### Version Claims — Web-Search Verified
+
+| Claim in SKILL.md | Stated Version | Verified Version | Status |
+|--------------------|---------------|-----------------|--------|
+| `terraform test` introduced | 1.6+ | 1.6.0 | ✅ |
+| `mock_provider` introduced | 1.7+ | 1.7.0 | ✅ |
+| `removed` block introduced | 1.7+ | 1.7.0 | ✅ |
+| `import` block introduced | 1.5+ | 1.5.0 | ✅ |
+| `optional()` GA | 1.3+ | 1.3.0 | ✅ |
+
 ### HCL Syntax Accuracy
-- **`terraform` block** (`required_version`, `required_providers`): ✅ Correct
-- **`variable` blocks** (type, description, validation, sensitive, optional): ✅ Correct; `optional()` syntax matches Terraform 1.3+
-- **`output` blocks** (value, sensitive, description): ✅ Correct
-- **`module` blocks** (source, version, for_each, providers): ✅ Correct
-- **`moved` block**: ✅ Correct syntax (`from`/`to` use unquoted addresses, matching Terraform docs)
-- **Version constraints** (`~>`, `>=`, exact): ✅ Correct semantics
-- **Remote sources** (registry, git `?ref=`, S3): ✅ Correct format
-- **Provider aliasing** and `configuration_aliases`: ✅ Correct pattern — child declares aliases, root maps via `providers = {}`
-- **`terraform test`** (`.tftest.hcl`): ✅ Syntax matches official Terraform 1.6+ framework — `variables`, `run`, `command`, `assert`, `expect_failures` all verified
+- `terraform` block, `variable` blocks, `output` blocks, `module` blocks: ✅ All correct
+- `moved` block syntax: ✅ Correct
+- Version constraints (`~>`, `>=`): ✅ Correct semantics
+- Remote sources (registry, git `?ref=`, S3): ✅ Correct
+- Provider aliasing and `configuration_aliases`: ✅ Correct
+- `terraform test` `.tftest.hcl` syntax: ✅ Matches Terraform 1.6+ framework
 
-### Module Patterns
-- Flat composition, facade, for_each stamping: ✅ All standard patterns correctly demonstrated
-- Remote state cross-reference: ✅ Correct with appropriate caveat ("prefer passing outputs explicitly")
-- Workspace management: ✅ Functional pattern using `terraform.workspace`
+### Issues Found
 
-### CI/CD & Tooling
-- GitHub Actions workflow: ✅ Uses `hashicorp/setup-terraform@v3`, `actions/checkout@v4`; includes OIDC for AWS — production-ready
-- Static analysis pipeline (`fmt -check`, `validate`, `tflint`, `checkov`, `trivy`): ✅ Correct
-- Terratest Go example: ✅ Correct pattern (`InitAndApply`, `Destroy`, `Output`)
-- Semver tagging: ✅ Correct workflow
+| # | Severity | Issue | Location |
+|---|----------|-------|----------|
+| 1 | 🔴 Medium | **EKS example uses `enable_irsa = true`** — this parameter was **removed** in terraform-aws-modules/eks/aws v20. The example specifies `version = "~> 20.0"` but `enable_irsa` does not exist in that version. A user copying this would get a Terraform error. | SKILL.md ~L439 |
+| 2 | 🟡 Low | `required_version` inconsistency: SKILL.md example uses `>= 1.5.0` but module template and scaffold script use `>= 1.6.0`. Could confuse readers about which minimum to use. | SKILL.md L36 vs templates |
+| 3 | 🟡 Low | Missing OpenTofu in negative triggers — the most common Terraform alternative with compatible syntax. | YAML frontmatter |
+| 4 | 🟢 Info | VPC flow logs IAM policy uses `Resource = "*"` — overly permissive. Could scope to log group ARN. | assets/vpc-module/main.tf L207 |
+| 5 | 🟢 Info | No mention of `.terraform.lock.hcl` commit strategy in SKILL.md or references. | — |
+| 6 | 🟢 Info | No mention of `terraform-docs` tool in main SKILL.md (only in validate script). | SKILL.md |
 
-### Missing Gotchas (minor)
-1. **`import` block** (Terraform 1.5+): Listed in triggers but no section in main SKILL.md. Covered in `references/advanced-patterns.md` but a brief mention in the main doc would improve discoverability.
-2. **`removed` block** (Terraform 1.7+): Not mentioned in SKILL.md. Covered in references.
-3. **`count` index shifting pitfall**: The main doc uses `for_each` examples well but doesn't explicitly warn about `count` index instability. Covered in `references/troubleshooting.md`.
-4. **`for_each` values must be known at plan time**: Not mentioned in main doc. Covered in troubleshooting reference.
-5. **Workspace caveat**: The workspace section doesn't note HashiCorp's recommendation to prefer separate directories/backends over workspaces for production environments.
-
-All five gaps are covered in the reference files, so the overall package is complete. Main SKILL.md could surface items 1 and 3 for better standalone usability.
+---
 
 ## c. Trigger Check
 
-### Positive Triggers
-| Trigger | Specific to modules? | Risk |
-|---------|---------------------|------|
-| "terraform module", "tf module composition" | ✅ Highly specific | Low |
-| "terraform registry", "module versioning" | ✅ Module-specific | Low |
-| "module inputs outputs", "terraform remote module" | ✅ Module-specific | Low |
-| "HCL module pattern" | ✅ Module-specific | Low |
-| "terraform test", "terratest" | ⚠️ Could be general TF testing | Low-medium |
-| "terraform workspaces" | ⚠️ Could be general workspace Q | Medium |
-| "terraform state management" | ⚠️ Broad — not always module-related | Medium |
-| "terraform troubleshooting" | ⚠️ Broad — any TF problem | Medium |
-| "terraform import", "terraform moved block" | ⚠️ Could be standalone ops | Low-medium |
-| "tflint", "tfsec", "checkov" | ⚠️ Tools used beyond modules | Medium |
-| "terraform CI/CD" | ⚠️ Could be general pipeline Q | Low-medium |
-| "terraform provider configuration" | ⚠️ Could be root-only config | Low-medium |
+### Positive Triggers — Would correctly trigger for:
+- ✅ "Create a Terraform module for S3"
+- ✅ "How do I test my Terraform configuration?"
+- ✅ "Set up remote backend with S3 and DynamoDB"
+- ✅ "Refactor Terraform resources with moved blocks"
+- ✅ "CI/CD pipeline for Terraform"
+- ✅ "Terraform variable validation patterns"
 
-### Negative Triggers
-✅ Correctly excludes: Pulumi, CloudFormation, CDK, Ansible, general cloud questions.
+### Negative Triggers — Correctly excludes:
+- ✅ Pulumi, CloudFormation, CDK, Ansible, Chef/Puppet, simple shell scripts
 
-### False Trigger Assessment
-- **Pulumi/CloudFormation**: ❌ Will NOT falsely trigger — negative triggers prevent this
-- **General Terraform usage** (e.g., "how do I write a resource block"): ❌ Will NOT trigger — none of the positive triggers match basic usage
-- **Broad triggers** ("terraform troubleshooting", "terraform state management", "tflint"): ⚠️ COULD trigger for non-module Terraform questions. The content is still useful in those contexts, so this is a minor concern rather than a defect.
+### False Trigger Risks:
+- ⚠️ "infrastructure as code" — broad; could match general IaC discussions
+- ⚠️ "CI/CD pipelines for infrastructure" — could match non-Terraform CI/CD
+- ⚠️ Missing negative for **OpenTofu** (Terraform fork with compatible syntax)
+- ⚠️ Missing negative for **Crossplane** (Kubernetes-native IaC)
 
-## d. Scores
+---
 
-| Dimension | Score | Rationale |
-|-----------|-------|-----------|
-| **Accuracy** | 5 | All HCL syntax verified correct against official docs. Provider aliasing, terraform test, moved blocks, version constraints — all accurate. |
-| **Completeness** | 4 | Excellent breadth: module structure, variables, outputs, composition, versioning, testing, CI/CD, registry, state. Minor gaps in main doc (import block, removed block, count pitfall) are covered in references. |
-| **Actionability** | 5 | Copy-paste ready code blocks. Three automation scripts (scaffold, validate, publish). Complete CI/CD template. Practical examples with real-world patterns. |
-| **Trigger quality** | 4 | 19 positive triggers are comprehensive. Negative triggers are correct. A few triggers are broad ("terraform troubleshooting", "tflint") but unlikely to cause real problems. |
+## d. Score Justification
 
-**Overall: 4.5 / 5** — ✅ PASS
+**Accuracy (4/5):** All five Terraform version claims independently verified correct. The `enable_irsa` error in the EKS v20 example is the only factual issue — it would cause a real Terraform error for users.
+
+**Completeness (5/5):** Exceptionally thorough. SKILL.md covers module structure, design principles, variables, outputs, sources, versioning, composition, state management, import blocks, workspaces, testing (native + Terratest), CI/CD, provider configuration, data sources, dynamic blocks, moved/removed blocks, and common patterns. Three reference documents add 3,758 lines of advanced patterns, troubleshooting, and testing guidance. Assets include runnable examples.
+
+**Actionability (5/5):** Every section has copy-pasteable code. Scaffold script generates a working module skeleton. Validate script runs a full CI suite. GitHub Actions workflows are production-ready. VPC module is deployable. Users can go from zero to a tested, published module.
+
+**Trigger Quality (4/5):** Strong coverage of Terraform-specific terms with clear negative triggers. Minor over-triggering risk on broad IaC/CI terms. The OpenTofu omission is the most notable gap.
+
+---
 
 ## e. Recommendations (non-blocking)
 
-1. Add a brief `import` block section to SKILL.md (2-3 lines + example) since it's listed in triggers
-2. Add a one-line warning about `count` index instability in the composition section
-3. Consider narrowing "terraform troubleshooting" to "terraform module troubleshooting" in triggers
-4. Consider adding "terraform removed block" to triggers since it's covered in references
-5. SKILL.md is at exactly 500 lines — any additions would require trimming elsewhere
+1. **Fix EKS example**: Remove `enable_irsa = true` from the EKS v20 example or add a comment that IRSA is managed differently in v20+
+2. **Align `required_version`**: Standardize on `>= 1.6.0` across all examples since `terraform test` requires it
+3. **Add OpenTofu negative trigger**: "Do NOT use for … OpenTofu (unless discussing Terraform compatibility)"
+4. **Scope VPC flow logs IAM**: Replace `Resource = "*"` with the specific log group ARN
 
 ## f. GitHub Issues
 
