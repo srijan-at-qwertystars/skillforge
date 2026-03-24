@@ -1,0 +1,225 @@
+# pipeline.yml — CI/CD pipeline for Bicep deployment
+# Supports both GitHub Actions and Azure DevOps (two pipeline definitions in one file).
+# Copy the relevant section to your repository.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GITHUB ACTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+# Save as: .github/workflows/bicep-deploy.yml
+
+name: Deploy Bicep Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths: ['infra/**']
+  pull_request:
+    branches: [main]
+    paths: ['infra/**']
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, staging, prod]
+
+permissions:
+  id-token: write    # Required for OIDC / federated credentials
+  contents: read
+
+env:
+  BICEP_DIR: infra
+  TEMPLATE_FILE: infra/main.bicep
+
+jobs:
+  lint:
+    name: Lint & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bicep CLI
+        run: az bicep install
+
+      - name: Lint Bicep files
+        run: |
+          find ${{ env.BICEP_DIR }} -name '*.bicep' -not -name '*.test.bicep' | while read f; do
+            echo "Linting: $f"
+            az bicep lint --file "$f"
+          done
+
+      - name: Build (compile to ARM)
+        run: az bicep build --file ${{ env.TEMPLATE_FILE }}
+
+  validate:
+    name: Validate
+    needs: lint
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate deployment
+        run: |
+          az deployment group validate \
+            --resource-group ${{ vars.RESOURCE_GROUP }} \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --parameters infra/parameters/${{ github.event.inputs.environment || 'dev' }}.bicepparam
+
+  what-if:
+    name: What-If Preview
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: What-If analysis
+        run: |
+          az deployment group what-if \
+            --resource-group ${{ vars.RESOURCE_GROUP }} \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --parameters infra/parameters/${{ github.event.inputs.environment || 'dev' }}.bicepparam
+
+  deploy:
+    name: Deploy
+    needs: what-if
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    environment:
+      name: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep
+        id: deploy
+        run: |
+          result=$(az deployment group create \
+            --resource-group ${{ vars.RESOURCE_GROUP }} \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --parameters infra/parameters/${{ github.event.inputs.environment || 'dev' }}.bicepparam \
+            --name "gh-${{ github.run_number }}-$(date +%s)" \
+            --query "properties.outputs" -o json)
+          echo "outputs=$result" >> "$GITHUB_OUTPUT"
+
+      - name: Show outputs
+        run: echo '${{ steps.deploy.outputs.outputs }}' | jq .
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AZURE DEVOPS
+# ═══════════════════════════════════════════════════════════════════════════════
+# Save as: azure-pipelines.yml
+# Uncomment the section below and remove the GitHub Actions section above.
+
+# trigger:
+#   branches:
+#     include: [main]
+#   paths:
+#     include: [infra/*]
+#
+# pool:
+#   vmImage: ubuntu-latest
+#
+# variables:
+#   azureServiceConnection: 'MyAzureServiceConnection'
+#   resourceGroup: 'myapp-rg'
+#   templateFile: 'infra/main.bicep'
+#   paramFile: 'infra/parameters/$(environment).bicepparam'
+#
+# parameters:
+#   - name: environment
+#     displayName: 'Target Environment'
+#     type: string
+#     default: dev
+#     values: [dev, staging, prod]
+#
+# stages:
+#   - stage: Validate
+#     displayName: 'Lint & Validate'
+#     jobs:
+#       - job: LintAndValidate
+#         steps:
+#           - task: AzureCLI@2
+#             displayName: 'Install & Lint Bicep'
+#             inputs:
+#               azureSubscription: $(azureServiceConnection)
+#               scriptType: bash
+#               inlineScript: |
+#                 az bicep install
+#                 az bicep lint --file $(templateFile)
+#                 az bicep build --file $(templateFile)
+#
+#           - task: AzureCLI@2
+#             displayName: 'Validate deployment'
+#             inputs:
+#               azureSubscription: $(azureServiceConnection)
+#               scriptType: bash
+#               inlineScript: |
+#                 az deployment group validate \
+#                   --resource-group $(resourceGroup) \
+#                   --template-file $(templateFile) \
+#                   --parameters $(paramFile)
+#
+#   - stage: Preview
+#     displayName: 'What-If Preview'
+#     dependsOn: Validate
+#     jobs:
+#       - job: WhatIf
+#         steps:
+#           - task: AzureCLI@2
+#             displayName: 'What-If analysis'
+#             inputs:
+#               azureSubscription: $(azureServiceConnection)
+#               scriptType: bash
+#               inlineScript: |
+#                 az deployment group what-if \
+#                   --resource-group $(resourceGroup) \
+#                   --template-file $(templateFile) \
+#                   --parameters $(paramFile)
+#
+#   - stage: Deploy
+#     displayName: 'Deploy to ${{ parameters.environment }}'
+#     dependsOn: Preview
+#     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+#     jobs:
+#       - deployment: DeployBicep
+#         environment: ${{ parameters.environment }}
+#         strategy:
+#           runOnce:
+#             deploy:
+#               steps:
+#                 - checkout: self
+#                 - task: AzureCLI@2
+#                   displayName: 'Deploy Bicep'
+#                   inputs:
+#                     azureSubscription: $(azureServiceConnection)
+#                     scriptType: bash
+#                     inlineScript: |
+#                       az deployment group create \
+#                         --resource-group $(resourceGroup) \
+#                         --template-file $(templateFile) \
+#                         --parameters $(paramFile) \
+#                         --name "ado-$(Build.BuildNumber)"

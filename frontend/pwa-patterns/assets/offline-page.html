@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a73e8">
+  <title>You're Offline</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-bg: #f8f9fa;
+      --color-text: #1f2937;
+      --color-muted: #6b7280;
+      --color-primary: #1a73e8;
+      --color-primary-hover: #1557b0;
+      --color-card: #ffffff;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-bg: #111827;
+        --color-text: #f3f4f6;
+        --color-muted: #9ca3af;
+        --color-primary: #60a5fa;
+        --color-primary-hover: #93c5fd;
+        --color-card: #1f2937;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--color-bg);
+      color: var(--color-text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+
+    .container {
+      text-align: center;
+      max-width: 420px;
+      background: var(--color-card);
+      padding: 3rem 2rem;
+      border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .icon {
+      width: 80px;
+      height: 80px;
+      margin: 0 auto 1.5rem;
+      opacity: 0.6;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    p {
+      color: var(--color-muted);
+      line-height: 1.6;
+      margin-bottom: 1.5rem;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 0.75rem 2rem;
+      border: none;
+      border-radius: 8px;
+      background: var(--color-primary);
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+
+    .btn:hover { background: var(--color-primary-hover); }
+    .btn:active { transform: scale(0.98); }
+
+    .status {
+      margin-top: 1.5rem;
+      font-size: 0.85rem;
+      color: var(--color-muted);
+    }
+
+    .status.online { color: #10b981; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Offline cloud icon (inline SVG — no network needed) -->
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728" stroke-linecap="round"/>
+      <line x1="4" y1="4" x2="20" y2="20" stroke-linecap="round" stroke-width="2"/>
+    </svg>
+
+    <h1>You're offline</h1>
+    <p>
+      It looks like you've lost your internet connection.
+      The page you requested isn't available offline.
+    </p>
+
+    <button class="btn" onclick="tryReconnect()">Try again</button>
+
+    <p class="status" id="status"></p>
+  </div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+
+    function tryReconnect() {
+      statusEl.textContent = 'Checking connection...';
+      statusEl.className = 'status';
+
+      fetch(window.location.href, { cache: 'no-store' })
+        .then(() => {
+          statusEl.textContent = 'Connected! Reloading...';
+          statusEl.className = 'status online';
+          setTimeout(() => window.location.reload(), 500);
+        })
+        .catch(() => {
+          statusEl.textContent = 'Still offline. Please check your connection.';
+          statusEl.className = 'status';
+        });
+    }
+
+    // Auto-reload when connection returns
+    window.addEventListener('online', () => {
+      statusEl.textContent = 'Back online! Reloading...';
+      statusEl.className = 'status online';
+      setTimeout(() => window.location.reload(), 1000);
+    });
+  </script>
+</body>
+</html>

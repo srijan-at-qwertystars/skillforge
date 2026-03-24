@@ -444,3 +444,37 @@ output subnetIds array = [for (s, i) in subnets: vnet.properties.subnets[i].id]
 - Use deployment stacks for lifecycle management.
 - Configure `bicepconfig.json` with linter rule severities at repo root.
 - Use `@export()`/`import` for cross-file sharing of types, vars, and functions.
+
+## Skill Files
+
+### References
+
+Deeply researched reference documents for advanced usage, troubleshooting, and resource patterns.
+
+| File | Description |
+|---|---|
+| [references/advanced-patterns.md](references/advanced-patterns.md) | Deployment scripts, Bicep extensibility (Kubernetes/Graph providers), private module registries, template specs, deployment stacks with deny settings, what-if change types, cross-scope deployments, managed identity patterns, `@discriminator` custom types, Bicep with AKS/App Service/Functions/SQL |
+| [references/troubleshooting.md](references/troubleshooting.md) | Diagnosing deployment failures (ResourceNotFound, InvalidTemplate, AuthorizationFailed, RequestDisallowedByPolicy, DeploymentQuotaExceeded), module resolution errors, circular dependencies, what-if false positives, linter rule suppression, ARM→Bicep decompilation issues, API version compatibility, debugging techniques |
+| [references/resource-reference.md](references/resource-reference.md) | Production-ready Bicep patterns for Storage Account, App Service + Plan, Azure SQL, Key Vault, Virtual Network, Container Registry, AKS cluster, Function App, Cosmos DB, Application Insights — each with security defaults, monitoring, and outputs |
+
+### Scripts
+
+Executable bash helpers for Bicep workflow automation.
+
+| File | Description |
+|---|---|
+| [scripts/setup-bicep.sh](scripts/setup-bicep.sh) | Install Bicep CLI (via `az` or standalone), configure VS Code extension, initialize project structure with `bicepconfig.json`, stub `main.bicep`, and parameter files |
+| [scripts/deploy-bicep.sh](scripts/deploy-bicep.sh) | Deploy Bicep with lint → validate → what-if → deploy pipeline. Supports parameter files, environment targeting, subscription scope, deployment stacks with deny settings |
+| [scripts/lint-bicep.sh](scripts/lint-bicep.sh) | Run Bicep linter on all files, compile-check to ARM, best-practices analysis (hardcoded locations, missing `@description`, `concat()` usage), optional Azure validation. Supports `--strict`, `--fix`, `--ci` modes |
+
+### Assets
+
+Ready-to-use Bicep templates, modules, and configuration files.
+
+| File | Description |
+|---|---|
+| [assets/main.bicep](assets/main.bicep) | Multi-resource deployment template: App Service + Azure SQL + Key Vault + Application Insights with managed identity, Key Vault secret references, environment-aware SKUs |
+| [assets/modules/storage.bicep](assets/modules/storage.bicep) | Reusable storage account module with configurable containers, lifecycle management, soft delete, versioning, and network ACLs |
+| [assets/modules/networking.bicep](assets/modules/networking.bicep) | VNet + dynamic subnets + per-subnet NSGs with configurable security rules, service endpoints, and subnet delegations |
+| [assets/bicepconfig.json](assets/bicepconfig.json) | Complete Bicep linter configuration with all 35 built-in rules configured, formatting options, module aliases, and experimental feature flags |
+| [assets/pipeline.yml](assets/pipeline.yml) | Dual CI/CD pipeline (GitHub Actions + Azure DevOps) with lint → validate → what-if → deploy stages, OIDC auth, environment gates, and deployment outputs |

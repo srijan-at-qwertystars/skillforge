@@ -18,6 +18,25 @@ description: >
 
 # PWA Patterns Skill
 
+## Skill Resources
+
+### references/
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Navigation preload, streaming responses, BroadcastChannel, client claims, cache versioning, Workbox recipes, SW update UX, Background Fetch API, Content Indexing API, Web Periodic Background Sync
+- **[troubleshooting.md](references/troubleshooting.md)** — SW not updating, cache invalidation, iOS Safari limitations, cross-origin SW requests, CORS/opaque responses, DevTools debugging, manifest detection, install prompt timing
+- **[api-reference.md](references/api-reference.md)** — Cache API, SW Registration, Push/Notification API, Background Sync, IndexedDB, Web App Manifest fields, Workbox modules (precaching, routing, strategies, expiration, background-sync, window, recipes)
+
+### scripts/
+- **[setup-pwa.sh](scripts/setup-pwa.sh)** — Add PWA support to an existing web project (manifest, SW, icons, offline page). Usage: `./setup-pwa.sh [project-dir] [app-name]`
+- **[generate-icons.sh](scripts/generate-icons.sh)** — Generate all required PWA icon sizes from a source image (requires ImageMagick). Usage: `./generate-icons.sh <source.png> [output-dir]`
+- **[audit-pwa.sh](scripts/audit-pwa.sh)** — Run Lighthouse PWA audit and parse results to stdout. Usage: `./audit-pwa.sh <url> [output-dir]`
+
+### assets/
+- **[manifest.json](assets/manifest.json)** — Complete Web App Manifest template with all standard fields documented
+- **[service-worker.js](assets/service-worker.js)** — Production service worker with Workbox: precaching, runtime strategies, navigation preload, push, background sync, offline fallback
+- **[push-server.js](assets/push-server.js)** — Node.js/Express push notification server with web-push, VAPID, subscription management, and broadcast endpoints
+- **[offline-page.html](assets/offline-page.html)** — Offline fallback page with dark mode, auto-reconnect, inline SVG (no network dependencies)
+- **[workbox-config.js](assets/workbox-config.js)** — Workbox CLI configuration for injectManifest and generateSW modes with documented options
+
 ## Web App Manifest
 
 Generate `manifest.json` at the site root. Link it in HTML `<head>`:
@@ -458,34 +477,13 @@ Run Lighthouse: `npx lighthouse https://example.com --only-categories=pwa --outp
 ## Examples
 
 ### Example 1: Add PWA support to existing React app
-
 **Input:** "Make my React app installable with offline support"
-
-**Output:** Generate these files:
-- `public/manifest.json` with name, icons, display, start_url, theme_color
-- `src/sw.js` with Workbox precaching for build output and network-first for navigation
-- `src/index.js` registration: `navigator.serviceWorker.register('/sw.js')`
-- `workbox-config.js` with injectManifest targeting dist output
+**Output:** Generate `public/manifest.json` (name, icons, display, start_url, theme_color), `src/sw.js` (Workbox precaching + network-first navigation), SW registration in `src/index.js`, `workbox-config.js` with injectManifest.
 
 ### Example 2: Implement offline-first data sync
-
 **Input:** "Users need to create records offline and sync when back online"
-
-**Output:** Implement:
-- IndexedDB store via `idb` for pending records
-- Background Sync registration on save failure
-- Service worker `sync` event handler replaying IndexedDB queue to API
-- Conflict resolution: server timestamp comparison, last-write-wins or merge prompt
-- UI indicator showing sync status (pending/syncing/synced)
+**Output:** IndexedDB store via `idb` for pending records, Background Sync registration on save failure, SW `sync` event handler replaying IndexedDB queue to API, conflict resolution (timestamp comparison, last-write-wins or merge prompt), UI sync status indicator.
 
 ### Example 3: Add push notifications to Next.js PWA
-
 **Input:** "Set up web push notifications for my Next.js app"
-
-**Output:** Implement:
-- Generate VAPID keys, store in `.env` (NEXT_PUBLIC_VAPID_PUBLIC, VAPID_PRIVATE)
-- API route `POST /api/push/subscribe` storing subscriptions in DB
-- API route `POST /api/push/send` using `web-push` library
-- Client hook `usePushSubscription` handling permission request + subscription
-- Service worker `push` and `notificationclick` handlers
-- Permission request triggered by user action, never on page load
+**Output:** Generate VAPID keys in `.env`, API routes `POST /api/push/subscribe` and `/api/push/send` using `web-push`, client hook `usePushSubscription` for permission + subscription, SW `push` and `notificationclick` handlers. Permission request triggered by user action, never on page load.

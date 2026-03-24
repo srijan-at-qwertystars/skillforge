@@ -465,3 +465,29 @@ test('isolated module state', () => {
   });
 });
 ```
+
+## References
+
+Detailed reference documents in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Custom test environments, custom reporters, global setup/teardown, test sequencers, worker threads, module name mapper with path aliases, MSW integration, error boundary testing, renderHook patterns, jest-extended matchers
+- **[troubleshooting.md](references/troubleshooting.md)** — "Cannot find module" fixes, ESM/CJS transform failures, jest.mock hoisting gotchas, memory leak diagnosis, flaky async test remedies, snapshot workflows, slow test diagnosis, open handles detection, moduleNameMapper vs pathsToModuleNameMapper
+- **[api-reference.md](references/api-reference.md)** — Complete Jest API: globals (describe/test/expect), all matchers, mock function API (jest.fn/spyOn/mock/reset/restore), timer API, configuration options, CLI flags
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+- **[setup-jest.sh](scripts/setup-jest.sh)** — Configure Jest for TypeScript (`--swc` or `--ts-jest`), with optional `--react` flag for Testing Library. Installs deps, generates config, creates setup files.
+- **[find-slow-tests.sh](scripts/find-slow-tests.sh)** — Run Jest with timing analysis. Shows slowest suites/tests, flags those exceeding threshold, prints optimization suggestions.
+- **[migrate-to-jest.sh](scripts/migrate-to-jest.sh)** — Migrate from Mocha/Jasmine. Auto-detects framework, scans for patterns needing changes, shows syntax mappings, optionally transforms imports.
+
+## Assets
+
+Templates and configs in `assets/`:
+
+- **[jest.config.ts](assets/jest.config.ts)** — Production config with TypeScript, @swc/jest, path aliases, coverage thresholds, CI-aware settings, monorepo support
+- **[setup-files.ts](assets/setup-files.ts)** — Setup file with custom matchers (toBeWithinRange, toResolveWithin, toBeISODateString), Testing Library import, lifecycle hooks
+- **[test-utils.tsx](assets/test-utils.tsx)** — Custom render with providers (QueryClient, Router, Theme), userEvent setup, async helpers, debug utilities
+- **[mock-factory.ts](assets/mock-factory.ts)** — Generic `createFactory<T>()` for entities, mock service/class creators, localStorage/router/event mocks
+- **[msw-handlers.ts](assets/msw-handlers.ts)** — MSW server setup with CRUD handler factory, auth handlers, error/network/slow response helpers
