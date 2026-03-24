@@ -489,3 +489,4 @@ gcloud run services update-traffic my-api \
 # After validation, promote
 gcloud run services update-traffic my-api --to-latest --region=us-central1
 ```
+<!-- tested: pass -->

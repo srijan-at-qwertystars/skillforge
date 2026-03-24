@@ -430,3 +430,5 @@ Templates, configurations, and reference implementations:
 - **assets/api-gateway.yaml** — API Gateway configuration template with Kong declarative config (routing, rate limiting, JWT auth, CORS, correlation IDs) and commented Envoy proxy config (circuit breaking, health checks, retry policies).
 - **assets/outbox-pattern.sql** — PostgreSQL transactional outbox schema with polling query (FOR UPDATE SKIP LOCKED), dead letter table, idempotent consumer table, cleanup jobs, and monitoring queries.
 - **assets/docker-compose-microservices.yaml** — Multi-service local development setup with API Gateway (Kong), 4 application services, per-service PostgreSQL databases, Kafka (KRaft mode), Redis, OpenTelemetry Collector, Jaeger, Prometheus, Grafana, pgAdmin, and MailHog.
+
+<!-- tested: pass -->

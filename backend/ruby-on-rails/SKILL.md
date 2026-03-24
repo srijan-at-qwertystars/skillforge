@@ -496,3 +496,5 @@ end
 | `assets/controller-template.rb` | RESTful controller with strong params, Pundit auth, Turbo Stream responses, pagination |
 | `assets/stimulus-controller.js` | Stimulus controller with targets, values (reactive), actions, outlets, CSS classes, fetch |
 | `assets/Gemfile` | Production-ready Gemfile: Rails 8 + Solid Queue/Cache/Cable, Pundit, Pagy, RSpec, monitoring |
+
+<!-- tested: pass -->
