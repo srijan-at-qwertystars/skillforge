@@ -419,3 +419,4 @@ Ready-to-use configurations in `assets/`:
 | `logging-config-examples/python-structlog.py` | structlog with contextvars, PII redaction, OpenTelemetry injection |
 | `logging-config-examples/go-slog.go` | slog with context handler, PII redaction, HTTP middleware |
 | `logging-config-examples/java-log4j2.xml` | Log4j2 with JsonTemplateLayout, async appenders, MDC filter pattern |
+<!-- tested: pass -->

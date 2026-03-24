@@ -492,3 +492,5 @@ Copy-paste ready configurations and templates:
 - **[assets/s3-lifecycle-policy.json](assets/s3-lifecycle-policy.json)** — AWS S3 lifecycle rules
   for backup storage tiering: Standard → Standard-IA (30d) → Glacier (90d) → Deep Archive (365d),
   with noncurrent version handling, compliance retention tags, and multipart upload cleanup.
+
+<!-- tested: pass -->

@@ -492,3 +492,5 @@ dig @$(dig +short NS example.com | head -1) example.com A +short
 | `assets/zone-file-template.db` | BIND zone file template with SOA, NS, A, AAAA, CNAME, MX, TXT (SPF/DKIM/DMARC), SRV, CAA, MTA-STS, TLS-RPT, BIMI records — copy and customize |
 | `assets/dig-cheatsheet.md` | dig command reference — basic queries, output control, DNSSEC, reverse DNS, email records, batch scripting, output interpretation (flags, status codes, answer format) |
 | `assets/dns-record-templates.md` | Copy-paste DNS records for: web hosting (GitHub Pages, Netlify, Vercel, S3), email providers (Google, Microsoft 365, AWS SES, Fastmail), domain verification, security records (CAA, MTA-STS), SaaS platforms, SRV records, load balancing |
+
+<!-- tested: pass -->
