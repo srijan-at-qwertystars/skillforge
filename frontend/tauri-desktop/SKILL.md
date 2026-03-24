@@ -413,52 +413,29 @@ npm run tauri build -- --target universal-apple-darwin   # macOS universal
 ```
 
 Configure in `tauri.conf.json` under `"bundle"`: set `identifier`, `icon`, `targets`.
-For Windows signing: `"windows": { "certificateThumbprint": "HASH" }`.
-For macOS signing: `"macOS": { "signingIdentity": "Developer ID Application: ..." }`.
-CI env vars: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+Windows: `"windows": { "certificateThumbprint": "HASH" }`. macOS: `"macOS": { "signingIdentity": "..." }`. CI env vars: `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
 ## Platform-Specific Code
 
-**Rust:**
 ```rust
 #[tauri::command]
 fn platform_info() -> String {
-    #[cfg(target_os = "macos")]
-    return "macOS".to_string();
-    #[cfg(target_os = "windows")]
-    return "Windows".to_string();
-    #[cfg(target_os = "linux")]
-    return "Linux".to_string();
+    #[cfg(target_os = "macos")]   return "macOS".to_string();
+    #[cfg(target_os = "windows")] return "Windows".to_string();
+    #[cfg(target_os = "linux")]   return "Linux".to_string();
 }
 ```
 
-**Platform-specific capabilities:**
-```json
-{
-  "identifier": "desktop-capability",
-  "windows": ["main"],
-  "platforms": ["linux", "macOS", "windows"],
-  "permissions": ["core:default"]
-}
-```
+Platform-scoped capabilities use `"platforms": ["linux", "macOS", "windows"]` in the capability JSON.
 
-**Frontend platform detection:**
-```typescript
-import { platform } from '@tauri-apps/plugin-os';
-const os = await platform(); // 'linux' | 'macos' | 'windows'
-```
+**Frontend:** `import { platform } from '@tauri-apps/plugin-os'; const os = await platform();`
 
 ## Examples
 
-### Example 1: Create a Tauri command with state
+### Stateful counter command
 
-**Input:** "Add a counter command that persists across calls"
-
-**Output:**
 ```rust
-// src-tauri/src/lib.rs
 use std::sync::Mutex;
-
 struct Counter(Mutex<i32>);
 
 #[tauri::command]
@@ -473,26 +450,51 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Counter(Mutex::new(0)))
         .invoke_handler(tauri::generate_handler![increment])
-        .run(tauri::generate_context!())
-        .expect("error running app");
+        .run(tauri::generate_context!()).unwrap();
 }
 ```
 ```typescript
-// Frontend
-import { invoke } from '@tauri-apps/api/core';
-const count = await invoke<number>('increment'); // Returns 1, 2, 3...
+const count = await invoke<number>('increment'); // 1, 2, 3...
 ```
 
-### Example 2: Minimize-to-tray on close
+### Minimize-to-tray on close
 
-**Input:** "Make the app minimize to system tray on close"
+Combine `on_window_event` with `CloseRequested` + `api.prevent_close()` + `window.hide()`,
+plus a tray menu item calling `window.show()` (see System Tray and Window Management sections).
 
-**Output:** Combine `on_window_event` with `CloseRequested` + `api.prevent_close()` + `window.hide()`,
-and a tray menu item that calls `window.show()` (see System Tray and Window Management sections).
+### Scoped file access
 
-### Example 3: Scoped file access
-
-**Input:** "Let the app read/write JSON config in app data"
-
-**Output:** Add `tauri-plugin-fs`, create a capability granting `fs:allow-read-text-file`,
+Add `tauri-plugin-fs`, create a capability granting `fs:allow-read-text-file`,
 `fs:allow-write-text-file` scoped to `$APPDATA/**`, then use the plugin-fs JS API (see File System section).
+
+## Reference Guides
+
+Deep-dive documentation in `references/`:
+
+| File | Topics |
+|------|--------|
+| [`advanced-patterns.md`](references/advanced-patterns.md) | Multi-window management, custom protocols, deep linking, drag-and-drop, clipboard, notifications, system tray advanced patterns, global shortcuts, custom title bars, shell commands & sidecars, embedded HTTP server, Tauri v2 mobile support (iOS/Android) |
+| [`troubleshooting.md`](references/troubleshooting.md) | Build errors (Rust/WebView2/WebKitGTK/macOS), cross-compilation, debugging (DevTools, Rust logging, IPC), performance optimization, bundle size reduction, platform-specific signing & packaging, webview compatibility, plugin & capability issues |
+| [`plugin-development.md`](references/plugin-development.md) | Building Tauri v2 plugins (Rust + JS sides), plugin builder API, commands, state, events, lifecycle hooks, permission system (scoped, default, sets), existing plugin ecosystem (fs, http, shell, dialog, notification, updater, sql, store, etc.), testing, publishing |
+
+## Scripts
+
+Helper scripts in `scripts/` (all `chmod +x`):
+
+| Script | Purpose |
+|--------|---------|
+| [`scaffold-tauri-plugin.sh`](scripts/scaffold-tauri-plugin.sh) | Generates a complete Tauri v2 plugin project (Rust crate + JS bindings + permissions + README). Usage: `./scaffold-tauri-plugin.sh <name> [dir]` |
+| [`build-all-platforms.sh`](scripts/build-all-platforms.sh) | Cross-platform build wrapper with `--target`, `--debug`, `--verbose`, `--no-bundle` options. Detects OS, verifies prerequisites, reports bundle output. |
+| [`check-tauri-deps.sh`](scripts/check-tauri-deps.sh) | Audits system for all required Tauri build dependencies (Rust, Node, platform libs). Color-coded output with install instructions per distro. |
+
+## Assets & Templates
+
+Reusable templates and code in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [`tauri-conf-template.json`](assets/tauri-conf-template.json) | Complete `tauri.conf.json` v2 template with all common options (windows, security/CSP, bundle config for all platforms, updater) |
+| [`rust-command-patterns.rs`](assets/rust-command-patterns.rs) | Common Tauri command patterns: sync/async, state access, error handling with `thiserror`, file I/O, event emission, channel streaming, platform detection |
+| [`react-tauri-hooks.ts`](assets/react-tauri-hooks.ts) | React hooks: `useInvoke` (command calls with loading/error state), `useTauriEvent` (event listener with cleanup), `useWindow` (window controls), `useThrottledInvoke`, `useWindowDragDrop` |
+| [`capabilities-template.json`](assets/capabilities-template.json) | Comprehensive capabilities/permissions config covering core, fs (scoped), dialog, shell, notification, clipboard, os, process, and logging |
+| [`github-actions-tauri.yml`](assets/github-actions-tauri.yml) | GitHub Actions CI/CD workflow: builds on macOS/Windows/Linux, caches Rust, handles signing, uploads artifacts, creates releases on tags |

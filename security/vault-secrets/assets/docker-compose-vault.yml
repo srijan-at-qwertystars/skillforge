@@ -1,0 +1,153 @@
+# Docker Compose: Vault with Consul backend and sample application
+#
+# Usage:
+#   docker compose -f docker-compose-vault.yml up -d
+#   docker compose -f docker-compose-vault.yml exec vault vault operator init
+#   docker compose -f docker-compose-vault.yml down -v
+#
+# Services:
+#   - consul: Storage backend (single-node dev mode)
+#   - vault: HashiCorp Vault server
+#   - vault-agent: Vault Agent sidecar (auto-auth + templating)
+#   - sample-app: Nginx serving secrets rendered by Vault Agent
+
+services:
+  # --- Consul Storage Backend ---
+  consul:
+    image: hashicorp/consul:1.19
+    container_name: consul
+    command: agent -server -bootstrap-expect=1 -ui -client=0.0.0.0
+    ports:
+      - "8500:8500"
+    volumes:
+      - consul-data:/consul/data
+    networks:
+      - vault-net
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- Vault Server ---
+  vault:
+    image: hashicorp/vault:1.18.3
+    container_name: vault
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_ADDR: "http://127.0.0.1:8200"
+      VAULT_API_ADDR: "http://vault:8200"
+    volumes:
+      - vault-data:/vault/file
+      - vault-logs:/vault/logs
+    configs:
+      - source: vault-config
+        target: /vault/config/vault.hcl
+    command: server
+    depends_on:
+      consul:
+        condition: service_healthy
+    networks:
+      - vault-net
+    healthcheck:
+      test: ["CMD", "vault", "status", "-tls-skip-verify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # --- Vault Agent (Sidecar) ---
+  vault-agent:
+    image: hashicorp/vault:1.18.3
+    container_name: vault-agent
+    restart: on-failure
+    environment:
+      VAULT_ADDR: "http://vault:8200"
+    volumes:
+      - shared-secrets:/vault/secrets
+    configs:
+      - source: vault-agent-config
+        target: /vault/config/agent.hcl
+    entrypoint: vault
+    command: agent -config=/vault/config/agent.hcl
+    depends_on:
+      vault:
+        condition: service_healthy
+    networks:
+      - vault-net
+
+  # --- Sample Application ---
+  sample-app:
+    image: nginx:alpine
+    container_name: sample-app
+    ports:
+      - "8080:80"
+    volumes:
+      - shared-secrets:/usr/share/nginx/html:ro
+    depends_on:
+      - vault-agent
+    networks:
+      - vault-net
+
+# --- Configs ---
+configs:
+  vault-config:
+    content: |
+      ui = true
+      disable_mlock = true
+
+      storage "consul" {
+        address = "consul:8500"
+        path    = "vault/"
+      }
+
+      listener "tcp" {
+        address     = "0.0.0.0:8200"
+        tls_disable = 1
+      }
+
+      api_addr = "http://vault:8200"
+
+  vault-agent-config:
+    content: |
+      vault {
+        address = "http://vault:8200"
+      }
+
+      auto_auth {
+        method "token_file" {
+          config = {
+            token_file_path = "/vault/secrets/.vault-token"
+          }
+        }
+      }
+
+      template {
+        contents = <<-EOT
+          <html><body>
+          <h1>Vault Agent Demo</h1>
+          <p>This page is rendered by Vault Agent.</p>
+          <p>Timestamp: {{ timestamp }}</p>
+          {{ with secret "secret/data/demo/config" }}
+          <p>Environment: {{ .Data.data.environment }}</p>
+          <p>Version: {{ .Data.data.version }}</p>
+          {{ end }}
+          </body></html>
+        EOT
+        destination = "/vault/secrets/index.html"
+      }
+
+# --- Volumes ---
+volumes:
+  consul-data:
+  vault-data:
+  vault-logs:
+  shared-secrets:
+
+# --- Networks ---
+networks:
+  vault-net:
+    driver: bridge

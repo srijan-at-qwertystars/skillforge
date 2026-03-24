@@ -1,0 +1,21 @@
+[package]
+name = "envoy_wasm_filter"
+version = "0.1.0"
+edition = "2021"
+description = "Minimal Envoy Proxy-WASM filter template"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+proxy-wasm = "0.2"
+log = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"       # Optimize for size
+lto = true            # Link-time optimization
+strip = true          # Strip debug symbols
+codegen-units = 1     # Single codegen unit for best optimization

@@ -1,0 +1,192 @@
+# Docker Compose — Envoy with upstream services, Jaeger tracing, and Prometheus
+#
+# Usage:
+#   docker compose -f docker-compose-envoy.yml up -d
+#
+# Services:
+#   - envoy         (port 8080 HTTP, 9901 admin)
+#   - backend-v1    (upstream service v1)
+#   - backend-v2    (upstream service v2)
+#   - jaeger         (port 16686 UI, 4317 OTLP gRPC, 14268 collector)
+#   - prometheus     (port 9090)
+#
+# Access:
+#   - Application:    http://localhost:8080
+#   - Envoy Admin:    http://localhost:9901
+#   - Jaeger UI:      http://localhost:16686
+#   - Prometheus:     http://localhost:9090
+
+services:
+  # ── Envoy Proxy ──
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    ports:
+      - "8080:8080"    # HTTP listener
+      - "9901:9901"    # Admin interface
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    depends_on:
+      - backend-v1
+      - backend-v2
+      - jaeger
+    networks:
+      - mesh
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+
+  # ── Backend Service v1 ──
+  backend-v1:
+    image: hashicorp/http-echo:latest
+    command: ["-text=Hello from backend v1", "-listen=:8080"]
+    networks:
+      - mesh
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+
+  # ── Backend Service v2 ──
+  backend-v2:
+    image: hashicorp/http-echo:latest
+    command: ["-text=Hello from backend v2", "-listen=:8080"]
+    networks:
+      - mesh
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 2s
+      retries: 3
+
+  # ── Jaeger (distributed tracing) ──
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC
+      - "4318:4318"     # OTLP HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - mesh
+
+  # ── Prometheus (metrics) ──
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=24h"
+    networks:
+      - mesh
+    depends_on:
+      - envoy
+
+networks:
+  mesh:
+    driver: bridge
+
+# ─────────────────────────────────────────────────────────────
+# Companion Envoy config (envoy.yaml) for this Docker Compose:
+#
+# static_resources:
+#   listeners:
+#     - name: http
+#       address:
+#         socket_address: { address: 0.0.0.0, port_value: 8080 }
+#       filter_chains:
+#         - filters:
+#             - name: envoy.filters.network.http_connection_manager
+#               typed_config:
+#                 "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+#                 stat_prefix: ingress
+#                 generate_request_id: true
+#                 tracing:
+#                   provider:
+#                     name: envoy.tracers.opentelemetry
+#                     typed_config:
+#                       "@type": type.googleapis.com/envoy.config.trace.v3.OpenTelemetryConfig
+#                       grpc_service:
+#                         envoy_grpc: { cluster_name: jaeger }
+#                       service_name: envoy-front
+#                 route_config:
+#                   virtual_hosts:
+#                     - name: default
+#                       domains: ["*"]
+#                       routes:
+#                         - match: { prefix: "/" }
+#                           route:
+#                             weighted_clusters:
+#                               clusters:
+#                                 - name: backend_v1
+#                                   weight: 90
+#                                 - name: backend_v2
+#                                   weight: 10
+#                 http_filters:
+#                   - name: envoy.filters.http.router
+#                     typed_config:
+#                       "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+#   clusters:
+#     - name: backend_v1
+#       connect_timeout: 0.5s
+#       type: STRICT_DNS
+#       lb_policy: ROUND_ROBIN
+#       load_assignment:
+#         cluster_name: backend_v1
+#         endpoints:
+#           - lb_endpoints:
+#               - endpoint:
+#                   address:
+#                     socket_address: { address: backend-v1, port_value: 8080 }
+#     - name: backend_v2
+#       connect_timeout: 0.5s
+#       type: STRICT_DNS
+#       lb_policy: ROUND_ROBIN
+#       load_assignment:
+#         cluster_name: backend_v2
+#         endpoints:
+#           - lb_endpoints:
+#               - endpoint:
+#                   address:
+#                     socket_address: { address: backend-v2, port_value: 8080 }
+#     - name: jaeger
+#       connect_timeout: 1s
+#       type: STRICT_DNS
+#       lb_policy: ROUND_ROBIN
+#       typed_extension_protocol_options:
+#         envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+#           "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+#           explicit_http_config:
+#             http2_protocol_options: {}
+#       load_assignment:
+#         cluster_name: jaeger
+#         endpoints:
+#           - lb_endpoints:
+#               - endpoint:
+#                   address:
+#                     socket_address: { address: jaeger, port_value: 4317 }
+# admin:
+#   address:
+#     socket_address: { address: 0.0.0.0, port_value: 9901 }
+# ─────────────────────────────────────────────────────────────
+
+# ─────────────────────────────────────────────────────────────
+# Companion Prometheus config (prometheus.yml):
+#
+# global:
+#   scrape_interval: 15s
+#
+# scrape_configs:
+#   - job_name: envoy
+#     metrics_path: /stats/prometheus
+#     static_configs:
+#       - targets: ["envoy:9901"]
+# ─────────────────────────────────────────────────────────────

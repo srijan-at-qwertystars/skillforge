@@ -374,3 +374,35 @@ vault token capabilities secret/data/myapp/config  # Check own capabilities
 vault kv get -wrap-ttl=120 secret/myapp/config     # Response wrapping
 vault unwrap <wrapping_token>                       # Unwrap
 ```
+
+## References
+
+Detailed guides in [`references/`](references/):
+
+| File | Topics |
+|------|--------|
+| [`advanced-patterns.md`](references/advanced-patterns.md) | Templated policies, Sentinel EGP/RGP, performance & DR replication, seal migration, auto-unseal (AWS KMS, Azure, GCP, Transit), identity secrets engine, transform engine (FPE/masking/tokenization), KMIP, multi-tenancy with namespaces, control groups, response wrapping patterns |
+| [`troubleshooting.md`](references/troubleshooting.md) | Permission denied errors, seal status issues, lease not found, token expiry, auth method debugging (AppRole, K8s, OIDC, LDAP), Raft & Consul storage issues, HA failover, split-brain recovery, audit log analysis, performance tuning, disaster recovery procedures |
+| [`kubernetes-integration.md`](references/kubernetes-integration.md) | Vault Agent Injector (annotations, templates), CSI Provider, Vault Secrets Operator (VSO) CRDs, Kubernetes auth method setup, init-container vs sidecar patterns, Helm chart config, External Secrets Operator integration, network policies, monitoring |
+
+## Scripts
+
+Operational scripts in [`scripts/`](scripts/):
+
+| Script | Description |
+|--------|-------------|
+| [`setup-vault-dev.sh`](scripts/setup-vault-dev.sh) | Starts a Vault dev server with KV v2, Transit, PKI engines, AppRole/Userpass auth, sample policies, and test secrets. Use `--port` and `--no-server` flags. |
+| [`vault-backup.sh`](scripts/vault-backup.sh) | Takes Raft snapshots with compression, checksum verification, optional S3 upload, and retention-based rotation. Suitable for cron. |
+| [`rotate-secrets.sh`](scripts/rotate-secrets.sh) | Rotates database/AWS dynamic credentials, Transit keys, and KV secrets. Supports `--dry-run`, `--force`, and lease prefix revocation. |
+
+## Assets
+
+Reusable configuration templates in [`assets/`](assets/):
+
+| Asset | Description |
+|-------|-------------|
+| [`vault-helm-values.yaml`](assets/vault-helm-values.yaml) | Production Helm values for HA Vault on Kubernetes with Raft storage, AWS KMS auto-unseal, TLS, audit storage, injector, and CSI provider. |
+| [`vault-policy-templates/`](assets/vault-policy-templates/) | HCL policy templates: `admin.hcl` (full sudo), `app.hcl` (scoped app access), `ci-cd.hcl` (pipeline read-only), `readonly.hcl` (auditor). |
+| [`docker-compose-vault.yml`](assets/docker-compose-vault.yml) | Docker Compose with Vault, Consul backend, Vault Agent sidecar, and sample Nginx app for local development. |
+| [`vault-agent-config.hcl`](assets/vault-agent-config.hcl) | Production Agent config with Kubernetes auto-auth, response caching, API proxy listener, and templates for DB creds, TLS certs, and env files. |
+| [`github-actions-vault.yml`](assets/github-actions-vault.yml) | GitHub Actions workflow using JWT/OIDC auth (no stored secrets), AppRole fallback, and multi-environment matrix deployment. |

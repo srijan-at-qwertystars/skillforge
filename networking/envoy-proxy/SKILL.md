@@ -425,8 +425,6 @@ Debug connection issues: `curl localhost:9901/clusters` shows per-endpoint healt
 
 ### Input: "Configure Envoy to route /api to a backend with retries and circuit breaking"
 
-Output:
-
 ```yaml
 static_resources:
   listeners:
@@ -447,10 +445,7 @@ static_resources:
                         - match: { prefix: "/api" }
                           route:
                             cluster: api_backend
-                            retry_policy:
-                              retry_on: "5xx,connect-failure"
-                              num_retries: 3
-                              per_try_timeout: 1s
+                            retry_policy: { retry_on: "5xx,connect-failure", num_retries: 3, per_try_timeout: 1s }
                 http_filters:
                   - name: envoy.filters.http.router
                     typed_config:
@@ -461,31 +456,41 @@ static_resources:
       type: STRICT_DNS
       lb_policy: LEAST_REQUEST
       circuit_breakers:
-        thresholds:
-          - max_connections: 50
-            max_pending_requests: 500
-            max_requests: 1000
-            max_retries: 3
+        thresholds: [{ max_connections: 50, max_pending_requests: 500, max_requests: 1000, max_retries: 3 }]
       health_checks:
-        - timeout: 1s
-          interval: 5s
-          unhealthy_threshold: 3
-          healthy_threshold: 2
-          http_health_check: { path: "/healthz" }
+        - { timeout: 1s, interval: 5s, unhealthy_threshold: 3, healthy_threshold: 2, http_health_check: { path: "/healthz" } }
       load_assignment:
         cluster_name: api_backend
         endpoints:
           - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address: { address: api-svc, port_value: 8080 }
+              - endpoint: { address: { socket_address: { address: api-svc, port_value: 8080 } } }
 ```
 
 ### Input: "How do I debug why Envoy returns 503?"
 
-Output: Check these in order:
+Check in order:
 1. `curl localhost:9901/clusters` — verify endpoint health (look for `health_flags`)
 2. `curl localhost:9901/stats?filter=upstream_cx` — check `upstream_cx_connect_fail`, `upstream_cx_overflow`
-3. If `upstream_rq_pending_overflow > 0` → circuit breaker tripped, raise thresholds
-4. If endpoints show `failed_active_hc` → fix health check path or backend health
-5. Check access logs for `RESPONSE_FLAGS`: `UH` (no healthy upstream), `UF` (upstream connection failure), `UO` (upstream overflow / circuit breaker)
+3. `upstream_rq_pending_overflow > 0` → circuit breaker tripped, raise thresholds
+4. Endpoints show `failed_active_hc` → fix health check path or backend health
+5. Access logs `RESPONSE_FLAGS`: `UH`=no healthy upstream, `UF`=connection failure, `UO`=circuit breaker
+
+## References
+
+- **[`references/advanced-patterns.md`](references/advanced-patterns.md)** — xDS protocol (ADS, SotW vs Delta), WASM filter development (Proxy-WASM SDK in Rust/Go/C++), Lua filters, ext_proc streaming, tap filter, custom access logs (file/gRPC/OTEL), header manipulation, weighted routing, traffic mirroring, fault injection.
+- **[`references/troubleshooting.md`](references/troubleshooting.md)** — Common errors (503 UH/UF/UO, 404 NR, TLS handshake failures, resets). Admin interface debugging (`/clusters`, `/config_dump`, `/stats`, `/logging`). Access log response flags. `envoy.reloadable_features`. Connection pool exhaustion, HTTP/2 issues, memory/CPU profiling, overload manager.
+- **[`references/service-mesh-integration.md`](references/service-mesh-integration.md)** — Istio sidecar (EnvoyFilter CRD, traffic policy mapping, `istioctl` debugging). Consul Connect dataplane (intentions → RBAC). AWS App Mesh. Custom xDS control planes (go-control-plane, java-control-plane). Envoy Gateway with Gateway API.
+
+## Scripts
+
+- **[`scripts/validate-envoy-config.sh`](scripts/validate-envoy-config.sh)** — Validates Envoy YAML config via `envoy --mode validate`. Falls back to Docker. Usage: `./scripts/validate-envoy-config.sh envoy.yaml`
+- **[`scripts/envoy-stats-parser.sh`](scripts/envoy-stats-parser.sh)** — Parses `/stats/prometheus` into categorized sections (requests, connections, health, circuit breakers, TLS, errors). Usage: `./scripts/envoy-stats-parser.sh [admin-url] [filter]`
+- **[`scripts/generate-envoy-bootstrap.py`](scripts/generate-envoy-bootstrap.py)** — Generates bootstrap YAML from CLI args (listeners, clusters, health checks, xDS/ADS, tracing). Usage: `./scripts/generate-envoy-bootstrap.py --cluster my_svc --upstream backend:8080`
+
+## Assets
+
+- **[`assets/bootstrap-template.yaml`](assets/bootstrap-template.yaml)** — Complete bootstrap config with listeners, clusters, health checks, circuit breakers, rate limiting, access logs, outlier detection, and overload manager.
+- **[`assets/rate-limit-config.yaml`](assets/rate-limit-config.yaml)** — Local (token bucket) and global (`envoyproxy/ratelimit` gRPC) rate limiting with per-path, per-API-key, and per-IP descriptors.
+- **[`assets/mtls-config.yaml`](assets/mtls-config.yaml)** — Full mTLS: downstream client cert validation with SAN matching, upstream client cert, HTTP→HTTPS redirect, SDS alternative, and cert generation commands.
+- **[`assets/docker-compose-envoy.yml`](assets/docker-compose-envoy.yml)** — Docker Compose with Envoy, two backend versions (canary), Jaeger tracing (OTLP), and Prometheus. Includes companion configs.
+- **[`assets/wasm-filter-template/`](assets/wasm-filter-template/)** — Proxy-WASM Rust scaffold: `Cargo.toml`, `src/lib.rs` with config parsing, header manipulation, logging. Build: `cargo build --target wasm32-wasip1 --release`.

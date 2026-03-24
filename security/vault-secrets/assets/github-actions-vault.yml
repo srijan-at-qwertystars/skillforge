@@ -1,0 +1,157 @@
+# GitHub Actions Workflow: Vault Secrets Injection
+#
+# This workflow demonstrates fetching secrets from HashiCorp Vault
+# using the hashicorp/vault-action GitHub Action.
+#
+# Prerequisites:
+#   1. Vault server accessible from GitHub Actions runners
+#   2. AppRole or JWT auth method configured in Vault
+#   3. GitHub Actions secrets: VAULT_ADDR, VAULT_ROLE_ID, VAULT_SECRET_ID
+#      (or use JWT auth with GitHub OIDC token — no stored secrets needed)
+#
+# Usage:
+#   Copy this file to .github/workflows/deploy.yml in your repository.
+
+name: Deploy with Vault Secrets
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write  # Required for JWT/OIDC auth with Vault
+
+env:
+  VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+
+jobs:
+  # --- Option 1: JWT/OIDC Auth (Recommended — No stored secrets) ---
+  deploy-jwt:
+    name: Deploy (JWT Auth)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Import Secrets from Vault (JWT Auth)
+        uses: hashicorp/vault-action@v3
+        id: vault
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: github-actions
+          path: jwt-github
+          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
+          secrets: |
+            secret/data/myapp/config db_host | DB_HOST ;
+            secret/data/myapp/config db_port | DB_PORT ;
+            secret/data/myapp/config api_key | API_KEY ;
+            database/creds/deploy-role username | DB_USER ;
+            database/creds/deploy-role password | DB_PASS ;
+            aws/creds/deploy-role access_key | AWS_ACCESS_KEY_ID ;
+            aws/creds/deploy-role secret_key | AWS_SECRET_ACCESS_KEY
+
+      - name: Build Application
+        run: |
+          echo "Building with database host: ${{ steps.vault.outputs.DB_HOST }}"
+          # Secrets are available as environment variables and step outputs
+          # DB_HOST, DB_PORT, API_KEY, DB_USER, DB_PASS are all set
+
+      - name: Deploy
+        run: |
+          echo "Deploying application..."
+          # AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set for AWS CLI
+          # aws ecs update-service --cluster prod --service myapp --force-new-deployment
+
+  # --- Option 2: AppRole Auth (For environments without OIDC) ---
+  deploy-approle:
+    name: Deploy (AppRole Auth)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Import Secrets from Vault (AppRole Auth)
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: approle
+          roleId: ${{ secrets.VAULT_ROLE_ID }}
+          secretId: ${{ secrets.VAULT_SECRET_ID }}
+          secrets: |
+            secret/data/myapp/config db_host | DB_HOST ;
+            secret/data/myapp/config api_key | API_KEY
+
+      - name: Deploy
+        run: |
+          echo "Deploying with DB_HOST=$DB_HOST"
+
+  # --- Option 3: Multi-Environment Deployment ---
+  deploy-multi-env:
+    name: Deploy (${{ matrix.environment }})
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    strategy:
+      matrix:
+        environment: [staging, production]
+    environment: ${{ matrix.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Import Environment Secrets
+        uses: hashicorp/vault-action@v3
+        with:
+          url: ${{ env.VAULT_ADDR }}
+          method: jwt
+          role: github-actions-${{ matrix.environment }}
+          path: jwt-github
+          jwtGithubAudience: https://github.com/${{ github.repository_owner }}
+          # Namespace for Vault Enterprise multi-tenancy
+          # namespace: ${{ matrix.environment }}
+          secrets: |
+            secret/data/${{ matrix.environment }}/myapp/config db_host | DB_HOST ;
+            secret/data/${{ matrix.environment }}/myapp/config db_port | DB_PORT ;
+            database/creds/${{ matrix.environment }}-app username | DB_USER ;
+            database/creds/${{ matrix.environment }}-app password | DB_PASS
+
+      - name: Deploy to ${{ matrix.environment }}
+        run: |
+          echo "Deploying to ${{ matrix.environment }}"
+          echo "Database: $DB_HOST:$DB_PORT"
+
+  # --- Vault Setup for JWT Auth (Reference) ---
+  # Run once to configure Vault for GitHub Actions JWT auth:
+  #
+  #   # Enable JWT auth
+  #   vault auth enable -path=jwt-github jwt
+  #
+  #   # Configure with GitHub OIDC
+  #   vault write auth/jwt-github/config \
+  #     bound_issuer="https://token.actions.githubusercontent.com" \
+  #     oidc_discovery_url="https://token.actions.githubusercontent.com"
+  #
+  #   # Create role for your repository
+  #   vault write auth/jwt-github/role/github-actions \
+  #     role_type="jwt" \
+  #     bound_audiences="https://github.com/YOUR_ORG" \
+  #     bound_claims='{"repository":"YOUR_ORG/YOUR_REPO"}' \
+  #     user_claim="actor" \
+  #     policies="ci-cd-policy" \
+  #     ttl="10m" \
+  #     max_ttl="15m"
+  #
+  #   # Per-environment roles (restrict by branch)
+  #   vault write auth/jwt-github/role/github-actions-production \
+  #     role_type="jwt" \
+  #     bound_audiences="https://github.com/YOUR_ORG" \
+  #     bound_claims='{"repository":"YOUR_ORG/YOUR_REPO","ref":"refs/heads/main"}' \
+  #     user_claim="actor" \
+  #     policies="production-deploy-policy" \
+  #     ttl="10m"

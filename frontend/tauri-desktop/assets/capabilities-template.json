@@ -1,0 +1,97 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Primary capability for the main application window",
+  "windows": ["main"],
+  "platforms": ["linux", "macOS", "windows"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-set-title",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-fullscreen",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-center",
+
+    "core:webview:default",
+
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit",
+
+    "core:menu:default",
+    "core:tray:default",
+
+    {
+      "identifier": "core:asset:default",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$RESOURCE/**" }
+      ]
+    },
+
+    "fs:default",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-read-dir",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$APPCONFIG/**" },
+        { "path": "$DOCUMENT/**" }
+      ],
+      "deny": [
+        { "path": "$HOME/.ssh/**" },
+        { "path": "$HOME/.gnupg/**" }
+      ]
+    },
+
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+
+    "shell:default",
+    "shell:allow-open",
+
+    "notification:default",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify",
+
+    "clipboard-manager:default",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
+
+    "os:default",
+    "process:default",
+
+    "log:default",
+    "log:allow-log"
+  ],
+
+  "___COMMENTS___": {
+    "core": "Core Tauri permissions for window management, events, menus, and assets",
+    "fs": "File system access scoped to app data, config, and documents. Denies access to sensitive dirs.",
+    "dialog": "File open/save dialogs and message boxes",
+    "shell": "Only allow opening URLs in default browser; no arbitrary command execution",
+    "notification": "Desktop notifications with permission request flow",
+    "clipboard": "Read/write text clipboard",
+    "os+process": "OS info and process control (exit, relaunch)",
+    "log": "Structured logging from frontend"
+  }
+}
