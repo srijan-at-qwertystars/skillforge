@@ -197,3 +197,6 @@
 | frontend | storybook-patterns | Storybook 8.x component development with CSF3, addons, interaction testing, and visual testing | tested |
 | devops | cloudflare-workers | Cloudflare Workers edge computing with KV, D1, R2, Durable Objects, Queues, and Hono integration | tested |
 | languages | go-concurrency | Go concurrency patterns with goroutines, channels, select, sync primitives, and error handling | tested |
+| devops | packer-images | HashiCorp Packer image building with HCL2 templates, multi-cloud builders, and golden image pipelines | created |
+| frontend | accessibility-patterns | Web accessibility (a11y) with WCAG 2.2, ARIA, keyboard navigation, and screen reader support | created |
+| devops | feature-flags | Feature flag implementation with OpenFeature, LaunchDarkly, rollout strategies, and flag lifecycle | created |
