@@ -498,3 +498,5 @@ Production templates — copy and adapt:
 - **[`assets/Dockerfile`](assets/Dockerfile)** — Multi-stage standalone build, non-root user, health check
 - **[`assets/docker-compose.yml`](assets/docker-compose.yml)** — Next.js + Postgres + Redis dev environment
 - **[`assets/server-action-template.ts`](assets/server-action-template.ts)** — Zod validation, error handling, revalidation, CRUD
+
+<!-- tested: pass -->

@@ -489,3 +489,5 @@ BF.EXISTS filter:emails "other@example.com"   -- 0 (definitely not)
 | [`assets/redis.conf`](assets/redis.conf) | Production redis.conf with tuned settings, ACLs, persistence, lazy-free |
 | [`assets/rate-limiter.lua`](assets/rate-limiter.lua) | Sliding window rate limiter Lua script |
 | [`assets/cache-patterns.py`](assets/cache-patterns.py) | Python: cache-aside, write-through, distributed lock, cached decorator |
+
+<!-- tested: pass -->

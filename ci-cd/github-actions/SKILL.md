@@ -498,3 +498,5 @@ See [troubleshooting.md](references/troubleshooting.md) for detailed solutions.
 | [workflow-init.sh](scripts/workflow-init.sh) | Detect language and generate CI workflow. Supports Node, Python, Go, Rust, Java, Ruby, PHP, .NET. `./workflow-init.sh [lang]` |
 | [action-init.sh](scripts/action-init.sh) | Scaffold a custom action (JS, Docker, composite) with metadata, source, tests. `./action-init.sh <name> <type>` |
 | [workflow-lint.sh](scripts/workflow-lint.sh) | Lint workflow files with actionlint (auto-installs). `./workflow-lint.sh [file-or-dir]` |
+
+<!-- tested: pass -->
