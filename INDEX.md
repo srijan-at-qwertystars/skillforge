@@ -212,6 +212,6 @@
 | frontend | angular-signals | Angular Signals — signal(), computed(), effect(), input/output/model signals, zoneless CD, NgRx SignalStore | tested |
 | patterns | cqrs-event-sourcing | CQRS + Event Sourcing — aggregates, event store, projections, snapshots, sagas, event versioning | tested |
 | frontend | sass-patterns | Sass/SCSS patterns — module system, mixins, functions, design tokens, BEM, responsive patterns | tested |
-| frontend | solid-js | SolidJS — reactive primitives, control flow, stores, SolidStart, fine-grained reactivity | created |
-| patterns | api-rate-limiting | API rate limiting — token bucket, sliding window, Redis, middleware, HTTP headers, retry | created |
-| devops | docker-compose-patterns | Docker Compose V2 — services, healthchecks, profiles, watch mode, production patterns | created |
+| frontend | solid-js | SolidJS — reactive primitives, control flow, stores, SolidStart, fine-grained reactivity | enriched |
+| patterns | api-rate-limiting | API rate limiting — token bucket, sliding window, Redis, middleware, HTTP headers, retry | enriched |
+| devops | docker-compose-patterns | Docker Compose V2 — services, healthchecks, profiles, watch mode, production patterns | enriched |

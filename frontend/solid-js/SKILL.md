@@ -5,8 +5,10 @@ description: >
   control flow (Show, For, Switch/Match, Index, Suspense, ErrorBoundary), stores (createStore, produce, reconcile),
   context, SolidStart (file-based routing, server functions, SSR/SSG), JSX compilation, props handling
   (mergeProps, splitProps), lifecycle (onMount, onCleanup), Solid Router, lazy loading, portals, styling,
-  and testing with solid-testing-library. Triggers on: SolidJS, Solid app, createSignal, createEffect,
-  createMemo, createResource, createStore, SolidStart, Solid Router, solid-js.
+  and testing with solid-testing-library. Includes advanced patterns (batch, untrack, on, custom directives,
+  streaming SSR, islands architecture), troubleshooting guide, full API reference, migration scripts,
+  and project templates. Triggers on: SolidJS, Solid app, createSignal, createEffect, createMemo,
+  createResource, createStore, SolidStart, Solid Router, solid-js.
   NOT for React, NOT for Vue, NOT for Svelte, NOT for Angular, NOT for SOLID principles in OOP.
 ---
 
@@ -442,3 +444,30 @@ function Profile() {
   );
 }
 ```
+
+## Supplementary Files
+
+### References (deep-dive documentation)
+
+| File | Description |
+|------|-------------|
+| `references/advanced-patterns.md` | Custom primitives, batch/untrack/on, custom directives, Solid Transition Group, streaming SSR, islands architecture |
+| `references/troubleshooting.md` | Common pitfalls: destructured props, uncalled signals, stale closures, store mutation, JSX differences from React, hydration issues |
+| `references/api-reference.md` | Complete API: createSignal, createEffect, createMemo, createResource, createStore, produce, reconcile, createContext, control flow components, lifecycle, transitions |
+
+### Scripts (executable helpers)
+
+| File | Description |
+|------|-------------|
+| `scripts/setup-solid.sh` | Scaffold a SolidJS or SolidStart project with recommended config. Usage: `./setup-solid.sh my-app [--start]` |
+| `scripts/migrate-from-react.sh` | Scan for React patterns and suggest SolidJS equivalents (useState→createSignal, className→class, etc.) |
+| `scripts/check-reactivity.sh` | Detect reactivity-breaking patterns: destructured props, uncalled signals, async effects, direct store mutation |
+
+### Assets (templates and configs)
+
+| File | Description |
+|------|-------------|
+| `assets/solid-component.tsx` | Component template with signals, effects, cleanup, splitProps, Show |
+| `assets/solid-store.tsx` | Store pattern with context provider, produce, derived values |
+| `assets/solid-start-route.tsx` | SolidStart route with cache, createAsync, ErrorBoundary, SEO meta |
+| `assets/vite.config.ts` | Vite config for SolidJS with Vitest testing setup and path aliases |

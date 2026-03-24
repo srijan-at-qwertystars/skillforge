@@ -245,31 +245,7 @@ docker compose up                                           # dev (auto-loads ov
 docker compose -f compose.yaml -f compose.prod.yaml up -d   # production
 ```
 
-```yaml
-# compose.yaml
-services:
-  app:
-    image: myapp:latest
-    environment: { LOG_LEVEL: info }
-
-# compose.override.yaml (dev — auto-loaded)
-services:
-  app:
-    build: .
-    volumes: [".:/app"]
-    environment: { LOG_LEVEL: debug, DEBUG: "true" }
-    ports: ["9229:9229"]
-
-# compose.prod.yaml
-services:
-  app:
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits: { cpus: "2.0", memory: 1G }
-        reservations: { cpus: "0.5", memory: 256M }
-    logging: { driver: json-file, options: { max-size: "20m", max-file: "5" } }
-```
+Files merge top-down: later files override earlier ones. `compose.override.yaml` is auto-loaded.
 
 ## Watch Mode (Live Development)
 
@@ -496,3 +472,22 @@ volumes: { pgdata: {}, redis-data: {} }
 networks: { public: {}, backend: { internal: true } }
 secrets: { db_password: { file: ./secrets/db_password.txt } }
 ```
+
+## Skill Resources
+
+### references/
+- `advanced-patterns.md` — include directive, develop.watch, GPU passthrough, init containers, sidecars, macvlan, tmpfs, multi-platform builds, BuildKit secrets, Compose plugins
+- `troubleshooting.md` — port conflicts, volume permissions, depends_on timing, network connectivity, build cache, .env loading, orphan containers, V1→V2 migration
+- `compose-reference.md` — complete Compose spec: all service keys, deploy, configs, secrets, healthcheck, logging, networks, volumes, extension fields, interpolation
+
+### scripts/
+- `compose-lint.sh` — validate syntax, detect anti-patterns (hardcoded secrets, missing healthchecks/restart/logging)
+- `compose-cleanup.sh` — remove orphan containers, dangling images, unused volumes/networks, build cache
+- `compose-debug.sh` — inspect healthcheck status, port mappings, DNS resolution, inter-container connectivity
+
+### assets/
+- `fullstack-compose.yaml` — production template: app + API + DB + Redis + Nginx + migrations
+- `dev-compose.yaml` — development: watch mode, debug ports, hot reload, mailpit, adminer
+- `ci-compose.yaml` — CI/CD: tmpfs-backed DB, fast healthchecks, exit code propagation
+- `monitoring-compose.yaml` — Prometheus + Grafana + cAdvisor + node-exporter + alertmanager
+- `.env.example` — documented environment variable template

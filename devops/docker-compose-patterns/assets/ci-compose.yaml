@@ -1,0 +1,102 @@
+# CI/CD Docker Compose — Run tests with service dependencies
+#
+# Usage:
+#   # Run tests and propagate exit code
+#   docker compose -f ci-compose.yaml run --rm --build test
+#   EXIT_CODE=$?
+#
+#   # Alternative: use --exit-code-from
+#   docker compose -f ci-compose.yaml up --build --abort-on-container-exit --exit-code-from test
+#
+#   # Always clean up
+#   docker compose -f ci-compose.yaml down -v --remove-orphans
+#
+# Design:
+#   - Fast healthcheck intervals for CI speed
+#   - No persistent volumes (clean state every run)
+#   - No port mappings (not needed in CI)
+#   - Minimal resource usage
+
+services:
+  # ─── Test Runner ─────────────────────────────
+  test:
+    build:
+      context: .
+      target: test                # Multi-stage Dockerfile test target
+      cache_from:
+        - type=registry,ref=${CI_REGISTRY:-localhost}/app:cache
+    environment:
+      CI: "true"
+      NODE_ENV: test
+      DATABASE_URL: postgresql://test:test@db:5432/testdb
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    tmpfs:
+      - /tmp                      # Fast temp storage
+    networks: [ci]
+
+  # ─── Test Database ───────────────────────────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+    tmpfs:
+      - /var/lib/postgresql/data  # RAM-backed DB for speed
+    networks: [ci]
+
+  # ─── Test Cache ──────────────────────────────
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 5
+    tmpfs:
+      - /data
+    networks: [ci]
+
+  # ─── Integration Test Dependencies ───────────
+  # Uncomment as needed:
+
+  # elasticsearch:
+  #   image: elasticsearch:8.12.0
+  #   environment:
+  #     discovery.type: single-node
+  #     xpack.security.enabled: "false"
+  #     ES_JAVA_OPTS: "-Xms256m -Xmx256m"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+  #     interval: 3s
+  #     timeout: 3s
+  #     retries: 10
+  #   tmpfs:
+  #     - /usr/share/elasticsearch/data
+  #   networks: [ci]
+
+  # localstack:
+  #   image: localstack/localstack:latest
+  #   environment:
+  #     SERVICES: s3,sqs,sns
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:4566/_localstack/health || exit 1"]
+  #     interval: 3s
+  #     timeout: 3s
+  #     retries: 10
+  #   networks: [ci]
+
+networks:
+  ci:
+    driver: bridge

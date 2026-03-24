@@ -1,0 +1,116 @@
+# Monitoring Stack — Prometheus + Grafana + cAdvisor
+#
+# Usage:
+#   docker compose -f monitoring-compose.yaml up -d
+#
+# Access:
+#   Grafana:     http://localhost:3001 (admin / ${GRAFANA_PASSWORD:-admin})
+#   Prometheus:  http://localhost:9090
+#   cAdvisor:    http://localhost:8081
+#
+# Add to your main compose.yaml with include:
+#   include:
+#     - path: ./monitoring-compose.yaml
+
+x-logging: &default-logging
+  driver: json-file
+  options: { max-size: "5m", max-file: "2" }
+
+services:
+  # ─── Prometheus (metrics collection) ─────────
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROM_RETENTION:-15d}"
+      - "--web.enable-lifecycle"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [monitoring]
+
+  # ─── Grafana (dashboards) ────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_URL:-http://localhost:3001}
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      prometheus: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks: [monitoring]
+
+  # ─── cAdvisor (container metrics) ────────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${CADVISOR_PORT:-8081}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks: [monitoring]
+
+  # ─── Node Exporter (host metrics) ────────────
+  node-exporter:
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    logging: *default-logging
+    command:
+      - "--path.rootfs=/host"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    volumes:
+      - /:/host:ro,rslave
+    pid: host
+    networks: [monitoring]
+
+  # ─── Alertmanager (optional) ─────────────────
+  alertmanager:
+    image: prom/alertmanager:latest
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    profiles: [alerting]
+    networks: [monitoring]
+
+volumes:
+  prometheus-data: {}
+  grafana-data: {}
+
+networks:
+  monitoring:
+    driver: bridge

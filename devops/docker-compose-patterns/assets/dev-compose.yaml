@@ -1,0 +1,132 @@
+# Development-Optimized Docker Compose
+# Hot reload via watch mode, debug ports, verbose logging
+#
+# Usage:
+#   docker compose -f dev-compose.yaml watch
+#   docker compose -f dev-compose.yaml up     # without watch
+#
+# Features:
+#   - develop.watch for auto sync/rebuild
+#   - Debug ports exposed (9229 for Node.js, 5678 for Python)
+#   - Source code mounted for instant feedback
+#   - Relaxed resource limits
+#   - Verbose logging
+
+services:
+  # ─── Frontend (React/Next.js with HMR) ──────
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    ports:
+      - "3000:3000"       # App
+      - "9229:9229"       # Node.js debugger
+    environment:
+      NODE_ENV: development
+      WATCHPACK_POLLING: "true"   # Enable polling for Docker on macOS
+      CHOKIDAR_USEPOLLING: "true"
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+          ignore:
+            - node_modules/
+            - "*.test.*"
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/Dockerfile
+    depends_on:
+      api: { condition: service_healthy }
+
+  # ─── API (Python/Node with live reload) ──────
+  api:
+    build:
+      context: ./api
+      target: development
+    ports:
+      - "4000:4000"       # App
+      - "5678:5678"       # Python debugpy / Node debugger
+    environment:
+      NODE_ENV: development
+      DEBUG: "*"
+      LOG_LEVEL: debug
+      DATABASE_URL: postgresql://dev:dev@db:5432/devdb
+      REDIS_URL: redis://redis:6379/0
+    develop:
+      watch:
+        - action: sync
+          path: ./api/src
+          target: /app/src
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - node_modules/
+            - .venv/
+        - action: sync+restart
+          path: ./api/config
+          target: /app/config
+        - action: rebuild
+          path: ./api/requirements.txt
+        - action: rebuild
+          path: ./api/package.json
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_started }
+
+  # ─── Database ────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"       # Expose for local DB tools
+    environment:
+      POSTGRES_DB: devdb
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    tmpfs:
+      - /tmp
+
+  # ─── Cache ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"       # Expose for local Redis tools
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 2s
+      retries: 3
+
+  # ─── Mail Catcher (dev-only) ─────────────────
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "1025:1025"       # SMTP
+      - "8025:8025"       # Web UI
+    profiles: [dev]
+
+  # ─── DB Admin (dev-only) ─────────────────────
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8080:8080"
+    depends_on: [db]
+    profiles: [dev]
+
+volumes:
+  pgdata-dev: {}

@@ -1,0 +1,181 @@
+# kong-rate-limit.yaml — Kong API Gateway rate limiting configuration
+#
+# Features:
+#   - Redis-backed distributed rate limiting
+#   - Per-consumer and per-route limits
+#   - Multiple time windows (second, minute, hour, day)
+#   - Rate limiting by header (API key, IP)
+#   - Response headers (RateLimit-*)
+#   - Advanced: rate-limiting-advanced plugin with sliding window
+#
+# Usage:
+#   Apply via Kong Admin API or declarative config (DB-less mode):
+#     kong config db_import kong-rate-limit.yaml
+#   Or use decK:
+#     deck sync -s kong-rate-limit.yaml
+
+_format_version: "3.0"
+
+# --- Services ---
+services:
+  - name: my-api
+    url: http://backend:3000
+    routes:
+      - name: api-routes
+        paths:
+          - /api
+        strip_path: false
+
+      - name: auth-routes
+        paths:
+          - /api/auth
+        strip_path: false
+
+      - name: search-routes
+        paths:
+          - /api/search
+        strip_path: false
+
+# --- Consumers (API users/tiers) ---
+consumers:
+  - username: free-tier
+    tags: ["tier:free"]
+
+  - username: pro-tier
+    tags: ["tier:pro"]
+
+  - username: enterprise-tier
+    tags: ["tier:enterprise"]
+
+# --- Global Rate Limiting (all routes) ---
+plugins:
+  # Global: applies to all routes unless overridden
+  - name: rate-limiting
+    config:
+      # Limits per time window
+      second: 10
+      minute: 200
+      hour: 5000
+
+      # Use Redis for distributed state
+      policy: redis
+      redis:
+        host: redis-host
+        port: 6379
+        # password: "${REDIS_PASSWORD}"  # uncomment if auth required
+        database: 0
+        timeout: 100  # ms — fail fast
+
+      # Rate limit by consumer (authenticated) or IP (anonymous)
+      limit_by: consumer
+      # Falls back to IP when no consumer is identified
+      # Available: consumer, credential, ip, header, path, service
+
+      # Response headers
+      header_name: RateLimit  # Adds RateLimit-Limit, RateLimit-Remaining, RateLimit-Reset
+      hide_client_headers: false
+
+      # What to do when Redis is unavailable
+      fault_tolerant: true  # fail-open (set false for fail-closed)
+
+      # Sync rate for counter accuracy (seconds)
+      sync_rate: 10  # sync local counters to Redis every 10s
+
+# --- Per-Route Overrides ---
+
+  # Auth routes: strict limits (brute force protection)
+  - name: rate-limiting
+    route: auth-routes
+    config:
+      minute: 10
+      hour: 100
+      policy: redis
+      redis:
+        host: redis-host
+        port: 6379
+        timeout: 100
+      limit_by: ip
+      fault_tolerant: false  # fail-closed for auth — security critical
+
+  # Search routes: expensive operations, tighter limits
+  - name: rate-limiting
+    route: search-routes
+    config:
+      second: 2
+      minute: 60
+      hour: 500
+      policy: redis
+      redis:
+        host: redis-host
+        port: 6379
+        timeout: 100
+      limit_by: consumer
+      fault_tolerant: true
+
+# --- Per-Consumer Limits (tier-based) ---
+
+  # Free tier: strict limits
+  - name: rate-limiting
+    consumer: free-tier
+    config:
+      minute: 100
+      hour: 1000
+      day: 10000
+      policy: redis
+      redis:
+        host: redis-host
+        port: 6379
+        timeout: 100
+      fault_tolerant: true
+
+  # Pro tier: generous limits
+  - name: rate-limiting
+    consumer: pro-tier
+    config:
+      minute: 1000
+      hour: 10000
+      day: 100000
+      policy: redis
+      redis:
+        host: redis-host
+        port: 6379
+        timeout: 100
+      fault_tolerant: true
+
+  # Enterprise tier: very high limits
+  - name: rate-limiting
+    consumer: enterprise-tier
+    config:
+      minute: 10000
+      hour: 100000
+      day: 1000000
+      policy: redis
+      redis:
+        host: redis-host
+        port: 6379
+        timeout: 100
+      fault_tolerant: true
+
+# --- Key Authentication (for consumer identification) ---
+  - name: key-auth
+    config:
+      key_names:
+        - X-API-Key
+        - apikey
+      hide_credentials: true
+      anonymous: free-tier  # unidentified requests get free-tier limits
+
+# --- Notes ---
+# For sliding window accuracy, use the rate-limiting-advanced plugin
+# (Kong Enterprise only):
+#
+#   - name: rate-limiting-advanced
+#     config:
+#       strategy: redis
+#       window_type: sliding
+#       window_size: 60
+#       limit: 100
+#       sync_rate: 1
+#       redis:
+#         host: redis-host
+#         port: 6379
