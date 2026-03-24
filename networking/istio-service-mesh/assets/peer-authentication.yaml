@@ -1,0 +1,43 @@
+# Strict mTLS PeerAuthentication
+# Enforces mutual TLS across the mesh with port-level exceptions for health checks.
+---
+# Mesh-wide strict mTLS (apply in istio-system namespace)
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: istio-system
+spec:
+  mtls:
+    mode: STRICT
+---
+# Namespace-level override example: PERMISSIVE during migration
+# Uncomment to allow plaintext for a namespace still being onboarded.
+# apiVersion: security.istio.io/v1
+# kind: PeerAuthentication
+# metadata:
+#   name: permissive-migration
+#   namespace: legacy-apps
+# spec:
+#   mtls:
+#     mode: PERMISSIVE
+---
+# Workload-level override: allow plaintext on health check port
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: backend-auth
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    # Health check port used by external load balancers (no sidecar)
+    15021:
+      mode: DISABLE
+    # Application health endpoint for liveness probes
+    8081:
+      mode: DISABLE

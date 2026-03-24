@@ -1,0 +1,124 @@
+# Production HTTPS Ingress Gateway + VirtualService
+# Provides TLS termination at the mesh edge with HTTP-to-HTTPS redirect.
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata:
+  name: production-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    # HTTPS listener
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      tls:
+        mode: SIMPLE
+        credentialName: production-tls-cert  # Kubernetes TLS Secret
+        minProtocolVersion: TLSV1_2
+        cipherSuites:
+          - ECDHE-ECDSA-AES256-GCM-SHA384
+          - ECDHE-RSA-AES256-GCM-SHA384
+          - ECDHE-ECDSA-AES128-GCM-SHA256
+          - ECDHE-RSA-AES128-GCM-SHA256
+      hosts:
+        - "app.example.com"
+        - "api.example.com"
+    # HTTP listener — redirect to HTTPS
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      tls:
+        httpsRedirect: true
+      hosts:
+        - "app.example.com"
+        - "api.example.com"
+---
+# VirtualService for the web application
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: app-routes
+  namespace: production
+spec:
+  hosts:
+    - "app.example.com"
+  gateways:
+    - istio-system/production-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/
+      route:
+        - destination:
+            host: api-service
+            port:
+              number: 8080
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 3s
+        retryOn: gateway-error,connect-failure,refused-stream
+      corsPolicy:
+        allowOrigins:
+          - exact: "https://app.example.com"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+        allowHeaders:
+          - authorization
+          - content-type
+        maxAge: "24h"
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: web-frontend
+            port:
+              number: 80
+      timeout: 15s
+---
+# VirtualService for the API subdomain
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: api-routes
+  namespace: production
+spec:
+  hosts:
+    - "api.example.com"
+  gateways:
+    - istio-system/production-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /v2/
+      route:
+        - destination:
+            host: api-v2
+            port:
+              number: 8080
+      timeout: 10s
+    - match:
+        - uri:
+            prefix: /v1/
+      route:
+        - destination:
+            host: api-v1
+            port:
+              number: 8080
+      timeout: 10s
+    # Default: route to latest API version
+    - route:
+        - destination:
+            host: api-v2
+            port:
+              number: 8080
+      timeout: 10s

@@ -1,0 +1,87 @@
+# AuthorizationPolicy Examples for Service-to-Service Access Control
+# Implements deny-by-default with explicit ALLOW rules per service pair.
+---
+# Deny all traffic in the namespace by default
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: production
+spec: {}
+---
+# Allow frontend to access backend API (GET/POST only)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/production/sa/frontend-sa"
+      to:
+        - operation:
+            methods: ["GET", "POST"]
+            paths: ["/api/*"]
+---
+# Allow backend to access database service
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-backend-to-db
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: database
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - "cluster.local/ns/production/sa/backend-sa"
+      to:
+        - operation:
+            ports: ["5432"]
+---
+# Allow monitoring namespace to scrape metrics from any service
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-monitoring-metrics
+  namespace: production
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: ["monitoring"]
+      to:
+        - operation:
+            methods: ["GET"]
+            paths: ["/metrics", "/healthz", "/readyz"]
+---
+# Deny access to admin endpoints from outside the admin namespace
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-admin-external
+  namespace: production
+spec:
+  selector:
+    matchLabels:
+      app: backend
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notNamespaces: ["admin"]
+      to:
+        - operation:
+            paths: ["/admin/*", "/internal/*"]

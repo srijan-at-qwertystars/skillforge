@@ -1,0 +1,164 @@
+# IstioOperator Configuration — Production Tuning
+# Apply with: istioctl install -f istio-operator-values.yaml
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: istio-production
+  namespace: istio-system
+spec:
+  profile: default
+
+  meshConfig:
+    # Access logging
+    accessLogFile: /dev/stdout
+    accessLogEncoding: JSON
+
+    # Egress: lock down outbound traffic
+    outboundTrafficPolicy:
+      mode: REGISTRY_ONLY
+
+    # Sidecar startup: hold app until proxy is ready
+    defaultConfig:
+      holdApplicationUntilProxyStarts: true
+      tracing:
+        sampling: 1.0    # 1% sampling in production
+      proxyMetadata:
+        ISTIO_META_DNS_CAPTURE: "true"
+        ISTIO_META_DNS_AUTO_ALLOCATE: "true"
+
+    # mTLS: strict by default
+    # (PeerAuthentication CRD is preferred, but this sets the baseline)
+    enableAutoMtls: true
+
+    # Extension providers for external authorization
+    extensionProviders:
+      - name: ext-authz-grpc
+        envoyExtAuthzGrpc:
+          service: ext-authz.auth-system.svc.cluster.local
+          port: 9000
+          timeout: 2s
+          failOpen: false
+
+  components:
+    # Control plane (istiod)
+    pilot:
+      k8s:
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: "2"
+            memory: 2Gi
+        hpaSpec:
+          minReplicas: 2
+          maxReplicas: 5
+          metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 80
+        strategy:
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+        env:
+          - name: PILOT_ENABLE_STATUS
+            value: "true"
+          - name: PILOT_ENABLE_CONFIG_DISTRIBUTION_TRACKING
+            value: "true"
+
+    # Ingress gateway
+    ingressGateways:
+      - name: istio-ingressgateway
+        enabled: true
+        k8s:
+          resources:
+            requests:
+              cpu: 200m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          hpaSpec:
+            minReplicas: 2
+            maxReplicas: 10
+            metrics:
+              - type: Resource
+                resource:
+                  name: cpu
+                  target:
+                    type: Utilization
+                    averageUtilization: 70
+          service:
+            type: LoadBalancer
+            ports:
+              - port: 80
+                targetPort: 8080
+                name: http2
+              - port: 443
+                targetPort: 8443
+                name: https
+          strategy:
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 0
+          podDisruptionBudget:
+            minAvailable: 1
+
+    # Egress gateway (for controlled external access)
+    egressGateways:
+      - name: istio-egressgateway
+        enabled: true
+        k8s:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          hpaSpec:
+            minReplicas: 1
+            maxReplicas: 3
+
+    # CNI plugin (removes need for NET_ADMIN capability)
+    cni:
+      enabled: true
+
+  # Global sidecar proxy settings
+  values:
+    global:
+      proxy:
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        # Lifecycle hooks for graceful shutdown
+        lifecycle:
+          preStop:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "sleep 5"
+      # Logging
+      logging:
+        level: "default:warn"
+      # Trust domain
+      trustDomain: cluster.local
+
+    # Sidecar injector settings
+    sidecarInjectorWebhook:
+      rewriteAppHTTPProbe: true
+
+    # CNI configuration
+    cni:
+      excludeNamespaces:
+        - istio-system
+        - kube-system

@@ -1,0 +1,163 @@
+# CockroachDB 3-Node Cluster with HAProxy Load Balancer
+#
+# Usage:
+#   docker compose up -d
+#   docker compose exec crdb-init bash  # runs init then exits
+#
+# Endpoints:
+#   SQL (load balanced): localhost:26257
+#   DB Console:          http://localhost:8080 (node1)
+#   HAProxy stats:       http://localhost:8081/stats
+
+version: "3.9"
+
+services:
+  crdb-node1:
+    image: cockroachdb/cockroach:latest
+    hostname: crdb-node1
+    command: >
+      start
+      --insecure
+      --join=crdb-node1:26257,crdb-node2:26257,crdb-node3:26257
+      --advertise-addr=crdb-node1:26257
+      --http-addr=0.0.0.0:8080
+      --store=attrs=ssd,path=/cockroach/cockroach-data
+      --locality=region=local,zone=zone1
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    volumes:
+      - crdb-node1-data:/cockroach/cockroach-data
+    networks:
+      - crdb-net
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  crdb-node2:
+    image: cockroachdb/cockroach:latest
+    hostname: crdb-node2
+    command: >
+      start
+      --insecure
+      --join=crdb-node1:26257,crdb-node2:26257,crdb-node3:26257
+      --advertise-addr=crdb-node2:26257
+      --http-addr=0.0.0.0:8080
+      --store=attrs=ssd,path=/cockroach/cockroach-data
+      --locality=region=local,zone=zone2
+    volumes:
+      - crdb-node2-data:/cockroach/cockroach-data
+    networks:
+      - crdb-net
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  crdb-node3:
+    image: cockroachdb/cockroach:latest
+    hostname: crdb-node3
+    command: >
+      start
+      --insecure
+      --join=crdb-node1:26257,crdb-node2:26257,crdb-node3:26257
+      --advertise-addr=crdb-node3:26257
+      --http-addr=0.0.0.0:8080
+      --store=attrs=ssd,path=/cockroach/cockroach-data
+      --locality=region=local,zone=zone3
+    volumes:
+      - crdb-node3-data:/cockroach/cockroach-data
+    networks:
+      - crdb-net
+    healthcheck:
+      test: ["CMD", "cockroach", "sql", "--insecure", "-e", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  crdb-init:
+    image: cockroachdb/cockroach:latest
+    depends_on:
+      crdb-node1:
+        condition: service_healthy
+      crdb-node2:
+        condition: service_healthy
+      crdb-node3:
+        condition: service_healthy
+    command: >
+      bash -c "
+        cockroach init --insecure --host=crdb-node1:26257 2>/dev/null || true &&
+        cockroach sql --insecure --host=crdb-node1:26257 -e '
+          CREATE DATABASE IF NOT EXISTS appdb;
+          CREATE USER IF NOT EXISTS app_user;
+          GRANT ALL ON DATABASE appdb TO app_user;
+        ' &&
+        echo 'Cluster initialized and database created.'
+      "
+    networks:
+      - crdb-net
+    restart: "no"
+
+  haproxy:
+    image: haproxy:2.9-alpine
+    hostname: haproxy
+    depends_on:
+      crdb-node1:
+        condition: service_healthy
+    ports:
+      - "26000:26257"
+      - "8081:8081"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks:
+      - crdb-net
+    restart: unless-stopped
+
+volumes:
+  crdb-node1-data:
+  crdb-node2-data:
+  crdb-node3-data:
+
+networks:
+  crdb-net:
+    driver: bridge
+
+# HAProxy config file (create as haproxy.cfg in the same directory):
+#
+# global
+#     maxconn 4096
+#     log stdout format raw local0
+#
+# defaults
+#     mode tcp
+#     timeout connect 10s
+#     timeout client 30m
+#     timeout server 30m
+#     option clitcpka
+#     option tcplog
+#     log global
+#
+# listen cockroachdb
+#     bind :26257
+#     mode tcp
+#     balance roundrobin
+#     option httpchk GET /health?ready=1
+#     server crdb-node1 crdb-node1:26257 check port 8080
+#     server crdb-node2 crdb-node2:26257 check port 8080
+#     server crdb-node3 crdb-node3:26257 check port 8080
+#
+# listen stats
+#     bind :8081
+#     mode http
+#     stats enable
+#     stats uri /stats
+#     stats refresh 10s

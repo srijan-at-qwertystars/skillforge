@@ -405,76 +405,35 @@ RESTORE FROM LATEST IN 'gs://my-bucket/backups'
 Supported: `gs://` (GCS), `s3://` (AWS S3), `azure://` (Azure Blob),
 `nodelocal://` (node-local filesystem), `userfile://` (cluster-local).
 
-## Deployment Options
-
-| Feature          | Serverless          | Dedicated           | Self-Hosted          |
-|------------------|---------------------|---------------------|----------------------|
-| Management       | Fully managed       | Fully managed       | User managed         |
-| Tenancy          | Multi-tenant        | Single-tenant       | User controlled      |
-| CLI access       | SQL only            | SQL only            | Full cockroach CLI   |
-| Scaling          | Auto                | Manual/auto         | Manual               |
-| Best for         | Dev/small prod      | Enterprise prod     | On-prem/custom       |
-
 ## cockroach CLI Essentials
 
 ```bash
-# Start a node
 cockroach start --insecure --store=node1 --listen-addr=localhost:26257 \
     --http-addr=localhost:8080 --join=localhost:26257,localhost:26258
-
-# Initialize cluster (once)
 cockroach init --insecure --host=localhost:26257
-
-# SQL shell
 cockroach sql --insecure --host=localhost:26257
-
-# Node status
 cockroach node status --insecure --host=localhost:26257
-
-# Decommission a node gracefully
 cockroach node decommission <node-id> --insecure --host=localhost:26257
-
-# Debug zip (collect diagnostics)
 cockroach debug zip debug.zip --insecure --host=localhost:26257
 ```
 
 ## Monitoring & Observability
 
-### DB Console
-
-Access at `http://<node>:8080`. Key dashboards:
-- **SQL**: QPS, latency percentiles, transaction retries, active statements
-- **Storage**: Range count, live bytes, compaction queue
-- **Replication**: Under-replicated ranges, leaseholder distribution
-- **Hardware**: CPU, memory, disk I/O, network
-
-### Key Metrics to Monitor
+Access DB Console at `http://<node>:8080` for SQL, Storage, Replication, and
+Hardware dashboards. CockroachDB exposes Prometheus metrics at `/_status/vars`.
 
 ```sql
--- Active sessions
 SELECT * FROM crdb_internal.cluster_sessions;
-
--- Slow queries (> 1s)
 SELECT * FROM crdb_internal.node_statement_statistics
     WHERE mean_service_lat > 1.0 ORDER BY mean_service_lat DESC;
-
--- Range distribution
 SELECT lease_holder, count(*) FROM crdb_internal.ranges_no_leases
     GROUP BY lease_holder;
-
--- Contention events
 SELECT * FROM crdb_internal.cluster_contention_events
     ORDER BY count DESC LIMIT 20;
 ```
 
-### Prometheus Integration
-
-CockroachDB exposes metrics at `/_status/vars` in Prometheus format.
-Scrape from each node and alert on:
-- `sql_service_latency_p99` > threshold
-- `ranges_underreplicated` > 0 for sustained period
-- `capacity_available` dropping below 20%
-- `txn_restarts` rate spikes
+Alert on: `sql_service_latency_p99`, `ranges_underreplicated`,
+`capacity_available` < 20%, `txn_restarts` spikes.
 
 ## PostgreSQL Compatibility Notes
 
@@ -496,3 +455,35 @@ Use `crdb_internal` schema for CockroachDB-specific introspection instead of `pg
 - Ignoring `crdb_region` in REGIONAL BY ROW → data placed at gateway, not user's region.
 - Over-indexing → write amplification. Audit with `index_usage_statistics`.
 - Cross-region JOINs on hot paths → high latency. Co-locate joined tables in same region.
+
+## References
+
+In-depth guides in `references/`:
+
+| File | Description |
+|------|-------------|
+| [multi-region-guide.md](references/multi-region-guide.md) | Deep dive into multi-region: locality flags, topology, REGIONAL BY ROW/TABLE, GLOBAL tables, survival goals, latency tradeoffs, follower reads, zone config overrides, 9-node cluster demo |
+| [troubleshooting.md](references/troubleshooting.md) | Common issues: 40001 retry errors, contention analysis, hot ranges, leaseholder rebalancing, clock skew, stuck decommission, changefeed lag, OOM, slow schema changes, range splits, admission control |
+| [migration-from-postgres.md](references/migration-from-postgres.md) | PostgreSQL migration: compatible/incompatible features, MOLT tools, schema conversion, data import, retry logic, ORM compatibility (ActiveRecord, SQLAlchemy, GORM, Prisma, Django, Hibernate) |
+
+## Scripts
+
+Operational scripts in `scripts/` (all executable):
+
+| Script | Purpose |
+|--------|---------|
+| [setup-cockroachdb-cluster.sh](scripts/setup-cockroachdb-cluster.sh) | Stand up a 3-node Docker cluster, init, create database, verify |
+| [check-cluster-health.sh](scripts/check-cluster-health.sh) | Health check: node status, ranges, replication, hotspots, storage, clock offsets, license |
+| [backup-restore.sh](scripts/backup-restore.sh) | Full/incremental backup, restore (cluster, database, table), scheduled backups |
+
+## Assets
+
+Ready-to-use configuration and code in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [docker-compose.yml](assets/docker-compose.yml) | 3-node CockroachDB cluster with HAProxy load balancer |
+| [multi-region-schema.sql](assets/multi-region-schema.sql) | Complete multi-region schema: REGIONAL BY ROW, GLOBAL, REGIONAL BY TABLE examples |
+| [retry-transaction.go](assets/retry-transaction.go) | Go (pgx) transaction retry with exponential backoff |
+| [retry-transaction.py](assets/retry-transaction.py) | Python (psycopg2) transaction retry with SAVEPOINT protocol |
+| [cockroachdb-helm-values.yaml](assets/cockroachdb-helm-values.yaml) | Helm values for Kubernetes deployment with TLS, monitoring, topology spread |

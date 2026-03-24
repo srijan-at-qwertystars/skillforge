@@ -401,3 +401,35 @@ kubectl port-forward <pod> 15000:15000
 8. Propagate trace context headers in application code — Istio cannot do this automatically.
 9. Run `istioctl analyze` in CI to catch misconfigurations before deploy.
 10. Use `PeerAuthentication` port-level overrides for health check ports that must accept plaintext.
+
+## References
+
+In-depth guides in `references/`:
+
+| File | Topics |
+|------|--------|
+| [traffic-management-guide.md](references/traffic-management-guide.md) | VirtualService matching, DestinationRule subsets, traffic splitting, header routing, fault injection, circuit breaking, retries, timeouts, mirroring, ServiceEntry, Sidecar scoping |
+| [security-guide.md](references/security-guide.md) | PeerAuthentication modes, AuthorizationPolicy (ALLOW/DENY/CUSTOM), RequestAuthentication with JWT, ext-authz, certificate management, SPIFFE identity, cert-manager integration |
+| [troubleshooting.md](references/troubleshooting.md) | Sidecar injection failures, 503 errors, mTLS issues, routing problems, Envoy config debugging, performance tuning, proxy-status/proxy-config, response flag codes, Kiali |
+
+## Scripts
+
+Operational scripts in `scripts/`:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [install-istio.sh](scripts/install-istio.sh) | Install Istio on a cluster — downloads istioctl, installs with profile, enables injection, optionally deploys sample app | `./scripts/install-istio.sh [profile] [namespace]` |
+| [istio-debug.sh](scripts/istio-debug.sh) | Debug Istio issues — proxy-status, proxy-config, mTLS check, analyze, Envoy logs, certs, metrics | `./scripts/istio-debug.sh <command> [pod] [namespace]` |
+| [canary-deploy.sh](scripts/canary-deploy.sh) | Canary deployment with progressive traffic shifting, health checks, and automatic rollback | `./scripts/canary-deploy.sh <service> <ns> <stable> <canary> [--auto]` |
+
+## Assets
+
+Ready-to-use Kubernetes manifests in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [istio-gateway.yaml](assets/istio-gateway.yaml) | Production Gateway + VirtualService for HTTPS ingress with HTTP redirect, CORS, timeouts |
+| [canary-virtualservice.yaml](assets/canary-virtualservice.yaml) | Canary VirtualService with header-based testing and weighted traffic split |
+| [authorization-policy.yaml](assets/authorization-policy.yaml) | Deny-by-default AuthorizationPolicy with per-service ALLOW rules and monitoring access |
+| [peer-authentication.yaml](assets/peer-authentication.yaml) | Mesh-wide STRICT mTLS with port-level exceptions for health checks |
+| [istio-operator-values.yaml](assets/istio-operator-values.yaml) | IstioOperator config with production resource limits, HPA, egress lockdown, CNI, ext-authz |

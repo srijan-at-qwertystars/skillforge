@@ -1,0 +1,151 @@
+# ============================================================================
+# pubspec.yaml — Flutter Project Template
+# Organized by category. Remove packages you don't need.
+# ============================================================================
+
+name: my_app
+description: A Flutter application built with clean architecture.
+version: 1.0.0+1
+publish_to: none
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # ── State Management ────────────────────────────────────────────────────
+  flutter_riverpod: ^2.5.0
+  riverpod_annotation: ^2.3.0
+  # flutter_bloc: ^8.1.0              # Alternative: Bloc/Cubit
+  # bloc: ^8.1.0
+
+  # ── Navigation ──────────────────────────────────────────────────────────
+  go_router: ^14.0.0
+
+  # ── Networking ──────────────────────────────────────────────────────────
+  dio: ^5.4.0
+  # retrofit: ^4.1.0                  # Type-safe API layer
+  # web_socket_channel: ^2.4.0        # WebSocket support
+  connectivity_plus: ^6.0.0
+
+  # ── Data Serialization ──────────────────────────────────────────────────
+  freezed_annotation: ^2.4.0
+  json_annotation: ^4.9.0
+
+  # ── Local Storage ───────────────────────────────────────────────────────
+  shared_preferences: ^2.2.0
+  flutter_secure_storage: ^9.0.0
+  # hive: ^2.2.0                      # Fast NoSQL storage
+  # hive_flutter: ^1.1.0
+  # isar: ^3.1.0                      # Embedded database
+  # isar_flutter_libs: ^3.1.0
+  # drift: ^2.15.0                    # Type-safe SQLite
+  # sqlite3_flutter_libs: ^0.5.0
+
+  # ── UI Components ───────────────────────────────────────────────────────
+  flutter_svg: ^2.0.0
+  cached_network_image: ^3.3.0
+  shimmer: ^3.0.0
+  # google_fonts: ^6.1.0              # Google Fonts integration
+  # flutter_animate: ^4.5.0           # Declarative animations
+  # lottie: ^3.1.0                    # Lottie animations
+
+  # ── Utilities ───────────────────────────────────────────────────────────
+  intl: ^0.19.0
+  url_launcher: ^6.2.0
+  path_provider: ^2.1.0
+  package_info_plus: ^8.0.0
+  # uuid: ^4.3.0
+  # collection: ^1.18.0
+  # equatable: ^2.0.5
+
+  # ── Platform Integration ────────────────────────────────────────────────
+  # permission_handler: ^11.3.0       # Runtime permissions
+  # camera: ^0.11.0                   # Camera access
+  # image_picker: ^1.0.0              # Photo/video picker
+  # geolocator: ^12.0.0               # GPS location
+  # local_auth: ^2.2.0                # Biometric auth
+  # share_plus: ^9.0.0                # Share content
+  # firebase_core: ^2.27.0            # Firebase
+  # firebase_auth: ^4.17.0
+  # cloud_firestore: ^4.15.0
+  # firebase_messaging: ^14.7.0
+
+  # ── Logging & Analytics ─────────────────────────────────────────────────
+  logger: ^2.2.0
+  # firebase_analytics: ^10.8.0
+  # sentry_flutter: ^8.1.0            # Error tracking
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # ── Code Generation ─────────────────────────────────────────────────────
+  build_runner: ^2.4.0
+  riverpod_generator: ^2.4.0
+  freezed: ^2.5.0
+  json_serializable: ^6.8.0
+  # retrofit_generator: ^8.1.0
+  # isar_generator: ^3.1.0
+  # drift_dev: ^2.15.0
+
+  # ── Linting ─────────────────────────────────────────────────────────────
+  flutter_lints: ^4.0.0
+  riverpod_lint: ^2.3.0
+  custom_lint: ^0.6.0
+
+  # ── Testing ─────────────────────────────────────────────────────────────
+  mocktail: ^1.0.3
+  # mockito: ^5.4.4
+  # bloc_test: ^9.1.0                 # For Bloc testing
+  # golden_toolkit: ^0.15.0           # Enhanced golden tests
+
+  # ── Integration Testing ─────────────────────────────────────────────────
+  integration_test:
+    sdk: flutter
+  # patrol: ^3.6.0                    # Native interaction testing
+
+  # ── Icons & Splash ──────────────────────────────────────────────────────
+  flutter_launcher_icons: ^0.14.0
+  flutter_native_splash: ^2.4.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/
+    - assets/fonts/
+    # - assets/animations/            # Lottie files
+    # - assets/translations/          # i18n
+
+  fonts:
+    - family: AppFont
+      fonts:
+        - asset: assets/fonts/AppFont-Regular.ttf
+        - asset: assets/fonts/AppFont-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/AppFont-Bold.ttf
+          weight: 700
+
+# ── Flutter Launcher Icons ──────────────────────────────────────────────────
+# Run: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+
+# ── Flutter Native Splash ──────────────────────────────────────────────────
+# Run: dart run flutter_native_splash:create
+flutter_native_splash:
+  color: "#ffffff"
+  color_dark: "#1a1a2e"
+  # image: "assets/splash/splash_logo.png"
+  android: true
+  ios: true
+  web: true

@@ -1,0 +1,67 @@
+# Canary Deployment VirtualService with Traffic Splitting
+# Gradually shift traffic from stable to canary using weighted routing.
+# Pair with a DestinationRule that defines stable/canary subsets.
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: myapp-dr
+  namespace: production
+spec:
+  host: myapp
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_REQUEST
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+    - name: stable
+      labels:
+        version: v1
+    - name: canary
+      labels:
+        version: v2
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: myapp-canary
+  namespace: production
+spec:
+  hosts:
+    - myapp
+  http:
+    # Phase 1: Route internal testers to canary via header
+    - match:
+        - headers:
+            x-canary:
+              exact: "true"
+      route:
+        - destination:
+            host: myapp
+            subset: canary
+      timeout: 10s
+      retries:
+        attempts: 2
+        perTryTimeout: 3s
+        retryOn: 5xx,connect-failure
+
+    # Phase 2: Weighted traffic split for all users
+    # Adjust weights progressively: 10/90 → 25/75 → 50/50 → 75/25 → 100/0
+    - route:
+        - destination:
+            host: myapp
+            subset: stable
+          weight: 90
+        - destination:
+            host: myapp
+            subset: canary
+          weight: 10
+      timeout: 10s
+      retries:
+        attempts: 2
+        perTryTimeout: 3s
+        retryOn: 5xx,connect-failure

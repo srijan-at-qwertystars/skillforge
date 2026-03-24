@@ -452,40 +452,15 @@ Run: `flutter test integration_test/`. Target 70% unit / 20% widget / 10% integr
 - Monitor size: `flutter build apk --analyze-size`.
 
 ## CI/CD
-
-### GitHub Actions
-```yaml
-name: Flutter CI
-on: [push, pull_request]
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with: { flutter-version: '3.x', channel: stable }
-      - run: flutter pub get
-      - run: dart analyze --fatal-infos
-      - run: flutter test --coverage
-      - run: flutter build apk --release
-```
-
-### Key CI Steps
-1. `flutter pub get` — resolve deps
-2. `dart analyze --fatal-infos` — static analysis
-3. `dart format --set-exit-if-changed .` — enforce formatting
-4. `flutter test --coverage` — tests with coverage
-5. `flutter build apk/ios/web` — platform builds
-6. Use Fastlane for store deployment, Codemagic for managed CI/CD.
+Key CI pipeline steps: `flutter pub get` → `dart analyze --fatal-infos` → `dart format --set-exit-if-changed .` → `flutter test --coverage` → `flutter build apk/ios/web`.
+Use Fastlane for store deployment, Codemagic for managed CI/CD. See `assets/github-actions-flutter.yml` for full workflow template.
 
 ## Code Generation
-
 Run `dart run build_runner build --delete-conflicting-outputs`. Key generators:
 `freezed` (data classes/unions), `json_serializable` (JSON), `retrofit_generator` (APIs),
 `riverpod_generator` (providers). Commit or gitignore generated files — enforce one convention.
 
 ## Multi-Platform
-
 - **Web**: Use `kIsWeb` for checks. Use deferred loading for bundle size. Impeller web in beta.
 - **Desktop**: Use `Platform.is*` for platform logic. Use `window_manager` for window control.
   Sign/notarize macOS. Use MSIX for Windows distribution.
@@ -495,3 +470,31 @@ Run `dart run build_runner build --delete-conflicting-outputs`. Key generators:
 - Never hardcode colors — use `Theme.of(context).colorScheme`. Never use `print()` — use `debugPrint()`.
 - Never put business logic in widgets. Never use `dynamic` when type is known.
 - Never use string-based navigation. Never suppress analyzer warnings without justification.
+
+## Additional Resources
+
+### References (Deep-Dive Guides)
+
+| Guide | Path | Topics |
+|-------|------|--------|
+| State Management | `references/state-management-guide.md` | Riverpod 2.x (codegen, providers, AsyncValue, notifiers), Bloc/Cubit, Provider (legacy), comparison matrix, testing state, state restoration |
+| Troubleshooting | `references/troubleshooting.md` | Gradle/CocoaPods/Xcode build failures, hot reload issues, overflow errors, platform channel crashes, signing, permissions, dependency conflicts, performance jank, memory leaks |
+| Testing | `references/testing-guide.md` | Unit tests (mocktail/mockito), widget tests (pump, find, expect), golden tests, integration tests (patrol), navigation testing, async testing, coverage, CI setup |
+
+### Scripts (Project Automation)
+
+| Script | Path | Purpose |
+|--------|------|---------|
+| Setup Project | `scripts/setup-flutter-project.sh` | Scaffold clean-architecture Flutter project with folder structure, common deps (Riverpod, GoRouter, Dio, Freezed), and strict analysis options |
+| CI Setup | `scripts/flutter-ci-setup.sh` | Generate GitHub Actions workflow with caching, test, coverage threshold, APK/IPA/web builds |
+| Generate Icons | `scripts/generate-icons.sh` | Generate app icons and splash screens via flutter_launcher_icons and flutter_native_splash |
+
+### Assets (Templates & Configs)
+
+| Asset | Path | Description |
+|-------|------|-------------|
+| Analysis Options | `assets/analysis_options.yaml` | Strict Dart lint rules with strict-casts, strict-inference, comprehensive rule set |
+| Pubspec Template | `assets/pubspec-template.yaml` | Template pubspec.yaml with deps organized by category (state, nav, network, storage, UI, testing) |
+| GitHub Actions | `assets/github-actions-flutter.yml` | Full CI/CD pipeline: quality checks, Android/iOS/web builds, golden tests, coverage |
+| Architecture Template | `assets/app-architecture-template.dart` | Clean architecture feature module: domain entities, repository interfaces, use cases, data layer, Riverpod providers, presentation |
+| Theme Template | `assets/theme-template.dart` | Material 3 theme with light/dark modes, component themes, spacing/shape systems, typography |
