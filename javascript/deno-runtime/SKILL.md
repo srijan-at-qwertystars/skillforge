@@ -389,89 +389,49 @@ console.log(out);
 
 ## Examples
 
-### Example 1: REST API Server
+### Example 1: REST API with KV
 
-**Input**: "Create a simple REST API with Deno"
-
-**Output**:
 ```typescript
-// main.ts
 const kv = await Deno.openKv();
-
 Deno.serve({ port: 8000 }, async (req) => {
   const url = new URL(req.url);
-
   if (url.pathname === "/api/items" && req.method === "GET") {
     const items = [];
-    for await (const entry of kv.list({ prefix: ["items"] })) {
-      items.push(entry.value);
-    }
+    for await (const entry of kv.list({ prefix: ["items"] })) items.push(entry.value);
     return Response.json(items);
   }
-
   if (url.pathname === "/api/items" && req.method === "POST") {
     const item = await req.json();
     const id = crypto.randomUUID();
     await kv.set(["items", id], { id, ...item });
     return Response.json({ id, ...item }, { status: 201 });
   }
-
   return new Response("Not Found", { status: 404 });
 });
 ```
-```bash
-deno run --allow-net --allow-read --unstable-kv main.ts
-```
 
-### Example 2: CLI Tool Compiled to Binary
+### Example 2: CLI Compiled to Binary
 
-**Input**: "Build a CLI tool that reads a CSV and outputs JSON"
-
-**Output**:
 ```typescript
-// csv2json.ts
 import { parse } from "@std/csv";
-
 const filename = Deno.args[0];
-if (!filename) {
-  console.error("Usage: csv2json <file.csv>");
-  Deno.exit(1);
-}
-
-const text = await Deno.readTextFile(filename);
-const records = parse(text, { skipFirstRow: true });
+if (!filename) { console.error("Usage: csv2json <file.csv>"); Deno.exit(1); }
+const records = parse(await Deno.readTextFile(filename), { skipFirstRow: true });
 console.log(JSON.stringify(records, null, 2));
 ```
 ```bash
 deno compile --allow-read --output=csv2json csv2json.ts
-./csv2json data.csv
 ```
 
-### Example 3: Testing with Mocks
+### Example 3: Testing
 
-**Input**: "Write tests for a user service"
-
-**Output**:
 ```typescript
 import { assertEquals } from "@std/assert";
-
-function createUser(name: string) {
-  if (!name) throw new Error("Name required");
-  return { id: crypto.randomUUID(), name };
-}
-
 Deno.test("createUser returns user with id", () => {
   const user = createUser("Alice");
   assertEquals(user.name, "Alice");
   assertEquals(typeof user.id, "string");
 });
-
-Deno.test("createUser throws on empty name", () => {
-  try { createUser(""); } catch (e) { assertEquals(e.message, "Name required"); }
-});
-```
-```bash
-deno test user_service_test.ts
 ```
 
 ### Example 4: deno.json for a Full Project
@@ -497,3 +457,33 @@ deno test user_service_test.ts
   "exclude": ["dist/", "node_modules/"]
 }
 ```
+
+## References
+
+Deep-dive documents for advanced topics:
+
+- **[references/advanced-patterns.md](references/advanced-patterns.md)** — Deno 2.x workspaces, `Deno.cron`, KV queues, `BroadcastChannel`, Web Workers, `Deno.Command`, custom runtimes with `deno_core`, embedding Deno, performance profiling (V8 flags), import maps, `deno serve` multi-threading, streaming/SSE patterns
+- **[references/troubleshooting.md](references/troubleshooting.md)** — Permission denied patterns, import resolution errors, npm compatibility issues, TypeScript strict mode, debugging (`--inspect`, VS Code), `DENO_DIR` caching, lock file conflicts, Node.js migration guide, Deno Deploy failures, KV issues
+- **[references/fresh-framework.md](references/fresh-framework.md)** — Fresh 2.x islands architecture, route handlers, dynamic routes, middleware, layouts, static files, plugins, form submissions, WebSocket, state management, error handling, Deno Deploy, SEO (meta/sitemap/robots.txt/JSON-LD), streaming/partials, testing
+
+## Scripts
+
+Ready-to-use scripts for common Deno workflows:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| [scripts/deno-project-init.sh](scripts/deno-project-init.sh) | Scaffold a new Deno project with config, tests, CI | `./deno-project-init.sh my-app [--fresh\|--oak\|--minimal]` |
+| [scripts/node-to-deno.sh](scripts/node-to-deno.sh) | Migrate Node.js projects to Deno (import analysis, deno.json creation) | `./node-to-deno.sh ./my-node-app [--dry-run]` |
+| [scripts/deno-benchmark.ts](scripts/deno-benchmark.ts) | Benchmarking examples using `Deno.bench()` | `deno bench scripts/deno-benchmark.ts` |
+
+## Assets (Templates)
+
+Copy-paste templates for common project files:
+
+| Asset | Purpose |
+|-------|---------|
+| [assets/deno-config-template.json](assets/deno-config-template.json) | Comprehensive `deno.json` with tasks, imports, lint, fmt, test, bench config |
+| [assets/fresh-route-template.tsx](assets/fresh-route-template.tsx) | Fresh route handler with island component pattern |
+| [assets/oak-server-template.ts](assets/oak-server-template.ts) | Oak middleware server with CRUD routes, CORS, error handling, request logging |
+| [assets/github-actions-deno.yml](assets/github-actions-deno.yml) | CI/CD workflow: lint, fmt, type-check, test with coverage, optional deploy |
+| [assets/dockerfile-deno](assets/dockerfile-deno) | Multi-stage Dockerfile with dependency caching, non-root user, health check |

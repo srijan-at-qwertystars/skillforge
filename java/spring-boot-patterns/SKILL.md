@@ -467,3 +467,33 @@ This configures Tomcat, async task executors, and scheduling to use virtual thre
 | `@EnableMethodSecurity` | Method-level `@PreAuthorize` / `@PostAuthorize` |
 | `@MockitoBean` | Replace bean with Mockito mock in tests (Boot 3.4+) |
 | `@ServiceConnection` | Auto-configure Testcontainers connection (Boot 3.1+) |
+
+## References
+
+| File | Topics |
+|---|---|
+| [advanced-patterns.md](references/advanced-patterns.md) | Auto-configuration internals, custom starters, `@ConditionalOn*` annotations, Spring AOT & GraalVM native compilation, virtual threads (Project Loom), reactive WebFlux, R2DBC, Spring Modulith, event-driven patterns (`@EventListener`, `ApplicationEventPublisher`, transactional events) |
+| [troubleshooting.md](references/troubleshooting.md) | Startup failures (bean conflicts, circular dependencies, datasource config), debugging auto-configuration (`--debug`, `ConditionEvaluationReport`), test context caching, memory leaks, Hikari pool issues, slow startup diagnostics, Boot 2.x → 3.x migration checklist |
+| [security-deep-dive.md](references/security-deep-dive.md) | Spring Security 6.x architecture, `SecurityFilterChain` patterns, multiple filter chains, method security (`@PreAuthorize`), OAuth2 resource server (JWT + opaque), OAuth2 client (authorization code + client credentials), CORS, CSRF for SPAs, custom `AuthenticationProvider`, remember-me, session management, Spring Session with Redis |
+
+## Scripts
+
+Utility scripts in `scripts/` (all `chmod +x`):
+
+| Script | Purpose |
+|---|---|
+| [spring-init.sh](scripts/spring-init.sh) | Generate Spring Boot project via Spring Initializr API. Supports custom deps, build tool, Java version. |
+| [check-dependencies.sh](scripts/check-dependencies.sh) | Check for outdated/vulnerable dependencies. Auto-detects Gradle or Maven. Reports Boot version status. |
+| [native-build.sh](scripts/native-build.sh) | Build GraalVM native image. Modes: `--compile`, `--container` (Buildpacks), `--test`, `--tracing-agent`. |
+
+## Assets
+
+Ready-to-use templates in `assets/`:
+
+| File | Description |
+|---|---|
+| [application-template.yml](assets/application-template.yml) | Comprehensive `application.yml` with datasource, Redis, Kafka, Jackson, mail, actuator, logging, dev/prod profiles |
+| [docker-compose-spring.yml](assets/docker-compose-spring.yml) | Docker Compose with PostgreSQL 16, Redis 7, Kafka (KRaft mode), Kafka UI, Mailhog |
+| [github-actions-spring.yml](assets/github-actions-spring.yml) | CI/CD workflow: build, test (with Postgres+Redis services), native image, Docker multi-arch, deploy |
+| [test-patterns.java](assets/test-patterns.java) | Test patterns: `@WebMvcTest`, `@DataJpaTest`, `@SpringBootTest`, Testcontainers, JWT security testing, `@JsonTest`, `@RestClientTest` |
+| [security-config-template.java](assets/security-config-template.java) | `SecurityFilterChain` templates: JWT API, form login, multi-chain, OAuth2 social login, dev/test config |

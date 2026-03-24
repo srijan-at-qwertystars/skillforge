@@ -1,0 +1,171 @@
+# Docker Compose — Nginx with upstream apps and Certbot
+# Provides: Nginx reverse proxy, two app backends, Certbot for SSL
+#
+# Usage:
+#   1. Update domains and email in environment variables
+#   2. Place nginx config in ./nginx/conf.d/
+#   3. Run: docker compose up -d
+#   4. Initialize certs: docker compose run --rm certbot certonly --webroot ...
+#   5. Reload nginx: docker compose exec nginx nginx -s reload
+#
+# Directory structure:
+#   ./nginx/nginx.conf         — main nginx config
+#   ./nginx/conf.d/            — server block configs
+#   ./nginx/ssl-params.conf    — shared SSL parameters
+#   ./certbot/conf/            — certificate storage
+#   ./certbot/www/             — ACME challenge webroot
+
+services:
+  # ── Nginx Reverse Proxy ──
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl-params.conf:/etc/nginx/ssl-params.conf:ro
+      - certbot-certs:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+      - nginx-logs:/var/log/nginx
+    depends_on:
+      - app1
+      - app2
+    networks:
+      - frontend
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Application Backend 1 ──
+  app1:
+    image: your-app:latest
+    container_name: app-backend-1
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+    expose:
+      - "8080"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Application Backend 2 ──
+  app2:
+    image: your-app:latest
+    container_name: app-backend-2
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+    expose:
+      - "8080"
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Certbot (Certificate Management) ──
+  certbot:
+    image: certbot/certbot:latest
+    container_name: certbot
+    volumes:
+      - certbot-certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    # Auto-renew: runs every 12 hours, sleeps in between
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew --quiet; sleep 12h & wait $${!}; done"
+    depends_on:
+      - nginx
+
+  # ── Log Rotation (optional) ──
+  logrotate:
+    image: alpine:3.19
+    container_name: logrotate
+    restart: unless-stopped
+    volumes:
+      - nginx-logs:/var/log/nginx
+    entrypoint: /bin/sh -c |
+      "while true; do
+        find /var/log/nginx -name '*.log' -size +100M -exec sh -c '
+          mv \"$$1\" \"$$1.$(date +%Y%m%d-%H%M%S)\"
+          kill -USR1 $(cat /var/run/nginx.pid 2>/dev/null) 2>/dev/null || true
+        ' _ {} \;
+        find /var/log/nginx -name '*.log.*' -mtime +30 -delete
+        sleep 86400
+      done"
+
+networks:
+  frontend:
+    driver: bridge
+  backend:
+    driver: bridge
+    internal: true   # no external access to backend network
+
+volumes:
+  certbot-certs:
+  certbot-www:
+  nginx-logs:
+
+# ── Example nginx/conf.d/default.conf for this setup ──
+# upstream app_backend {
+#     server app1:8080 max_fails=3 fail_timeout=30s;
+#     server app2:8080 max_fails=3 fail_timeout=30s;
+#     keepalive 16;
+# }
+#
+# server {
+#     listen 80;
+#     server_name example.com;
+#
+#     location /.well-known/acme-challenge/ {
+#         root /var/www/certbot;
+#     }
+#
+#     location / {
+#         return 301 https://$host$request_uri;
+#     }
+# }
+#
+# server {
+#     listen 443 ssl;
+#     http2 on;
+#     server_name example.com;
+#
+#     ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+#     ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+#     include /etc/nginx/ssl-params.conf;
+#
+#     location / {
+#         proxy_pass http://app_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Connection "";
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+# }
+#
+# ── Initial Certificate Setup ──
+# docker compose run --rm certbot certonly \
+#   --webroot -w /var/www/certbot \
+#   -d example.com -d www.example.com \
+#   --email admin@example.com --agree-tos --no-eff-email
+#
+# Then reload nginx:
+# docker compose exec nginx nginx -s reload

@@ -428,3 +428,44 @@ server {
     }
 }
 ```
+
+## Reference Documents
+
+In-depth guides in `references/`:
+
+| File | Topics |
+|------|--------|
+| [`advanced-patterns.md`](references/advanced-patterns.md) | Dynamic upstreams with Lua/njs, content-based routing, A/B testing (`split_clients`), canary deployments, `auth_request` subrequests, mirror module, geo module, `map` with regex, `sub_filter`, request/response manipulation with njs |
+| [`troubleshooting.md`](references/troubleshooting.md) | 502/504/413 errors, `error_log` debug levels, `stub_status`, request tracing, connection limits, buffer tuning, `proxy_pass` trailing slash pitfalls, DNS resolution with `resolver`, upstream keepalive issues, graceful reload vs restart |
+| [`security-hardening.md`](references/security-hardening.md) | SSL/TLS best practices (Mozilla profiles), certificate automation (certbot/ACME), DDoS mitigation, WAF with ModSecurity/njs, bot detection, IP allowlists/denylists, hiding server version, Content-Security-Policy headers, CORS configuration |
+
+## Scripts
+
+Operational scripts in `scripts/` (all `chmod +x`):
+
+| Script | Purpose |
+|--------|---------|
+| [`generate-ssl-config.sh`](scripts/generate-ssl-config.sh) | Generate SSL config following Mozilla Modern or Intermediate profile. Supports `--profile`, `--domain`, `--dhparam` flags |
+| [`nginx-config-test.sh`](scripts/nginx-config-test.sh) | Validate nginx config and audit for 9 categories of misconfigurations: security, performance, SSL/TLS, proxy, logging, rate limiting, timeouts, permissions, and sensitive file exposure |
+| [`log-analyzer.sh`](scripts/log-analyzer.sh) | Parse nginx access logs for top IPs, status codes, slow requests, bandwidth, user agents, and error URIs. Supports `--slow`, `--status`, `--ip`, `--section` filters |
+
+## Assets & Templates
+
+Production-ready config templates in `assets/`:
+
+| File | Description |
+|------|-------------|
+| [`reverse-proxy-template.conf`](assets/reverse-proxy-template.conf) | Full reverse proxy: SSL termination, security headers, rate limiting, static asset serving, proxy buffering, error pages |
+| [`load-balancer-template.conf`](assets/load-balancer-template.conf) | Load balancer with round-robin, least_conn, ip_hash, and consistent hash upstreams, health checks, WebSocket support |
+| [`ssl-params.conf`](assets/ssl-params.conf) | Standalone SSL parameters file (Mozilla Intermediate) for `include` in server blocks |
+| [`docker-compose-nginx.yml`](assets/docker-compose-nginx.yml) | Docker Compose with Nginx proxy, two app backends, Certbot auto-renewal, log rotation |
+
+### njs Scripting Examples
+
+JavaScript examples for the Nginx njs module in `assets/njs-examples/`:
+
+| File | Capabilities |
+|------|-------------|
+| [`auth.js`](assets/njs-examples/auth.js) | JWT validation, JWT subject extraction, API key authentication |
+| [`routing.js`](assets/njs-examples/routing.js) | Tenant-based routing, API version routing, body-based routing, geographic routing, canary deployment |
+| [`transform.js`](assets/njs-examples/transform.js) | Trace ID generation, request enrichment, sensitive data redaction, XML-to-JSON conversion, dynamic CORS headers |

@@ -1,0 +1,99 @@
+# CI/CD for Deno projects
+# Tests, lints, formats, and optionally deploys to Deno Deploy.
+#
+# Usage: Save as .github/workflows/deno-ci.yml
+#
+# Required secrets for deploy:
+#   DENO_DEPLOY_TOKEN — from https://dash.deno.com/account#access-tokens
+
+name: Deno CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write  # Required for Deno Deploy OIDC
+
+jobs:
+  lint-and-format:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check formatting
+        run: deno fmt --check
+
+      - name: Lint
+        run: deno lint
+
+      - name: Type check
+        run: deno check src/**/*.ts
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint-and-format
+    strategy:
+      matrix:
+        deno-version: [v2.x]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: ${{ matrix.deno-version }}
+
+      - name: Cache Deno dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/deno
+            ~/.deno
+          key: deno-${{ runner.os }}-${{ hashFiles('deno.lock') }}
+          restore-keys: deno-${{ runner.os }}-
+
+      - name: Run tests
+        run: deno test --allow-read --allow-net --allow-env --coverage=cov_profile
+
+      - name: Generate coverage report
+        if: matrix.os == 'ubuntu-latest'
+        run: deno coverage cov_profile --lcov --output=coverage.lcov
+
+      - name: Upload coverage
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.lcov
+
+  # Uncomment to enable deployment to Deno Deploy
+  # deploy:
+  #   name: Deploy
+  #   runs-on: ubuntu-latest
+  #   needs: test
+  #   if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - uses: denoland/setup-deno@v2
+  #       with:
+  #         deno-version: v2.x
+  #
+  #     - name: Build (if needed)
+  #       run: deno task build
+  #
+  #     - name: Deploy to Deno Deploy
+  #       uses: denoland/deployctl@v1
+  #       with:
+  #         project: your-project-name
+  #         entrypoint: src/main.ts

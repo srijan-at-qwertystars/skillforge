@@ -1,0 +1,66 @@
+# Multi-stage Dockerfile for Deno applications
+#
+# Usage:
+#   docker build -t my-deno-app .
+#   docker run -p 8000:8000 my-deno-app
+#
+# Build arguments:
+#   DENO_VERSION — Deno version to use (default: 2.1.4)
+#   PORT         — Port to expose (default: 8000)
+
+ARG DENO_VERSION=2.1.4
+
+# ─── Stage 1: Cache dependencies ────────────────────────────────────────
+FROM denoland/deno:${DENO_VERSION} AS deps
+
+WORKDIR /app
+
+# Copy only dependency-related files first (for better caching)
+COPY deno.json deno.lock* ./
+
+# Cache dependencies
+RUN deno install
+
+# ─── Stage 2: Build (if needed) ─────────────────────────────────────────
+FROM denoland/deno:${DENO_VERSION} AS builder
+
+WORKDIR /app
+
+# Copy cached dependencies
+COPY --from=deps /deno-dir /deno-dir
+COPY --from=deps /app/deno.json /app/deno.lock* ./
+
+# Copy source code
+COPY . .
+
+# Type check and cache all modules
+RUN deno check src/main.ts
+RUN deno cache src/main.ts
+
+# ─── Stage 3: Production ────────────────────────────────────────────────
+FROM denoland/deno:${DENO_VERSION} AS runtime
+
+WORKDIR /app
+
+# Create non-root user
+RUN addgroup --system app && adduser --system --ingroup app app
+
+# Copy cached deps and source
+COPY --from=builder /deno-dir /deno-dir
+COPY --from=builder /app .
+
+# Set ownership
+RUN chown -R app:app /app
+
+USER app
+
+ARG PORT=8000
+ENV PORT=${PORT}
+EXPOSE ${PORT}
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:${PORT}/api/health || exit 1
+
+# Run with minimal permissions
+CMD ["deno", "run", "--allow-net", "--allow-read=./static,./", "--allow-env=PORT,DATABASE_URL", "--cached-only", "src/main.ts"]
