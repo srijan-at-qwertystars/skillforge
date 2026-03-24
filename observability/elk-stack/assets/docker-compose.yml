@@ -1,0 +1,318 @@
+# =============================================================================
+# ELK Stack - Production Docker Compose
+# Elasticsearch 8.17.0 + Logstash + Kibana + Filebeat
+# =============================================================================
+# This compose file deploys a 3-node Elasticsearch cluster with full
+# x-pack security, TLS on transport layer, Logstash for ingestion,
+# Kibana for visualization, and Filebeat for log collection.
+# =============================================================================
+
+version: "3.8"
+
+services:
+  # ---------------------------------------------------------------------------
+  # Elasticsearch Node 1 (master-eligible, data)
+  # ---------------------------------------------------------------------------
+  es01:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: es01
+    environment:
+      # Cluster and node identity
+      - node.name=es01
+      - cluster.name=elk-cluster
+      # Discovery: list all master-eligible nodes for cluster formation
+      - discovery.seed_hosts=es02,es03
+      - cluster.initial_master_nodes=es01,es02,es03
+      # Security: enable x-pack with transport TLS
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - xpack.security.transport.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      # Built-in superuser password (change in production!)
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      # JVM heap: set to 50% of available container memory, never exceed 32g
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      # Disable swapping for performance
+      - bootstrap.memory_lock=true
+      # Node roles
+      - node.roles=master,data,ingest
+    ulimits:
+      # Required for bootstrap.memory_lock
+      memlock:
+        soft: -1
+        hard: -1
+      # Elasticsearch opens many files; increase limits
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - es01-data:/usr/share/elasticsearch/data
+      - ./elasticsearch/certs:/usr/share/elasticsearch/config/certs:ro
+    ports:
+      - "9200:9200"   # REST API
+      - "9300:9300"   # Transport (inter-node)
+    networks:
+      - elk
+    # Health check: verify node joins the cluster and status is not red
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -u elastic:${ELASTIC_PASSWORD:-changeme} http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 1g
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Elasticsearch Node 2 (master-eligible, data)
+  # ---------------------------------------------------------------------------
+  es02:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: es02
+    environment:
+      - node.name=es02
+      - cluster.name=elk-cluster
+      - discovery.seed_hosts=es01,es03
+      - cluster.initial_master_nodes=es01,es02,es03
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - xpack.security.transport.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - bootstrap.memory_lock=true
+      - node.roles=master,data,ingest
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - es02-data:/usr/share/elasticsearch/data
+      - ./elasticsearch/certs:/usr/share/elasticsearch/config/certs:ro
+    networks:
+      - elk
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -u elastic:${ELASTIC_PASSWORD:-changeme} http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 1g
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Elasticsearch Node 3 (master-eligible, data)
+  # ---------------------------------------------------------------------------
+  es03:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
+    container_name: es03
+    environment:
+      - node.name=es03
+      - cluster.name=elk-cluster
+      - discovery.seed_hosts=es01,es02
+      - cluster.initial_master_nodes=es01,es02,es03
+      - xpack.security.enabled=true
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.security.transport.ssl.keystore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - xpack.security.transport.ssl.truststore.path=/usr/share/elasticsearch/config/certs/elastic-certificates.p12
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD:-changeme}
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - bootstrap.memory_lock=true
+      - node.roles=master,data,ingest
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - es03-data:/usr/share/elasticsearch/data
+      - ./elasticsearch/certs:/usr/share/elasticsearch/config/certs:ro
+    networks:
+      - elk
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s -u elastic:${ELASTIC_PASSWORD:-changeme} http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+        reservations:
+          memory: 1g
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Logstash - Central log processing and enrichment
+  # ---------------------------------------------------------------------------
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.17.0
+    container_name: logstash
+    environment:
+      # JVM heap for Logstash pipeline processing
+      - LS_JAVA_OPTS=-Xms512m -Xmx512m
+      # Monitoring: send Logstash metrics to the ES cluster
+      - xpack.monitoring.enabled=true
+      - xpack.monitoring.elasticsearch.hosts=["http://es01:9200","http://es02:9200","http://es03:9200"]
+      - xpack.monitoring.elasticsearch.username=elastic
+      - xpack.monitoring.elasticsearch.password=${ELASTIC_PASSWORD:-changeme}
+    volumes:
+      # Mount pipeline configs from local directory
+      - ./logstash/pipeline/:/usr/share/logstash/pipeline/:ro
+      - logstash-data:/usr/share/logstash/data
+    ports:
+      - "5044:5044"   # Beats input
+      - "5514:5514"   # Syslog input (TCP)
+      - "5514:5514/udp"
+      - "8080:8080"   # HTTP webhook input
+      - "9600:9600"   # Logstash monitoring API
+    networks:
+      - elk
+    # Wait for all ES nodes to be healthy before starting pipelines
+    depends_on:
+      es01:
+        condition: service_healthy
+      es02:
+        condition: service_healthy
+      es03:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Kibana - Visualization and dashboards
+  # ---------------------------------------------------------------------------
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.17.0
+    container_name: kibana
+    environment:
+      # Point Kibana to all ES nodes for high availability
+      - ELASTICSEARCH_HOSTS=["http://es01:9200","http://es02:9200","http://es03:9200"]
+      # Security credentials for Kibana to communicate with ES
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD:-changeme}
+      # Kibana server settings
+      - SERVER_NAME=kibana
+      - SERVER_HOST=0.0.0.0
+      # Encryption keys (generate unique values for production)
+      - XPACK_SECURITY_ENCRYPTIONKEY=${ENCRYPTION_KEY:-something_at_least_32_characters_long}
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${ENCRYPTION_KEY:-something_at_least_32_characters_long}
+      - XPACK_REPORTING_ENCRYPTIONKEY=${ENCRYPTION_KEY:-something_at_least_32_characters_long}
+    volumes:
+      - kibana-data:/usr/share/kibana/data
+    ports:
+      - "5601:5601"   # Kibana web UI
+    networks:
+      - elk
+    depends_on:
+      es01:
+        condition: service_healthy
+      es02:
+        condition: service_healthy
+      es03:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+        reservations:
+          memory: 512m
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Filebeat - Lightweight log shipper with Docker autodiscover
+  # ---------------------------------------------------------------------------
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.17.0
+    container_name: filebeat
+    # Run as root to access Docker socket and host log files
+    user: root
+    command: filebeat -e --strict.perms=false
+    volumes:
+      # Filebeat configuration
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      # Docker socket for container autodiscovery
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Host log directories
+      - /var/log:/var/log:ro
+      # Docker container logs on the host
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      # Persistent registry to track file read positions across restarts
+      - filebeat-data:/usr/share/filebeat/data
+    networks:
+      - elk
+    depends_on:
+      es01:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 128m
+    restart: unless-stopped
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  elk:
+    driver: bridge
+    name: elk-network
+
+# =============================================================================
+# Volumes - Named volumes for data persistence across container restarts
+# =============================================================================
+volumes:
+  # Elasticsearch data directories (one per node to avoid data corruption)
+  es01-data:
+    driver: local
+  es02-data:
+    driver: local
+  es03-data:
+    driver: local
+  # Logstash persistent data (dead letter queue, sincedb, etc.)
+  logstash-data:
+    driver: local
+  # Kibana saved objects and session data
+  kibana-data:
+    driver: local
+  # Filebeat registry (tracks file offsets to avoid reprocessing)
+  filebeat-data:
+    driver: local

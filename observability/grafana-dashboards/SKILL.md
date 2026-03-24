@@ -462,3 +462,38 @@ Build custom plugins with `@grafana/create-plugin`:
 npx @grafana/create-plugin@latest
 cd my-plugin && npm install && npm run dev
 ```
+
+## References
+
+In-depth guides in `references/`:
+
+| Document | Contents |
+|----------|----------|
+| **[advanced-patterns.md](references/advanced-patterns.md)** | Grafonnet (Jsonnet) dashboard-as-code, advanced templating (chained variables, ad-hoc filters, `__interval`/`__rate_interval`), mixed data sources, shared crosshair, annotations from multiple sources, transformations chaining, dashboard linking, embedding/public dashboards, Grafana Scenes, plugin development |
+| **[troubleshooting.md](references/troubleshooting.md)** | Slow dashboards, variable query performance, `$__all` behavior, mixed data source gotchas, alerting evaluation issues, provisioning errors, CORS/proxy issues, LDAP/OAuth config, JSON import/export incompatibilities, panel rendering version differences |
+| **[dashboard-recipes.md](references/dashboard-recipes.md)** | Ready-to-use dashboard recipes with full panel JSON: Kubernetes cluster overview, RED metrics, USE method, SLO with error budget burn rate, PostgreSQL/MySQL, NGINX/HAProxy, Docker host monitoring, CI/CD pipeline metrics, business KPIs |
+| **[promql-logql-guide.md](references/promql-logql-guide.md)** | PromQL and LogQL query patterns for Grafana panels |
+
+## Scripts
+
+Helper scripts in `scripts/` (all executable):
+
+| Script | Purpose | Key Flags |
+|--------|---------|-----------|
+| **export-dashboards.sh** | Export all dashboards from Grafana via API | `--url`, `--api-key`, `--output-dir` |
+| **import-dashboards.sh** | Import dashboard JSON files with folder creation and data source substitution | `--url`, `--api-key`, `--input-dir`, `--folder`, `--ds-map` |
+| **provision-grafana.sh** | Spin up Grafana + Prometheus + Loki + Promtail via Docker Compose | `--data-dir`, `--port`, `--prometheus-port` |
+| **dashboard-export.sh** | Lightweight single-dashboard export | `--uid`, `--url` |
+| **alert-rules-sync.sh** | Sync alert rules between Grafana instances | `--source-url`, `--target-url` |
+| **grafana-init.sh** | Initialize Grafana with default configuration | `--config-dir` |
+
+## Assets
+
+Templates and configs in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| **docker-compose.yml** | Full monitoring stack: Grafana + Prometheus + Loki + Promtail with health checks and named volumes |
+| **provisioning/dashboards.yml** | Dashboard provisioning provider config (file-based, folder structure) |
+| **provisioning/datasources.yml** | Data source provisioning for Prometheus + Loki |
+| **golden-signals-dashboard.json** | Complete Golden Signals dashboard (Latency, Traffic, Errors, Saturation) with template variables |

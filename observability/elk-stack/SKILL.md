@@ -417,67 +417,46 @@ Prefer Kibana alerting rules over Watcher for new setups — supports connectors
 
 ## Docker / Kubernetes Deployment
 
-### Docker Compose (Development)
+For development, use the single-node Docker Compose quick-start or the full 3-node production-like stack in [assets/docker-compose.yml](assets/docker-compose.yml). Run `scripts/setup-elk-stack.sh` for automated TLS-secured setup.
 
-```yaml
-services:
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.17.0
-    environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=true
-      - ELASTIC_PASSWORD=changeme
-      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
-    ports: ["9200:9200"]
-    volumes: [esdata:/usr/share/elasticsearch/data]
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.17.0
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-      - ELASTICSEARCH_USERNAME=kibana_system
-      - ELASTICSEARCH_PASSWORD=changeme
-    ports: ["5601:5601"]
-    depends_on: [elasticsearch]
-  logstash:
-    image: docker.elastic.co/logstash/logstash:8.17.0
-    volumes: [./logstash/pipeline:/usr/share/logstash/pipeline]
-    depends_on: [elasticsearch]
-volumes:
-  esdata:
-```
-
-### Kubernetes (Production with ECK)
+For production Kubernetes, deploy with ECK (Elastic Cloud on Kubernetes):
 
 ```bash
 kubectl create -f https://download.elastic.co/downloads/eck/2.14.0/crds.yaml
 kubectl apply -f https://download.elastic.co/downloads/eck/2.14.0/operator.yaml
 ```
 
-```yaml
-apiVersion: elasticsearch.k8s.elastic.co/v1
-kind: Elasticsearch
-metadata:
-  name: production
-spec:
-  version: 8.17.0
-  nodeSets:
-    - name: masters
-      count: 3
-      config: { node.roles: [master] }
-      podTemplate:
-        spec:
-          containers:
-            - name: elasticsearch
-              resources: { limits: { memory: 4Gi, cpu: 2 } }
-    - name: data-hot
-      count: 3
-      config: { node.roles: [data_hot, data_content, ingest] }
-      volumeClaimTemplates:
-        - metadata: { name: elasticsearch-data }
-          spec:
-            accessModes: [ReadWriteOnce]
-            resources: { requests: { storage: 500Gi } }
-            storageClassName: fast-ssd
-```
+See [Deployment Guide](references/deployment-guide.md) for full ECK manifests (master/hot/warm/cold node sets, Kibana, Fleet Server, Agent DaemonSet, PDB, affinity rules).
 
 Deploy Elastic Agent as DaemonSet with Fleet for unified log/metric collection. Use the ECK Agent CRD. Prefer Elastic Agent over standalone Beats for new Kubernetes deployments.
+
+## Reference Documents
+
+Deep-dive guides in `references/`:
+
+| Document | Topics |
+|----------|--------|
+| [Advanced Patterns](references/advanced-patterns.md) | Script queries, runtime fields, search templates, async search, pipeline/matrix/composite aggregations, custom analyzers, cross-cluster search/replication, data streams, ILM design, ingest processors, rollups, transforms, searchable snapshots, Fleet management |
+| [Troubleshooting](references/troubleshooting.md) | Cluster yellow/red diagnosis, unassigned shards, JVM heap pressure, slow search (_profile API), mapping explosions, Logstash debugging (DLQ, persistent queues), Filebeat registry, Kibana saved object conflicts, circuit breakers, disk watermarks, split-brain, index corruption |
+| [Deployment Guide](references/deployment-guide.md) | Sizing/capacity planning, node role architecture, Docker Compose dev setup, ECK production deployment, TLS/security setup, snapshot backup/restore (S3/GCS/Azure), monitoring the stack, rolling upgrades, multi-tenant RBAC |
+
+## Helper Scripts
+
+Executable scripts in `scripts/` (run with `--help` for usage):
+
+| Script | Purpose |
+|--------|---------|
+| [setup-elk-stack.sh](scripts/setup-elk-stack.sh) | Deploys a full ELK stack via Docker Compose with TLS certs, 3 ES nodes, Logstash, Kibana, Filebeat. Flags: `--output-dir`, `--version`, `--password` |
+| [es-cluster-health.sh](scripts/es-cluster-health.sh) | Color-coded cluster diagnostics: health status, nodes, shard allocation, disk/JVM usage, pending tasks. Flags: `--url`, `--user`, `--password` |
+| [index-lifecycle-setup.sh](scripts/index-lifecycle-setup.sh) | Creates ILM policies (logs/metrics/APM), component templates, and index templates. Flags: `--url`, `--user`, `--password` |
+
+## Asset Templates
+
+Ready-to-use configurations in `assets/`:
+
+| Asset | Description |
+|-------|-------------|
+| [docker-compose.yml](assets/docker-compose.yml) | Production-like stack: 3 ES nodes with TLS, Logstash, Kibana, Filebeat, health checks, resource limits |
+| [logstash/pipeline.conf](assets/logstash/pipeline.conf) | Multi-input pipeline (beats/syslog/HTTP) with grok, geoip, useragent, fingerprint dedup, conditional output routing |
+| [filebeat/filebeat.yml](assets/filebeat/filebeat.yml) | Docker autodiscover with hints, container-specific templates, processors, ILM-enabled ES output |
+| [elasticsearch/ilm-policy.json](assets/elasticsearch/ilm-policy.json) | 5-phase ILM template: hot → warm → cold → frozen → delete with rollover, shrink, searchable snapshots |

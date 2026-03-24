@@ -1,0 +1,88 @@
+{
+  "policy": {
+    "_meta": {
+      "description": "ELK Stack Index Lifecycle Management policy with hot-warm-cold-frozen-delete phases. This policy is designed for time-series log data with decreasing access frequency over time. Apply to index templates via: PUT _ilm/policy/elk-lifecycle-policy",
+      "version": 2,
+      "managed_by": "elk-stack-template",
+      "documentation": {
+        "hot_phase": "Active writes and queries. Rolls over at 30GB or 1 day. Priority 100 ensures hot indices are recovered first after restart.",
+        "warm_phase": "Read-only, optimized for storage. Shrinks to 1 shard, force-merges to 1 segment. Moves to warm-tier nodes after 7 days.",
+        "cold_phase": "Infrequent access. Moves to cold-tier nodes after 30 days. Optional searchable snapshot for cost reduction.",
+        "frozen_phase": "Rare access via searchable snapshots on shared cache. Data lives in object storage (S3/GCS/Azure). After 90 days.",
+        "delete_phase": "Permanent deletion after 365 days. Waits for snapshot confirmation before deleting."
+      }
+    },
+    "phases": {
+      "hot": {
+        "min_age": "0ms",
+        "actions": {
+          "rollover": {
+            "max_primary_shard_size": "30gb",
+            "max_age": "1d",
+            "max_docs": 100000000
+          },
+          "set_priority": {
+            "priority": 100
+          },
+          "readonly": {}
+        }
+      },
+      "warm": {
+        "min_age": "7d",
+        "actions": {
+          "set_priority": {
+            "priority": 50
+          },
+          "shrink": {
+            "number_of_shards": 1
+          },
+          "forcemerge": {
+            "max_num_segments": 1
+          },
+          "allocate": {
+            "number_of_replicas": 1,
+            "require": {
+              "data": "warm"
+            }
+          }
+        }
+      },
+      "cold": {
+        "min_age": "30d",
+        "actions": {
+          "set_priority": {
+            "priority": 0
+          },
+          "allocate": {
+            "number_of_replicas": 0,
+            "require": {
+              "data": "cold"
+            }
+          },
+          "searchable_snapshot": {
+            "snapshot_repository": "elk-snapshots",
+            "force_merge_index": true
+          }
+        }
+      },
+      "frozen": {
+        "min_age": "90d",
+        "actions": {
+          "searchable_snapshot": {
+            "snapshot_repository": "elk-snapshots-shared",
+            "force_merge_index": true
+          }
+        }
+      },
+      "delete": {
+        "min_age": "365d",
+        "actions": {
+          "wait_for_snapshot": {
+            "policy": "elk-daily-snapshots"
+          },
+          "delete": {}
+        }
+      }
+    }
+  }
+}

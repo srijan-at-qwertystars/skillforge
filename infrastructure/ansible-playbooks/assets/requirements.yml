@@ -1,0 +1,73 @@
+---
+# requirements.yml — Ansible Galaxy collections and roles
+# Install: ansible-galaxy install -r requirements.yml
+# Install collections only: ansible-galaxy collection install -r requirements.yml
+# Install roles only: ansible-galaxy role install -r requirements.yml
+
+collections:
+  # Core and general utilities
+  - name: ansible.posix
+    version: ">=1.5.0"
+  - name: community.general
+    version: ">=8.0.0,<10.0.0"
+  - name: community.crypto
+    version: ">=2.0.0"
+
+  # Cloud providers
+  - name: amazon.aws
+    version: ">=7.0.0"
+  - name: google.cloud
+    version: ">=1.3.0"
+  - name: azure.azcollection
+    version: ">=2.0.0"
+
+  # Container and Kubernetes
+  - name: community.docker
+    version: ">=3.0.0"
+  - name: kubernetes.core
+    version: ">=3.0.0"
+
+  # Database
+  - name: community.postgresql
+    version: ">=3.0.0"
+  - name: community.mysql
+    version: ">=3.0.0"
+
+  # Networking and Windows
+  - name: ansible.netcommon
+    version: ">=6.0.0"
+  - name: ansible.windows
+    version: ">=2.0.0"
+  - name: community.windows
+    version: ">=2.0.0"
+
+  # AWX/Controller
+  - name: awx.awx
+    version: ">=24.0.0"
+
+  # Private Automation Hub example (uncomment and configure)
+  # - name: mycompany.internal
+  #   version: ">=1.0.0"
+  #   source: https://hub.mycompany.com/api/galaxy/content/published/
+
+roles:
+  # Popular community roles (pinned versions for reproducibility)
+  - name: geerlingguy.docker
+    version: "7.4.1"
+  - name: geerlingguy.nginx
+    version: "3.2.0"
+  - name: geerlingguy.postgresql
+    version: "3.5.0"
+  - name: geerlingguy.certbot
+    version: "5.1.0"
+  - name: geerlingguy.nodejs
+    version: "6.2.0"
+  - name: geerlingguy.java
+    version: "2.3.0"
+  - name: geerlingguy.firewall
+    version: "2.5.1"
+
+  # Private Galaxy server example (uncomment and configure)
+  # - name: mycompany.base_role
+  #   version: "1.0.0"
+  #   src: https://galaxy.mycompany.com

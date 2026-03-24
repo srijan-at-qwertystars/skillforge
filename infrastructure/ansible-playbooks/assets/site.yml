@@ -1,0 +1,98 @@
+---
+# site.yml — Top-level playbook with role includes
+# Usage: ansible-playbook -i inventory/ site.yml
+# Selective: ansible-playbook -i inventory/ site.yml --tags web
+#            ansible-playbook -i inventory/ site.yml --limit webservers
+
+# --- Common baseline for all hosts ---
+- name: Apply common configuration
+  hosts: all
+  become: true
+  gather_facts: true
+  tags: [common]
+  vars_files:
+    - vars/common.yml
+  roles:
+    - role: common
+      tags: [common, baseline]
+
+# --- Web servers ---
+- name: Configure web servers
+  hosts: webservers
+  become: true
+  tags: [web]
+  vars_files:
+    - vars/common.yml
+    - vars/web.yml
+  pre_tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+  roles:
+    - role: security_hardening
+      tags: [security]
+    - role: nginx
+      tags: [web, nginx]
+    - role: certbot
+      tags: [web, ssl]
+      when: enable_ssl | default(true)
+  post_tasks:
+    - name: Verify web server health
+      ansible.builtin.uri:
+        url: "http://localhost/health"
+        status_code: 200
+      retries: 3
+      delay: 5
+      tags: [verify]
+
+# --- Application servers ---
+- name: Configure application servers
+  hosts: appservers
+  become: true
+  serial: "50%"
+  tags: [app]
+  vars_files:
+    - vars/common.yml
+    - vars/app.yml
+  roles:
+    - role: security_hardening
+      tags: [security]
+    - role: docker
+      tags: [docker]
+    - role: app_deploy
+      tags: [app, deploy]
+      vars:
+        app_version: "{{ deploy_version | default('latest') }}"
+
+# --- Database servers ---
+- name: Configure database servers
+  hosts: dbservers
+  become: true
+  tags: [db]
+  vars_files:
+    - vars/common.yml
+    - vars/database.yml
+  roles:
+    - role: security_hardening
+      tags: [security]
+    - role: postgresql
+      tags: [db, postgresql]
+  post_tasks:
+    - name: Verify PostgreSQL is accepting connections
+      community.postgresql.postgresql_ping:
+      become_user: postgres
+      tags: [verify]
+
+# --- Monitoring ---
+- name: Deploy monitoring agents
+  hosts: all
+  become: true
+  tags: [monitoring]
+  roles:
+    - role: node_exporter
+      tags: [monitoring, prometheus]
+    - role: filebeat
+      tags: [monitoring, logging]
+      when: enable_logging | default(true)

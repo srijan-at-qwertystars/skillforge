@@ -1,0 +1,366 @@
+# =============================================================================
+# Filebeat Configuration
+# =============================================================================
+# This configuration combines Docker autodiscovery with static file inputs,
+# applies processors for enrichment, and ships to Elasticsearch with ILM.
+# =============================================================================
+
+# =============================================================================
+# AUTODISCOVER - Dynamic container log collection
+# =============================================================================
+# Automatically detect Docker containers and apply appropriate configurations
+# based on container labels. Uses hints-based autodiscover so containers can
+# self-declare their logging needs via Docker labels.
+
+filebeat.autodiscover:
+  providers:
+
+    # -------------------------------------------------------------------------
+    # Docker provider with hints-based autodiscover
+    # -------------------------------------------------------------------------
+    - type: docker
+      # Hints mode reads co.elastic.logs/* labels from containers
+      hints.enabled: true
+
+      # Default template: applied to ALL containers unless overridden by hints
+      hints.default_config:
+        type: container
+        paths:
+          - /var/lib/docker/containers/${data.container.id}/*.log
+        # Parse Docker JSON log format
+        processors:
+          - decode_json_fields:
+              fields: ["message"]
+              process_array: false
+              max_depth: 3
+              target: ""
+              overwrite_keys: true
+              add_error_key: true
+
+      # -----------------------------------------------------------------------
+      # Nginx container template
+      # -----------------------------------------------------------------------
+      # Activated when container has label: co.elastic.logs/module=nginx
+      # or image name contains "nginx"
+      templates:
+        - condition:
+            or:
+              - contains:
+                  docker.container.image: "nginx"
+              - equals:
+                  docker.container.labels.co.elastic.logs/module: "nginx"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.container.id}/*.log
+              # Multiline: join lines that don't start with an IP (stack traces in error log)
+              multiline.pattern: '^\d{4}/\d{2}/\d{2}'
+              multiline.negate: true
+              multiline.match: after
+              fields:
+                log_type: nginx
+              fields_under_root: true
+              tags: ["nginx", "webserver"]
+
+        # -----------------------------------------------------------------------
+        # Apache container template
+        # -----------------------------------------------------------------------
+        - condition:
+            or:
+              - contains:
+                  docker.container.image: "httpd"
+              - contains:
+                  docker.container.image: "apache"
+              - equals:
+                  docker.container.labels.co.elastic.logs/module: "apache"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.container.id}/*.log
+              fields:
+                log_type: apache
+              fields_under_root: true
+              tags: ["apache", "webserver"]
+
+        # -----------------------------------------------------------------------
+        # Java application containers (multiline stack trace support)
+        # -----------------------------------------------------------------------
+        - condition:
+            or:
+              - contains:
+                  docker.container.image: "java"
+              - contains:
+                  docker.container.image: "spring"
+              - contains:
+                  docker.container.image: "tomcat"
+              - equals:
+                  docker.container.labels.co.elastic.logs/multiline: "java"
+          config:
+            - type: container
+              paths:
+                - /var/lib/docker/containers/${data.container.id}/*.log
+              # Java stack traces: lines starting with whitespace or "Caused by" are continuations
+              multiline.pattern: '^[[:space:]]+(at|\.{3})|^Caused by:|^java\.|^javax\.|^\t'
+              multiline.negate: false
+              multiline.match: after
+              multiline.max_lines: 50
+              multiline.timeout: 5s
+              fields:
+                log_type: application
+              fields_under_root: true
+              tags: ["java", "app"]
+
+# =============================================================================
+# STATIC FILE INPUTS
+# =============================================================================
+# Collect logs from known file paths on the host filesystem.
+
+filebeat.inputs:
+
+  # ---------------------------------------------------------------------------
+  # System logs (syslog, auth)
+  # ---------------------------------------------------------------------------
+  - type: filestream
+    id: system-syslog
+    enabled: true
+    paths:
+      - /var/log/syslog
+      - /var/log/messages
+    fields:
+      log_type: syslog
+    fields_under_root: true
+    tags: ["system", "syslog"]
+    # Exclude noisy lines from cron and systemd-resolved
+    exclude_lines:
+      - '^.*CRON\[.*\].*$'
+      - '^.*systemd-resolved.*$'
+    # Persistent state tracking across restarts
+    file_identity.native: ~
+
+  - type: filestream
+    id: system-auth
+    enabled: true
+    paths:
+      - /var/log/auth.log
+      - /var/log/secure
+    fields:
+      log_type: auth
+    fields_under_root: true
+    tags: ["system", "auth", "security"]
+    file_identity.native: ~
+
+  # ---------------------------------------------------------------------------
+  # Application logs with JSON parsing
+  # ---------------------------------------------------------------------------
+  # For applications that write structured JSON logs (one JSON object per line)
+  - type: filestream
+    id: app-json-logs
+    enabled: true
+    paths:
+      - /var/log/app/*.json
+      - /var/log/app/**/*.json
+    fields:
+      log_type: application
+    fields_under_root: true
+    tags: ["app", "json"]
+    # Parse each line as JSON
+    parsers:
+      - ndjson:
+          keys_under_root: true
+          overwrite_keys: true
+          add_error_key: true
+          # Map known JSON fields to ECS fields
+          message_key: "msg"
+          target: ""
+    # Java-style multiline for non-JSON fallback lines
+    multiline.pattern: '^\{'
+    multiline.negate: true
+    multiline.match: after
+    multiline.max_lines: 20
+    file_identity.native: ~
+
+# =============================================================================
+# PROCESSORS
+# =============================================================================
+# Global processors applied to ALL events before shipping.
+
+processors:
+
+  # Add host metadata (OS, hostname, architecture, IP addresses)
+  - add_host_metadata:
+      when.not.contains.tags: "forwarded"
+      netinfo.enabled: true
+      cache.ttl: 5m
+      geo: ~
+
+  # Add cloud provider metadata (AWS, GCP, Azure auto-detected)
+  - add_cloud_metadata:
+      timeout: 3s
+
+  # Add Docker container metadata (image, labels, name)
+  - add_docker_metadata:
+      host: "unix:///var/run/docker.sock"
+      match_fields: ["system.process.cgroup.id"]
+      match_pids: ["process.pid", "process.ppid"]
+      match_source: true
+      match_source_index: 4
+      cleanup_timeout: 60
+      labels.dedot: false
+
+  # Drop debug-level events to reduce volume in production
+  - drop_event:
+      when:
+        or:
+          - equals:
+              log.level: "debug"
+          - equals:
+              log.level: "trace"
+          # Drop Kubernetes health check logs
+          - contains:
+              message: "GET /healthz"
+          - contains:
+              message: "GET /readyz"
+          # Drop Docker health check noise
+          - contains:
+              message: "GET /ping"
+
+  # Dissect processor: extract structured fields from known log formats
+  # More performant than grok for fixed-format logs
+  - dissect:
+      when:
+        has_fields: ["message"]
+        and:
+          equals:
+            log_type: "syslog"
+      tokenizer: "%{syslog.timestamp} %{syslog.hostname} %{syslog.program}[%{syslog.pid}]: %{syslog.message}"
+      field: "message"
+      target_prefix: ""
+      ignore_failure: true
+
+  # Truncate very long messages to prevent index bloat
+  - truncate_fields:
+      fields:
+        - message
+      max_bytes: 10240
+      fail_on_error: false
+
+  # Add a custom field to identify the shipper
+  - add_fields:
+      target: "agent"
+      fields:
+        pipeline: "filebeat-docker-autodiscover"
+
+# =============================================================================
+# OUTPUT - Elasticsearch
+# =============================================================================
+
+output.elasticsearch:
+  # Connect to all ES cluster nodes for load balancing
+  hosts:
+    - "http://es01:9200"
+    - "http://es02:9200"
+    - "http://es03:9200"
+
+  # Authentication credentials
+  username: "${ES_USERNAME:elastic}"
+  password: "${ES_PASSWORD:changeme}"
+
+  # TLS/SSL configuration (uncomment for HTTPS clusters)
+  # protocol: "https"
+  # ssl:
+  #   enabled: true
+  #   certificate_authorities:
+  #     - /etc/filebeat/certs/ca.crt
+  #   certificate: /etc/filebeat/certs/filebeat.crt
+  #   key: /etc/filebeat/certs/filebeat.key
+  #   verification_mode: full
+
+  # Index routing based on log type
+  # Uses the log_type field set by inputs/autodiscover to route to typed indices
+  indices:
+    - index: "filebeat-syslog-%{+yyyy.MM.dd}"
+      when.equals:
+        log_type: "syslog"
+    - index: "filebeat-auth-%{+yyyy.MM.dd}"
+      when.equals:
+        log_type: "auth"
+    - index: "filebeat-nginx-%{+yyyy.MM.dd}"
+      when.equals:
+        log_type: "nginx"
+    - index: "filebeat-apache-%{+yyyy.MM.dd}"
+      when.equals:
+        log_type: "apache"
+    - index: "filebeat-app-%{+yyyy.MM.dd}"
+      when.equals:
+        log_type: "application"
+
+  # ILM (Index Lifecycle Management) settings
+  ilm.enabled: true
+  ilm.rollover_alias: "filebeat"
+  ilm.pattern: "{now/d}-000001"
+  ilm.policy_name: "elk-lifecycle-policy"
+
+  # Bulk request tuning
+  bulk_max_size: 2048
+  worker: 2
+  compression_level: 3
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+# Filebeat's own operational logs with rotation.
+
+logging:
+  level: info
+  to_files: true
+  files:
+    path: /var/log/filebeat
+    name: filebeat.log
+    # Rotate logs at 10MB, keep 5 rotated files
+    rotateeverybytes: 10485760
+    keepfiles: 5
+    permissions: "0644"
+  # Selectively enable debug for specific components
+  selectors: ["*"]
+  # Metrics logging interval
+  metrics.enabled: true
+  metrics.period: 30s
+
+# =============================================================================
+# MONITORING
+# =============================================================================
+# Ship Filebeat's internal metrics to the ES cluster for Stack Monitoring.
+
+monitoring.enabled: true
+monitoring.elasticsearch:
+  hosts:
+    - "http://es01:9200"
+    - "http://es02:9200"
+    - "http://es03:9200"
+  username: "${ES_USERNAME:elastic}"
+  password: "${ES_PASSWORD:changeme}"
+
+# =============================================================================
+# KIBANA
+# =============================================================================
+# Kibana endpoint for loading dashboards and index patterns.
+
+setup.kibana:
+  host: "http://kibana:5601"
+  username: "${ES_USERNAME:elastic}"
+  password: "${ES_PASSWORD:changeme}"
+  # Uncomment to load built-in Filebeat dashboards on startup
+  # setup.dashboards.enabled: true
+
+# =============================================================================
+# GENERAL SETTINGS
+# =============================================================================
+
+# Name of the shipper (defaults to hostname)
+name: "filebeat-docker"
+
+# Tags added to all events from this Filebeat instance
+tags: ["elk-stack", "docker"]
+
+# Maximum number of CPUs to use (0 = all available)
+max_procs: 0

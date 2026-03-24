@@ -456,3 +456,30 @@ Use `check_mode: true` per-task for always-dry-run. Use `check_mode: false` to f
     controller_host: "https://awx.example.com"
     controller_oauthtoken: "{{ awx_token }}"
 ```
+
+## References
+
+Deep-dive documents for advanced topics:
+
+- **`references/advanced-patterns.md`** — Custom modules/plugins (action, callback, filter, lookup, inventory), dynamic inventory for AWS/GCP/Azure, collections development, Molecule testing (drivers, scenarios, verifiers), role dependencies, variable precedence (22 levels), Jinja2 macros/inheritance/custom filters, performance optimization (pipelining, Mitogen, async, fact caching), AWX/AAP workflows and surveys, Ansible Navigator
+- **`references/troubleshooting.md`** — SSH connection failures (keys, host key checking, timeouts), become/sudo problems, variable precedence debugging, template rendering errors, module idempotency, handler timing, vault password management, collection conflicts, Python interpreter discovery, Windows WinRM setup, slow playbook diagnosis
+- **`references/playbook-recipes.md`** — Complete ready-to-use playbooks: Nginx + Certbot, PostgreSQL with replication, Docker host provisioning, Kubernetes node prep, zero-downtime rolling deploy, user management and SSH keys, CIS security hardening, monitoring agents (node_exporter + Filebeat), backup configuration, CI/CD runner setup
+
+## Scripts
+
+Helper scripts in `scripts/` (all executable):
+
+- **`scripts/scaffold-role.sh`** — Scaffold a best-practice Ansible role structure. Usage: `scaffold-role.sh --name <role> [--collection <ns.coll>]`. Creates defaults, vars, tasks, handlers, templates, meta, molecule config, README, and lint configs.
+- **`scripts/ansible-lint-fix.sh`** — Run ansible-lint and auto-fix common issues (FQCN, trailing whitespace, unquoted modes, truthy values, missing doc markers). Usage: `ansible-lint-fix.sh [path] [--dry-run]`
+- **`scripts/vault-helper.sh`** — Vault management wrapper: encrypt, decrypt, edit, view, rekey, string, status, bulk-encrypt/decrypt with vault-id support. Usage: `vault-helper.sh <command> <file> [--vault-id id@source]`
+
+## Assets
+
+Production-ready templates in `assets/`:
+
+- **`assets/ansible.cfg`** — Tuned ansible.cfg with SSH pipelining, fact caching, forks=50, profile_tasks, YAML stdout callback, and security settings
+- **`assets/inventory/hosts.ini`** — Example static INI inventory with groups, children, and per-group vars
+- **`assets/inventory/hosts.yml`** — Same inventory in YAML format with nested children and multi-environment layout
+- **`assets/inventory/dynamic_inventory.py`** — Dynamic inventory script template with `--list`/`--host` interface
+- **`assets/site.yml`** — Top-level playbook with common/web/app/db/monitoring plays, role includes, tags, and health checks
+- **`assets/requirements.yml`** — Collection and role requirements with version pinning for Galaxy and private hubs
