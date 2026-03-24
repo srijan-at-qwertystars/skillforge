@@ -491,3 +491,5 @@ scripts/tune-config.sh --ram 64 --workload oltp --dedicated -o /tmp/my.cnf
 |-------|-------------|
 | `assets/my.cnf.template` | Production my.cnf with small/medium/large server profiles, commented settings, replication config |
 | `assets/monitoring-queries.sql` | 10 categories of diagnostic SQL: buffer pool, connections, query perf, locks, replication, I/O, memory, alerting thresholds |
+
+<!-- tested: pass -->

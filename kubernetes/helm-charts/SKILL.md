@@ -463,3 +463,5 @@ Reusable templates in `assets/`:
 | [values-schema.json](assets/values-schema.json) | Comprehensive JSON Schema template for values.yaml validation — covers image, service, ingress, resources, autoscaling, PDB, security contexts, env, serviceMonitor |
 | [ci-pipeline.yaml](assets/ci-pipeline.yaml) | GitHub Actions workflow with lint → schema validate → integration test (Kind cluster) → publish (OCI/GHCR) stages |
 | [_helpers.tpl](assets/_helpers.tpl) | Production-ready named templates: fullname, labels, selectors, component labels, annotations, checksums, image reference (with digest/registry support), security context defaults, value validation |
+
+<!-- tested: pass -->

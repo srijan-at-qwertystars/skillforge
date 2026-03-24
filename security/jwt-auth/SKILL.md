@@ -453,3 +453,5 @@ Ready-to-use templates in `assets/`:
 | [`assets/jwks-endpoint.json`](assets/jwks-endpoint.json) | Example JWKS endpoint response with EC, RSA, EdDSA signing keys and an RSA encryption key |
 | [`assets/middleware-express.js`](assets/middleware-express.js) | Express.js middleware template: access token verification, refresh rotation with reuse detection, role-based auth, login/logout handlers |
 | [`assets/middleware-fastapi.py`](assets/middleware-fastapi.py) | FastAPI middleware template: dependency injection auth, refresh rotation, role-based access control, token store interface |
+
+<!-- tested: pass -->
