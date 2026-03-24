@@ -1,0 +1,161 @@
+# LGTM Stack — Grafana + Prometheus + Loki + Tempo
+# Full observability stack with sample configurations.
+#
+# Usage:
+#   docker compose up -d
+#   Open http://localhost:3000 (admin/admin)
+#
+# Ports:
+#   Grafana:    3000
+#   Prometheus: 9090
+#   Loki:       3100
+#   Tempo:      3200 (HTTP), 4317 (gRPC OTLP), 4318 (HTTP OTLP)
+
+services:
+  grafana:
+    image: grafana/grafana:11.1.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_FEATURE_TOGGLES_ENABLE=traceQLStreaming,correlations
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning
+      - ./dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.enable-remote-write-receiver"
+      - "--enable-feature=exemplar-storage"
+      - "--enable-feature=native-histograms"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.1.0
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki.yml:/etc/loki/config.yaml
+      - loki-data:/loki
+    command: -config.file=/etc/loki/config.yaml
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    ports:
+      - "3200:3200"
+      - "4317:4317"
+      - "4318:4318"
+    volumes:
+      - ./tempo.yml:/etc/tempo/config.yaml
+      - tempo-data:/var/tempo
+    command: -config.file=/etc/tempo/config.yaml
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  # Optional: Node exporter for host metrics
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  grafana-data:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+
+# ─── Additional config files needed alongside this docker-compose.yml ────────
+#
+# prometheus.yml:
+#   global:
+#     scrape_interval: 15s
+#   scrape_configs:
+#     - job_name: prometheus
+#       static_configs: [{targets: ['localhost:9090']}]
+#     - job_name: grafana
+#       static_configs: [{targets: ['grafana:3000']}]
+#     - job_name: node
+#       static_configs: [{targets: ['node-exporter:9100']}]
+#     - job_name: loki
+#       static_configs: [{targets: ['loki:3100']}]
+#     - job_name: tempo
+#       static_configs: [{targets: ['tempo:3200']}]
+#
+# loki.yml:
+#   auth_enabled: false
+#   server: {http_listen_port: 3100}
+#   common:
+#     path_prefix: /loki
+#     storage: {filesystem: {chunks_directory: /loki/chunks, rules_directory: /loki/rules}}
+#     replication_factor: 1
+#     ring: {kvstore: {store: inmemory}}
+#   schema_config:
+#     configs:
+#       - from: "2020-10-24"
+#         store: tsdb
+#         object_store: filesystem
+#         schema: v13
+#         index: {prefix: index_, period: 24h}
+#
+# tempo.yml:
+#   server: {http_listen_port: 3200}
+#   distributor:
+#     receivers:
+#       otlp:
+#         protocols:
+#           grpc: {endpoint: 0.0.0.0:4317}
+#           http: {endpoint: 0.0.0.0:4318}
+#   storage:
+#     trace:
+#       backend: local
+#       local: {path: /var/tempo/traces}
+#       wal: {path: /var/tempo/wal}
+#   metrics_generator:
+#     storage: {path: /var/tempo/generator/wal}
+#     registry: {external_labels: {source: tempo}}
+#     processor:
+#       service_graphs: {}
+#       span_metrics: {}
+#     traces_storage:
+#       path: /var/tempo/generator/traces

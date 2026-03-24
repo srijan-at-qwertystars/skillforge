@@ -76,16 +76,6 @@ while let Some(res) = set.join_next().await {
 ```
 Use `JoinSet` over collecting `Vec<JoinHandle>` — it handles cancellation on drop and provides structured concurrency.
 
-### Task-Local Storage
-```rust
-tokio::task_local! {
-    static REQUEST_ID: String;
-}
-REQUEST_ID.scope("abc-123".to_string(), async {
-    REQUEST_ID.with(|id| println!("request: {id}"));
-}).await;
-```
-
 ### spawn_blocking — Offloading CPU/Blocking Work
 ```rust
 let result = tokio::task::spawn_blocking(|| {
@@ -162,55 +152,48 @@ tokio::spawn(async move {
 });
 ```
 
-### RwLock, Semaphore, Notify, Barrier
+### RwLock, Semaphore, Notify
 ```rust
 // RwLock — multiple readers OR one writer
 let lock = tokio::sync::RwLock::new(HashMap::new());
-let r = lock.read().await;   // shared read
+let r = lock.read().await;
 drop(r);
-let mut w = lock.write().await; // exclusive write
+let mut w = lock.write().await;
 
 // Semaphore — limit concurrent access
 let sem = Arc::new(tokio::sync::Semaphore::new(10));
-let permit = sem.acquire().await.unwrap(); // blocks if 10 permits taken
-drop(permit); // releases
+let permit = sem.acquire().await.unwrap();
+drop(permit);
 
 // Notify — wake waiting tasks
 let notify = Arc::new(tokio::sync::Notify::new());
 let n = notify.clone();
-tokio::spawn(async move { n.notified().await; println!("woke up"); });
+tokio::spawn(async move { n.notified().await; });
 notify.notify_one();
-
-// Barrier — N tasks rendezvous
-let barrier = Arc::new(tokio::sync::Barrier::new(3));
-// All 3 tasks must reach barrier.wait().await before any proceeds.
 ```
 
 ## Async I/O
 
 ### AsyncRead / AsyncWrite / tokio::fs
 ```rust
-use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 
 let file = tokio::fs::File::open("data.txt").await?;
 let mut reader = BufReader::new(file);
 let mut contents = String::new();
 reader.read_to_string(&mut contents).await?;
 
-let file = tokio::fs::File::create("out.txt").await?;
-let mut writer = BufWriter::new(file);
-writer.write_all(b"hello async").await?;
-writer.flush().await?;
+let mut file = tokio::fs::File::create("out.txt").await?;
+file.write_all(b"hello async").await?;
 ```
-Always use `tokio::fs` instead of `std::fs` in async contexts — it dispatches to a blocking pool internally.
+Always use `tokio::fs` instead of `std::fs` in async contexts.
 
 ## TCP / UDP Networking
 
 ```rust
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-// TCP echo server
 let listener = TcpListener::bind("0.0.0.0:8080").await?;
 loop {
     let (mut socket, _addr) = listener.accept().await?;
@@ -220,8 +203,6 @@ loop {
         socket.write_all(&buf[..n]).await.unwrap();
     });
 }
-// TCP client: TcpStream::connect("127.0.0.1:8080").await?
-// UDP: UdpSocket::bind("0.0.0.0:0").await?.send_to(b"hello", "127.0.0.1:9000").await?
 ```
 
 ## Select and Join
@@ -239,7 +220,6 @@ tokio::select! {
 
 ### tokio::join! and futures::join_all
 ```rust
-// Run concurrently, wait for ALL to complete
 let (a, b, c) = tokio::join!(fetch_a(), fetch_b(), fetch_c());
 
 // Dynamic number of futures
@@ -286,7 +266,6 @@ while let Some(item) = s.next().await { /* ... */ }
 
 ### Pattern: thiserror for Libraries, anyhow for Applications
 ```rust
-// Library error type
 #[derive(Debug, thiserror::Error)]
 enum AppError {
     #[error("database error: {0}")]
@@ -297,14 +276,12 @@ enum AppError {
     NotFound(String),
 }
 
-// Application code
 async fn run() -> anyhow::Result<()> {
     let data = fetch_data().await.context("fetching data failed")?;
     process(data).await?;
     Ok(())
 }
 ```
-The `?` operator works in async functions exactly like sync. Wrap with `.context()` (anyhow) for better error chains.
 
 ## HTTP: reqwest, axum, tower
 
@@ -437,10 +414,9 @@ let result = tokio::task::spawn_blocking(move || {
 ```
 
 ### Performance Killers to Avoid
-- Blocking the runtime (std::fs, std::net, heavy CPU without spawn_blocking).
-- Unbounded channels (OOM under load). Always use bounded with backpressure.
-- Spawning tasks in tight loops without backpressure.
-- Cloning large data across tasks — use `Arc` or channels.
+- Blocking the runtime (std::fs, std::net, heavy CPU without spawn_blocking)
+- Unbounded channels (OOM under load) — always use bounded with backpressure
+- Cloning large data across tasks — use `Arc` or channels
 
 ## Tracing and Observability
 
@@ -481,7 +457,6 @@ async_call().await;
 ```rust
 // WRONG                                       // RIGHT
 std::fs::read_to_string("f.txt").unwrap();     tokio::fs::read_to_string("f.txt").await?;
-// Or offload: tokio::task::spawn_blocking(|| std::fs::read_to_string("f.txt")).await?
 ```
 
 ### 3. Send Bounds on Spawned Futures
@@ -496,3 +471,30 @@ Compiler warns "unused implementor of Future". Always `.await` or `tokio::spawn`
 
 ### 5. select! Cancellation Safety
 Not all futures are cancellation-safe. `tokio::sync::mpsc::Receiver::recv` is safe; `futures::StreamExt::next` may not be. Check tokio docs per method.
+
+## Additional Resources
+
+### References (Deep Dives)
+
+| File | Topics |
+|------|--------|
+| `references/advanced-patterns.md` | Custom Future impls, Pin projection, async traits (RPITIT Rust 1.75+), tower Service/middleware, connection pooling (bb8/deadpool/sqlx), async state machines, JoinSet structured concurrency, cancellation safety, backpressure, async closures, async drop workarounds, FuturesUnordered, buffered streams, retry patterns (backon, tower-retry), circuit breakers |
+| `references/troubleshooting.md` | "future is not Send" fixes, lifetime issues, MutexGuard across await, blocking the runtime, task starvation, stack overflow in nested futures, tokio-console debugging, performance profiling, JoinHandle memory leaks, channel deadlocks, timeout gotchas, executor panics, trait object async limitations |
+| `references/axum-guide.md` | Router (nested, merged, fallback), extractors (Path/Query/Json/State/custom), middleware (from_fn, tower layers, ordering), error handling (IntoResponse, thiserror/anyhow), WebSocket, SSE, multipart uploads, shared state patterns (Arc, sub-states), testing (oneshot, integration), tower-http deployment stack |
+
+### Scripts (Executable Tools)
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/async-project-init.sh` | Scaffold async Rust project (tokio+axum+sqlx+tracing) with full directory structure | `./scripts/async-project-init.sh my-api` |
+| `scripts/tokio-bench.sh` | Benchmark spawn overhead, channel throughput, I/O latency | `./scripts/tokio-bench.sh [spawn\|channel\|io\|all]` |
+| `scripts/check-async-issues.sh` | Detect async anti-patterns: blocking calls, locks across await, unbounded channels | `./scripts/check-async-issues.sh ./my-project` |
+
+### Assets (Copy-Paste Templates)
+
+| File | Description |
+|------|-------------|
+| `assets/Cargo.toml` | Production async deps: tokio, axum, sqlx, tower, tracing, reqwest, futures |
+| `assets/main.rs` | Production main: tracing init, DB pool, graceful shutdown, axum server |
+| `assets/error.rs` | Unified `AppError` with `IntoResponse`, thiserror variants, anyhow integration |
+| `assets/middleware.rs` | Tower middleware: request ID, logging, JWT auth, rate limiting |

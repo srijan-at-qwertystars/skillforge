@@ -465,17 +465,9 @@ def test_create_user(db_session):
     db_session.flush()
     assert user.id is not None
     # transaction rolls back automatically — no DB pollution
-
-# Async fixture
-@pytest.fixture()
-async def async_db_session(async_engine):
-    async with async_engine.connect() as conn:
-        trans = await conn.begin()
-        session = AsyncSession(bind=conn)
-        yield session
-        await session.close()
-        await trans.rollback()
 ```
+
+See [`assets/conftest.py`](assets/conftest.py) for async fixtures, factory patterns, and savepoint handling.
 
 ## Common Pitfalls
 
@@ -487,3 +479,22 @@ async def async_db_session(async_engine):
 6. **`expire_on_commit=True` (default)** — attributes become stale after commit, triggering new SELECT. Set to `False` in async or API contexts.
 7. **No naming convention on MetaData** — Alembic generates non-deterministic constraint names, causing migration churn. Always set `naming_convention`.
 8. **`bulk_save_objects` is deprecated** — use Core `insert()` for bulk inserts in 2.0.
+
+## Additional Resources
+
+### References (`references/`)
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Polymorphic inheritance, multi-tenancy, sharding, versioned rows, soft deletes, association proxy, composite keys, JSON/JSONB, arrays, full-text search, CTEs, window functions, lateral joins, custom compilation, dogpile.cache.
+- **[troubleshooting.md](references/troubleshooting.md)** — DetachedInstanceError, N+1, session scope, greenlet_spawn, identity map, stale data, migration conflicts, pool exhaustion, thread safety, autoflush, cascade deletes, loader conflicts, bulk vs ORM.
+- **[alembic-guide.md](references/alembic-guide.md)** — Setup, sync/async env.py, autogenerate, type comparators, manual/data migrations, multi-database, branch management, downgrades, testing, CI, enum changes, type changes, SQLite batch ops.
+
+### Templates (`assets/`)
+
+- **[base-model.py](assets/base-model.py)** — Base with id, timestamps, soft delete mixin, repr, naming conventions.
+- **[repository-pattern.py](assets/repository-pattern.py)** — Generic async repository: CRUD, pagination, dynamic filtering.
+- **[async-session.py](assets/async-session.py)** — Async session factory with FastAPI deps and lifecycle.
+- **[alembic-env.py](assets/alembic-env.py)** — Production env.py: sync/async, env var URL, SQLite batch, schema filter.
+- **[conftest.py](assets/conftest.py)** — Pytest: sync/async engines, rollback sessions, factories.
+
+### Scripts (`scripts/`)
+

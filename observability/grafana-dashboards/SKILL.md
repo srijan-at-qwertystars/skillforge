@@ -458,3 +458,39 @@ groups:
         annotations:
           summary: "Memory usage above 85% on {{ $labels.instance }}"
 ```
+
+---
+
+## Additional Resources
+
+### References
+
+In-depth guides in `references/`:
+
+| File | Topics |
+|------|--------|
+| `references/advanced-patterns.md` | Library panels, dashboard links & drilldowns, variable chaining, repeating panels/rows, mixed data sources, correlations, Grafana Scenes, plugin development, k6 integration, SLO/business/capacity dashboards |
+| `references/troubleshooting.md` | Slow loading, query timeouts, data source errors, variable performance, alerting issues, notifications, provisioning conflicts, permissions, LDAP/OAuth, rendering, time zones, missing data, reverse proxy, upgrades |
+| `references/promql-logql-guide.md` | PromQL deep dive (vectors, aggregation, rate/irate, histogram_quantile, recording rules, subqueries), LogQL (selectors, filters, parsers, metrics from logs, pattern matching), TraceQL, SQL macros, Flux |
+
+### Scripts
+
+Executable utilities in `scripts/`:
+
+| Script | Purpose | Usage |
+|--------|---------|-------|
+| `scripts/grafana-init.sh` | Local Grafana + Docker setup with provisioned data sources | `./grafana-init.sh [prometheus\|loki\|postgres\|all]` |
+| `scripts/dashboard-export.sh` | Export all dashboards as JSON organized by folder | `./dashboard-export.sh <URL> <API_KEY> [OUTPUT_DIR]` |
+| `scripts/alert-rules-sync.sh` | Export/import/sync alert rules between instances | `./alert-rules-sync.sh sync <SRC_URL> <SRC_KEY> <TGT_URL> <TGT_KEY>` |
+
+### Assets
+
+Templates and configs in `assets/`:
+
+| File | Description |
+|------|-------------|
+| `assets/docker-compose.yml` | Full LGTM stack (Grafana, Prometheus, Loki, Tempo) with node-exporter |
+| `assets/dashboard-template.json` | Production dashboard with golden signals, variables, annotations, logs panel |
+| `assets/provisioning/datasources.yml` | Prometheus + Loki + Tempo with exemplars, derived fields, trace-to-logs |
+| `assets/provisioning/dashboards.yml` | File-based dashboard provisioning config |
+| `assets/alert-rule-template.json` | Unified alerting: 3 alert rules, contact point, notification policy, mute timing |

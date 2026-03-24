@@ -1,0 +1,246 @@
+{
+  "_comment": "Grafana Unified Alerting — rule group with notification policy and contact point. Import via POST /api/ruler/grafana/api/v1/rules/{folder} or file provisioning.",
+
+  "alert_rule_group": {
+    "name": "sre-critical-alerts",
+    "folder": "Infrastructure",
+    "interval": "1m",
+    "rules": [
+      {
+        "uid": "high-error-rate",
+        "title": "High Error Rate",
+        "condition": "threshold",
+        "for": "5m",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "labels": {
+          "severity": "critical",
+          "team": "platform"
+        },
+        "annotations": {
+          "summary": "Error rate above 5% for {{ $labels.job }}",
+          "description": "Current error rate: {{ $values.error_ratio | humanizePercentage }}. Service {{ $labels.job }} in namespace {{ $labels.namespace }} has exceeded the 5% error threshold for more than 5 minutes.",
+          "runbook_url": "https://wiki.internal/runbooks/high-error-rate",
+          "dashboard_uid": "svc-overview-template",
+          "panel_id": "8"
+        },
+        "data": [
+          {
+            "refId": "errors",
+            "relativeTimeRange": { "from": 600, "to": 0 },
+            "datasourceUid": "prometheus",
+            "model": {
+              "expr": "sum by (job, namespace) (rate(http_requests_total{status=~\"5..\"}[5m]))",
+              "instant": false,
+              "intervalMs": 1000,
+              "maxDataPoints": 43200,
+              "refId": "errors"
+            }
+          },
+          {
+            "refId": "total",
+            "relativeTimeRange": { "from": 600, "to": 0 },
+            "datasourceUid": "prometheus",
+            "model": {
+              "expr": "sum by (job, namespace) (rate(http_requests_total[5m]))",
+              "instant": false,
+              "intervalMs": 1000,
+              "maxDataPoints": 43200,
+              "refId": "total"
+            }
+          },
+          {
+            "refId": "error_ratio",
+            "relativeTimeRange": { "from": 600, "to": 0 },
+            "datasourceUid": "__expr__",
+            "model": {
+              "type": "math",
+              "expression": "$errors / $total",
+              "refId": "error_ratio"
+            }
+          },
+          {
+            "refId": "threshold",
+            "relativeTimeRange": { "from": 600, "to": 0 },
+            "datasourceUid": "__expr__",
+            "model": {
+              "type": "threshold",
+              "expression": "error_ratio",
+              "refId": "threshold",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "gt",
+                    "params": [0.05]
+                  },
+                  "operator": { "type": "and" },
+                  "reducer": { "type": "last" }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "uid": "high-latency-p99",
+        "title": "High P99 Latency",
+        "condition": "threshold",
+        "for": "10m",
+        "noDataState": "NoData",
+        "execErrState": "Alerting",
+        "labels": {
+          "severity": "warning",
+          "team": "platform"
+        },
+        "annotations": {
+          "summary": "P99 latency above 2s for {{ $labels.job }}",
+          "description": "Current P99: {{ $values.p99 | humanizeDuration }}. Service {{ $labels.job }} is responding slowly.",
+          "runbook_url": "https://wiki.internal/runbooks/high-latency"
+        },
+        "data": [
+          {
+            "refId": "p99",
+            "relativeTimeRange": { "from": 600, "to": 0 },
+            "datasourceUid": "prometheus",
+            "model": {
+              "expr": "histogram_quantile(0.99, sum by (job, le) (rate(http_request_duration_seconds_bucket[5m])))",
+              "instant": false,
+              "refId": "p99"
+            }
+          },
+          {
+            "refId": "threshold",
+            "relativeTimeRange": { "from": 600, "to": 0 },
+            "datasourceUid": "__expr__",
+            "model": {
+              "type": "threshold",
+              "expression": "p99",
+              "refId": "threshold",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "gt",
+                    "params": [2.0]
+                  },
+                  "operator": { "type": "and" },
+                  "reducer": { "type": "last" }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "uid": "instance-down",
+        "title": "Instance Down",
+        "condition": "threshold",
+        "for": "2m",
+        "noDataState": "Alerting",
+        "execErrState": "Alerting",
+        "labels": {
+          "severity": "critical",
+          "team": "platform"
+        },
+        "annotations": {
+          "summary": "Instance {{ $labels.instance }} of {{ $labels.job }} is down",
+          "description": "The target {{ $labels.instance }} has been unreachable for more than 2 minutes."
+        },
+        "data": [
+          {
+            "refId": "up_query",
+            "relativeTimeRange": { "from": 300, "to": 0 },
+            "datasourceUid": "prometheus",
+            "model": {
+              "expr": "up{job=~\".+\"}",
+              "instant": true,
+              "refId": "up_query"
+            }
+          },
+          {
+            "refId": "threshold",
+            "relativeTimeRange": { "from": 300, "to": 0 },
+            "datasourceUid": "__expr__",
+            "model": {
+              "type": "threshold",
+              "expression": "up_query",
+              "refId": "threshold",
+              "conditions": [
+                {
+                  "evaluator": {
+                    "type": "lt",
+                    "params": [1]
+                  },
+                  "operator": { "type": "and" },
+                  "reducer": { "type": "last" }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+
+  "contact_point": {
+    "name": "platform-oncall",
+    "receivers": [
+      {
+        "uid": "slack-platform",
+        "type": "slack",
+        "settings": {
+          "recipient": "#platform-alerts",
+          "token": "${SLACK_BOT_TOKEN}",
+          "title": "{{ .CommonLabels.alertname }}",
+          "text": "{{ range .Alerts }}*{{ .Labels.severity | toUpper }}* — {{ .Annotations.summary }}\n{{ .Annotations.description }}\n{{ end }}",
+          "mentionChannel": "here"
+        }
+      },
+      {
+        "uid": "pagerduty-platform",
+        "type": "pagerduty",
+        "settings": {
+          "integrationKey": "${PD_INTEGRATION_KEY}",
+          "severity": "{{ .CommonLabels.severity }}",
+          "class": "{{ .CommonLabels.alertname }}",
+          "component": "{{ .CommonLabels.job }}",
+          "group": "{{ .CommonLabels.namespace }}"
+        }
+      }
+    ]
+  },
+
+  "notification_policy": {
+    "receiver": "platform-oncall",
+    "group_by": ["alertname", "namespace", "job"],
+    "group_wait": "30s",
+    "group_interval": "5m",
+    "repeat_interval": "4h",
+    "routes": [
+      {
+        "receiver": "platform-oncall",
+        "matchers": ["severity = critical"],
+        "repeat_interval": "30m",
+        "continue": false
+      },
+      {
+        "receiver": "platform-oncall",
+        "matchers": ["severity = warning"],
+        "repeat_interval": "12h",
+        "continue": false
+      }
+    ],
+    "mute_time_intervals": []
+  },
+
+  "mute_timing_example": {
+    "name": "maintenance-window",
+    "time_intervals": [
+      {
+        "weekdays": ["saturday", "sunday"],
+        "times": [
+          { "start_time": "00:00", "end_time": "08:00" }
+        ]
+      }
+    ]
+  }
+}

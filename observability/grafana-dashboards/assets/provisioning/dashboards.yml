@@ -1,0 +1,41 @@
+# Dashboard provisioning configuration
+# Place in: /etc/grafana/provisioning/dashboards/
+apiVersion: 1
+
+providers:
+  # ─── File-based provisioning ─────────────────────────────────────────────────
+  - name: default
+    orgId: 1
+    folder: General
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true
+
+  # ─── Example: Team-specific folder ──────────────────────────────────────────
+  # Uncomment and adjust for additional dashboard sources:
+  #
+  # - name: platform-team
+  #   orgId: 1
+  #   folder: Platform
+  #   type: file
+  #   disableDeletion: false
+  #   updateIntervalSeconds: 60
+  #   allowUiUpdates: false
+  #   options:
+  #     path: /var/lib/grafana/dashboards/platform
+  #     foldersFromFilesStructure: false
+  #
+  # - name: sre-team
+  #   orgId: 1
+  #   folder: SRE
+  #   type: file
+  #   disableDeletion: false
+  #   updateIntervalSeconds: 60
+  #   allowUiUpdates: false
+  #   options:
+  #     path: /var/lib/grafana/dashboards/sre
+  #     foldersFromFilesStructure: false

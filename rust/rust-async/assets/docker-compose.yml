@@ -1,0 +1,48 @@
+# Docker Compose for async Rust development
+# Provides Postgres and Redis for local development.
+#
+# Usage:
+#   docker compose up -d          # Start services
+#   docker compose down -v        # Stop and remove volumes
+#   docker compose logs -f db     # Follow Postgres logs
+#
+# Connection strings:
+#   DATABASE_URL=postgres://postgres:postgres@localhost:5432/app
+#   REDIS_URL=redis://localhost:6379
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
