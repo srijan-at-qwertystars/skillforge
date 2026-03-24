@@ -1,29 +1,48 @@
 ---
 name: playwright-testing
 description: >
-  Guide for writing browser automation and end-to-end tests with Playwright.
-  Use when writing browser tests, e2e tests, UI automation, cross-browser testing
-  with Playwright, visual regression tests, component testing in browsers,
-  network mocking for UI tests, or multi-browser test suites.
-  Do NOT use for unit tests without a browser, API-only testing without UI,
-  Selenium-specific code, Cypress-specific code, Puppeteer-specific code,
-  mobile native app testing (Appium/Detox), or load/performance testing tools
-  like k6 or Artillery.
+  End-to-end browser testing with Playwright. Use when: setting up Playwright,
+  writing e2e/integration tests, cross-browser testing, browser automation,
+  page object model design, visual regression testing, test fixtures, authentication
+  flows, network mocking, mobile emulation, CI/CD integration with GitHub Actions,
+  debugging with trace viewer, test generation with codegen, multi-tab/multi-browser
+  scenarios, parallel execution, selector strategies.
+  Do NOT use for: unit tests without a browser, API-only testing without UI,
+  Selenium-specific or Cypress-specific questions, performance/load testing,
+  accessibility-only audits unrelated to e2e flows.
 ---
 
-# Playwright Testing
+# Playwright End-to-End Testing
 
-## Installation and Project Setup
+## Installation & Setup
 
 ```bash
-npm init playwright@latest          # new project (scaffolds config, examples, CI workflow)
-npm install -D @playwright/test     # existing project
-npx playwright install --with-deps  # install browsers + OS deps
+# Initialize new project (creates config, example tests, GitHub Actions workflow)
+npm init playwright@latest
+
+# Or add to existing project
+npm install -D @playwright/test
+npx playwright install --with-deps  # installs browsers + OS deps
 ```
 
-Minimal `playwright.config.ts`:
+Recommended project structure:
+```
+├── playwright.config.ts
+├── tests/
+│   ├── auth.setup.ts
+│   ├── home.spec.ts
+│   └── checkout.spec.ts
+├── pages/
+│   ├── HomePage.ts
+│   └── CheckoutPage.ts
+├── fixtures/
+│   └── test-fixtures.ts
+└── test-results/
+```
 
-```ts
+## Configuration (playwright.config.ts)
+
+```typescript
 import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
@@ -31,305 +50,371 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
+  workers: process.env.CI ? '50%' : undefined,
+  reporter: [
+    ['html', { open: 'never' }],
+    ['junit', { outputFile: 'test-results/results.xml' }],
+  ],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: process.env.BASE_URL || 'http://localhost:3000',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+    actionTimeout: 10_000,
+    navigationTimeout: 30_000,
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'setup', testMatch: /.*\.setup\.ts/ },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 7'] },
+      dependencies: ['setup'],
+    },
+    {
+      name: 'mobile-safari',
+      use: { ...devices['iPhone 14'] },
+      dependencies: ['setup'],
+    },
   ],
   webServer: {
     command: 'npm run dev',
-    port: 3000,
+    url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
   },
 });
 ```
 
-## Test Structure
+Key config options:
+- `fullyParallel`: run tests in parallel across and within files.
+- `webServer`: auto-start dev server before tests.
+- `projects[].dependencies`: chain setup projects (auth) before test projects.
+- `retries`: set >0 in CI to handle flakiness.
 
-```ts
+## Writing Tests
+
+```typescript
 import { test, expect } from '@playwright/test';
 
-test.describe('Login flow', () => {
+test.describe('Shopping Cart', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/login');
+    await page.goto('/products');
   });
 
-  test('successful login redirects to dashboard', async ({ page }) => {
-    await page.getByLabel('Email').fill('user@example.com');
-    await page.getByLabel('Password').fill('secret');
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page).toHaveURL('/dashboard');
+  test('add item to cart', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add to Cart' }).first().click();
+    await expect(page.getByTestId('cart-count')).toHaveText('1');
   });
 
-  test('invalid credentials show error', async ({ page }) => {
-    await page.getByLabel('Email').fill('bad@example.com');
-    await page.getByLabel('Password').fill('wrong');
-    await page.getByRole('button', { name: 'Sign in' }).click();
-    await expect(page.getByText('Invalid credentials')).toBeVisible();
+  test('remove item from cart', async ({ page }) => {
+    await page.getByRole('button', { name: 'Add to Cart' }).first().click();
+    await page.getByRole('link', { name: 'Cart' }).click();
+    await page.getByRole('button', { name: 'Remove' }).click();
+    await expect(page.getByTestId('cart-count')).toHaveText('0');
   });
 });
 ```
 
-Use `test.skip()`, `test.fixme()`, `test.slow()`, `test.only()`, and `test.afterEach()` for test control.
+## Locators (Selector Strategy)
 
-## Locators
+Prefer semantic locators in this priority:
 
-Prefer accessible locators over CSS/XPath. Priority order:
+```typescript
+// 1. Role-based (BEST — resilient, accessible)
+page.getByRole('button', { name: 'Submit' })
+page.getByRole('heading', { level: 2 })
+page.getByRole('link', { name: /sign in/i })
 
-```ts
-page.getByRole('button', { name: 'Submit' });    // 1. Role (best)
-page.getByRole('heading', { level: 1 });
-page.getByLabel('Email address');                  // 2. Label
-page.getByPlaceholder('Search...');                // 3. Placeholder
-page.getByText('Welcome back');                    // 4. Text
-page.getByText(/total: \$[\d.]+/i);               //    (supports regex)
-page.getByTestId('nav-menu');                      // 5. Test ID [data-testid]
-page.locator('input[type="email"]');               // 6. CSS (escape hatch)
-page.locator('xpath=//div[@class="results"]//li'); // 7. XPath (last resort)
+// 2. Label/placeholder/text
+page.getByLabel('Email address')
+page.getByPlaceholder('Search...')
+page.getByText('Welcome back')
 
-// Chain and filter
-const row = page.getByRole('row').filter({ hasText: 'John' });
-await row.getByRole('button', { name: 'Edit' }).click();
+// 3. Test ID (stable, decoupled from UI text)
+page.getByTestId('submit-btn')
+
+// 4. CSS/XPath (LAST RESORT)
+page.locator('.card >> nth=0')
 ```
 
-## Actions
-
-```ts
-// Click
-await page.getByRole('button', { name: 'Save' }).click();
-await page.getByRole('button').dblclick();
-await page.getByRole('button').click({ button: 'right' });
-
-// Fill (clears then types) vs type (key-by-key)
-await page.getByLabel('Name').fill('Alice');
-await page.getByLabel('Search').pressSequentially('hello', { delay: 100 });
-
-// Keyboard
-await page.keyboard.press('Enter');
-await page.keyboard.press('Control+A');
-
-// Hover
-await page.getByText('Menu').hover();
-
-// Select dropdown
-await page.getByLabel('Country').selectOption('us');
-await page.getByLabel('Colors').selectOption(['red', 'blue']);
-
-// Checkbox and radio
-await page.getByLabel('Agree to terms').check();
-await page.getByLabel('Option A').uncheck();
-
-// File upload
-await page.getByLabel('Upload').setInputFiles('file.pdf');
-await page.getByLabel('Upload').setInputFiles(['a.png', 'b.png']);
-await page.getByLabel('Upload').setInputFiles([]); // clear
-
-// Drag and drop
-await page.getByTestId('source').dragTo(page.getByTestId('target'));
+Chaining and filtering:
+```typescript
+page.getByRole('listitem').filter({ hasText: 'Product A' })
+page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Buy' }) })
+page.getByRole('listitem').nth(2)
+page.locator('.sidebar').getByRole('link', { name: 'Settings' })
 ```
 
 ## Assertions
 
-All assertions auto-retry until timeout. Use `expect` with locators:
+```typescript
+// Element state
+await expect(page.getByRole('button')).toBeVisible();
+await expect(page.getByRole('button')).toBeEnabled();
+await expect(page.locator('.modal')).toBeHidden();
 
-```ts
-// Visibility
-await expect(page.getByText('Success')).toBeVisible();
-await expect(page.getByTestId('modal')).toBeHidden();
-
-// Text content
+// Text and values
 await expect(page.getByRole('heading')).toHaveText('Dashboard');
-await expect(page.getByRole('alert')).toContainText('saved');
-
-// URL and title
-await expect(page).toHaveURL(/\/dashboard/);
-await expect(page).toHaveTitle('My App');
+await expect(page.getByRole('heading')).toContainText('Dash');
+await expect(page.locator('input')).toHaveValue('hello');
 
 // Count
 await expect(page.getByRole('listitem')).toHaveCount(5);
 
-// Attributes and CSS
-await expect(page.getByRole('button')).toBeEnabled();
-await expect(page.getByRole('button')).toBeDisabled();
-await expect(page.locator('input')).toHaveAttribute('type', 'email');
-await expect(page.locator('input')).toHaveValue('alice@test.com');
-await expect(page.locator('.box')).toHaveCSS('color', 'rgb(255, 0, 0)');
+// Page-level
+await expect(page).toHaveURL(/.*dashboard/);
+await expect(page).toHaveTitle(/My App/);
+
+// Visual comparison
+await expect(page).toHaveScreenshot('dashboard.png');
 
 // Negation
-await expect(page.getByText('Error')).not.toBeVisible();
+await expect(page.locator('.error')).not.toBeVisible();
 
 // Soft assertions (don't stop test on failure)
 await expect.soft(page.getByTestId('status')).toHaveText('Active');
 ```
 
-## Page Navigation and Waiting
+All `expect` assertions auto-wait and retry. Never use `page.waitForTimeout()`.
 
-Playwright auto-waits for elements to be actionable. Use explicit waits only when needed:
+## Custom Fixtures
 
-```ts
-await page.goto('/products');
-await page.goBack();
-await page.reload();
+```typescript
+// fixtures/test-fixtures.ts
+import { test as base } from '@playwright/test';
+import { HomePage } from '../pages/HomePage';
+import { CheckoutPage } from '../pages/CheckoutPage';
 
-await page.waitForURL('**/checkout');
-await page.getByTestId('spinner').waitFor({ state: 'hidden' });
+type MyFixtures = {
+  homePage: HomePage;
+  checkoutPage: CheckoutPage;
+};
 
-// Wait for network response
-const responsePromise = page.waitForResponse('**/api/products');
-await page.getByRole('button', { name: 'Load' }).click();
-const response = await responsePromise;
-
-await page.waitForLoadState('networkidle');
+export const test = base.extend<MyFixtures>({
+  homePage: async ({ page }, use) => {
+    const homePage = new HomePage(page);
+    await homePage.goto();
+    await use(homePage);
+  },
+  checkoutPage: async ({ page }, use) => {
+    await use(new CheckoutPage(page));
+  },
+});
+export { expect } from '@playwright/test';
 ```
 
-Avoid hard `waitForTimeout` sleeps — use event-driven waits instead.
+Usage:
+```typescript
+import { test, expect } from '../fixtures/test-fixtures';
 
-## Network Interception
-
-Mock API responses, block resources, or modify requests:
-
-```ts
-// Mock an API response
-await page.route('**/api/users', async (route) => {
-  await route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify([{ id: 1, name: 'Alice' }]),
-  });
+test('search products', async ({ homePage }) => {
+  await homePage.search('laptop');
+  await expect(homePage.resultCount).toHaveText(/\d+ results/);
 });
-
-// Modify a request before it reaches the server
-await page.route('**/api/data', async (route) => {
-  const headers = { ...route.request().headers(), 'X-Custom': 'value' };
-  await route.continue({ headers });
-});
-
-// Abort requests (block images, analytics, etc.)
-await page.route('**/*.{png,jpg}', (route) => route.abort());
-await page.route('**/analytics/**', (route) => route.abort());
-
-// Intercept and modify response
-await page.route('**/api/config', async (route) => {
-  const response = await route.fetch();
-  const json = await response.json();
-  json.featureFlag = true;
-  await route.fulfill({ response, body: JSON.stringify(json) });
-});
-
-// Remove route handler
-await page.unroute('**/api/users');
 ```
 
-## Authentication Patterns
+## Page Object Model
 
-Use `storageState` to save and reuse auth across tests:
+```typescript
+// pages/LoginPage.ts
+import { type Page, type Locator } from '@playwright/test';
 
-```ts
-// global-setup.ts — run once before all tests
-import { chromium } from '@playwright/test';
+export class LoginPage {
+  readonly emailInput: Locator;
+  readonly passwordInput: Locator;
+  readonly submitButton: Locator;
+  readonly errorMessage: Locator;
 
-async function globalSetup() {
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-  await page.goto('http://localhost:3000/login');
-  await page.getByLabel('Email').fill('admin@test.com');
-  await page.getByLabel('Password').fill('password');
+  constructor(private page: Page) {
+    this.emailInput = page.getByLabel('Email');
+    this.passwordInput = page.getByLabel('Password');
+    this.submitButton = page.getByRole('button', { name: 'Sign in' });
+    this.errorMessage = page.getByRole('alert');
+  }
+
+  async goto() { await this.page.goto('/login'); }
+
+  async login(email: string, password: string) {
+    await this.emailInput.fill(email);
+    await this.passwordInput.fill(password);
+    await this.submitButton.click();
+  }
+}
+```
+
+POM rules: define locators in constructor, actions as methods. Never put assertions in page objects. Return new page objects from navigation methods.
+
+## Authentication Handling
+
+```typescript
+// tests/auth.setup.ts
+import { test as setup } from '@playwright/test';
+const authFile = 'playwright/.auth/user.json';
+
+setup('authenticate', async ({ page }) => {
+  await page.goto('/login');
+  await page.getByLabel('Email').fill('user@example.com');
+  await page.getByLabel('Password').fill('password123');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await page.waitForURL('/dashboard');
-  await page.context().storageState({ path: './auth/admin.json' });
-  await browser.close();
+  await page.context().storageState({ path: authFile });
+});
+```
+
+Config reference:
+```typescript
+{
+  name: 'chromium',
+  use: { ...devices['Desktop Chrome'], storageState: 'playwright/.auth/user.json' },
+  dependencies: ['setup'],
 }
-export default globalSetup;
 ```
 
-Reference in config:
+For multi-role testing, create separate setup projects per role with distinct `storageState` files.
 
-```ts
-export default defineConfig({
-  globalSetup: require.resolve('./global-setup'),
-  projects: [
-    { name: 'authed', use: { storageState: './auth/admin.json' } },
-    { name: 'guest', use: { storageState: { cookies: [], origins: [] } } },
-  ],
-});
-```
+## Visual Comparison
 
-## Visual Regression Testing
-
-```ts
-test('homepage matches screenshot', async ({ page }) => {
-  await page.goto('/');
-  await expect(page).toHaveScreenshot('homepage.png');
-});
-
-test('component snapshot', async ({ page }) => {
-  await page.goto('/components/card');
-  await expect(page.getByTestId('product-card')).toHaveScreenshot('card.png', {
-    maxDiffPixelRatio: 0.01,
-    mask: [page.getByTestId('timestamp')],
+```typescript
+test('visual regression', async ({ page }) => {
+  await page.goto('/dashboard');
+  await expect(page).toHaveScreenshot('full-page.png', {
+    fullPage: true,
+    maxDiffPixelRatio: 0.02,
   });
-});
-// Update baselines: npx playwright test --update-snapshots
-// Non-visual snapshots:
-expect(await page.content()).toMatchSnapshot('page.html');
-```
-
-## Component Testing
-
-Test framework components in isolation (React, Vue, Svelte) with `@playwright/experimental-ct-react` (or `-vue`, `-svelte`):
-
-```ts
-import { test, expect } from '@playwright/experimental-ct-react';
-import { Button } from './Button';
-
-test('renders with label', async ({ mount }) => {
-  const component = await mount(<Button label="Click me" />);
-  await expect(component).toContainText('Click me');
+  await expect(page.locator('.sidebar')).toHaveScreenshot('sidebar.png');
 });
 ```
 
-## Parallel Execution and Test Isolation
+Update baselines: `npx playwright test --update-snapshots`
 
-Tests run in parallel by default, each in its own `BrowserContext` (isolated cookies, storage, cache):
+## Network Mocking & Interception
 
-```ts
-export default defineConfig({
-  fullyParallel: true,       // parallelize tests within files
-  workers: 4,                // number of parallel workers
+```typescript
+test('mock API response', async ({ page }) => {
+  await page.route('**/api/products', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([{ id: 1, name: 'Mock Product', price: 9.99 }]),
+    });
+  });
+  await page.goto('/products');
+  await expect(page.getByText('Mock Product')).toBeVisible();
 });
 
-// Serial execution for dependent tests
-test.describe.serial('checkout flow', () => {
-  test('add to cart', async ({ page }) => { /* ... */ });
-  test('complete payment', async ({ page }) => { /* ... */ });
+test('modify response', async ({ page }) => {
+  await page.route('**/api/user', async (route) => {
+    const response = await route.fetch();
+    const json = await response.json();
+    json.name = 'Modified Name';
+    await route.fulfill({ response, body: JSON.stringify(json) });
+  });
+  await page.goto('/profile');
+});
+
+test('abort requests', async ({ page }) => {
+  await page.route('**/*.{png,jpg}', (route) => route.abort());
+  await page.goto('/gallery');
+});
+
+// Wait for specific API call
+test('wait for API', async ({ page }) => {
+  const responsePromise = page.waitForResponse('**/api/data');
+  await page.getByRole('button', { name: 'Load' }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(200);
 });
 ```
 
-## Trace Viewer and Debugging
+## Multi-Tab & Multi-Browser
 
-```bash
-npx playwright test --debug              # step-through inspector
-npx playwright test --ui                 # interactive browser-based runner
-npx playwright show-trace trace.zip      # view recorded trace
-npx playwright codegen http://localhost:3000  # generate code by recording
+```typescript
+// Multi-tab (same context shares cookies)
+test('multi-tab', async ({ page, context }) => {
+  const [newPage] = await Promise.all([
+    context.waitForEvent('page'),
+    page.getByRole('link', { name: 'Open in new tab' }).click(),
+  ]);
+  await newPage.waitForLoadState();
+  await expect(newPage).toHaveTitle(/New Tab/);
+});
+
+// Multi-browser (isolated contexts, e.g., chat between users)
+test('chat between users', async ({ browser }) => {
+  const ctx1 = await browser.newContext();
+  const ctx2 = await browser.newContext();
+  const page1 = await ctx1.newPage();
+  const page2 = await ctx2.newPage();
+
+  await page1.goto('/chat');
+  await page2.goto('/chat');
+  await page1.getByPlaceholder('Message').fill('Hello');
+  await page1.getByRole('button', { name: 'Send' }).click();
+  await expect(page2.getByText('Hello')).toBeVisible();
+
+  await ctx1.close();
+  await ctx2.close();
+});
 ```
 
-Configure traces in `playwright.config.ts` via `trace: 'on-first-retry' | 'on' | 'retain-on-failure'`. Traces capture screenshots, DOM snapshots, network logs, and console output per action.
+## Mobile Emulation
 
-## CI/CD Integration
+Built into config via `devices`. Custom viewports:
+```typescript
+{
+  name: 'custom-mobile',
+  use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
+}
+```
 
-GitHub Actions workflow:
+Geolocation and permissions:
+```typescript
+test('geolocation', async ({ context, page }) => {
+  await context.grantPermissions(['geolocation']);
+  await context.setGeolocation({ latitude: 40.7128, longitude: -74.006 });
+  await page.goto('/store-locator');
+  await expect(page.getByText('New York')).toBeVisible();
+});
+```
+
+## Parallel Execution
+
+- `fullyParallel: true` in config runs all tests in parallel.
+- Each test gets its own isolated browser context.
+- Control workers: `workers: 4` or `workers: '50%'`.
+- Shard across CI machines: `npx playwright test --shard=1/4`.
+
+```yaml
+strategy:
+  matrix:
+    shard: [1/4, 2/4, 3/4, 4/4]
+steps:
+  - run: npx playwright test --shard=${{ matrix.shard }}
+```
+
+## CI/CD (GitHub Actions)
 
 ```yaml
 name: Playwright Tests
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -337,7 +422,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: lts/*
       - run: npm ci
       - run: npx playwright install --with-deps
       - run: npx playwright test
@@ -346,151 +431,50 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 30
+          retention-days: 14
 ```
 
-Docker-based execution for consistent screenshots:
+## Debugging
 
-```yaml
-    container:
-      image: mcr.microsoft.com/playwright:v1.52.0-noble
-      options: --user 1001
+```bash
+npx playwright test --headed              # see the browser
+npx playwright test --debug               # step-through inspector
+npx playwright test tests/login.spec.ts   # single file
+npx playwright test --grep "add item"     # filter by title
+npx playwright show-trace trace.zip       # view trace from failure
+npx playwright show-report                # open HTML report
+npx playwright test --ui                  # interactive UI mode
 ```
 
-## Page Object Model
+Set `trace: 'on'` in config to always capture. Trace viewer shows: snapshots, console logs, network requests, action timeline, source code.
 
-Encapsulate page interactions in reusable classes:
+## Test Generation (Codegen)
 
-```ts
-// pages/LoginPage.ts
-import { type Page, type Locator } from '@playwright/test';
-
-export class LoginPage {
-  readonly emailInput: Locator;
-  readonly passwordInput: Locator;
-  readonly submitButton: Locator;
-
-  constructor(private page: Page) {
-    this.emailInput = page.getByLabel('Email');
-    this.passwordInput = page.getByLabel('Password');
-    this.submitButton = page.getByRole('button', { name: 'Sign in' });
-  }
-
-  async goto() {
-    await this.page.goto('/login');
-  }
-
-  async login(email: string, password: string) {
-    await this.emailInput.fill(email);
-    await this.passwordInput.fill(password);
-    await this.submitButton.click();
-  }
-}
-
-// tests/login.spec.ts
-test('login works', async ({ page }) => {
-  const loginPage = new LoginPage(page);
-  await loginPage.goto();
-  await loginPage.login('user@example.com', 'pass');
-  await expect(page).toHaveURL('/dashboard');
-});
+```bash
+npx playwright codegen http://localhost:3000
+npx playwright codegen --device="iPhone 14" http://localhost:3000
+npx playwright codegen --load-storage=auth.json http://localhost:3000
+npx playwright codegen --output=tests/generated.spec.ts http://localhost:3000
 ```
 
-## Mobile Emulation and Responsive Testing
+Codegen produces idiomatic code using `getByRole`, `getByLabel`, etc. Refactor output into page objects for maintainability.
 
-```ts
-import { devices } from '@playwright/test';
-export default defineConfig({
-  projects: [
-    { name: 'mobile-chrome', use: { ...devices['Pixel 7'] } },
-    { name: 'mobile-safari', use: { ...devices['iPhone 14'] } },
-    { name: 'tablet', use: { ...devices['iPad Pro 11'] } },
-  ],
-});
+## CLI Reference
+
+```bash
+npx playwright test                          # run all tests
+npx playwright test --project=chromium       # single browser
+npx playwright test --retries=3              # override retries
+npx playwright test --update-snapshots       # update visual baselines
+npx playwright test --shard=1/3              # CI sharding
+npx playwright install                       # install browsers
 ```
 
-Use `isMobile` fixture in tests to branch on viewport size.
+## Anti-Patterns
 
-## Multi-Tab and Multi-Window Scenarios
-
-```ts
-test('link opens new tab', async ({ page, context }) => {
-  await page.goto('/');
-  const [newPage] = await Promise.all([
-    context.waitForEvent('page'),
-    page.getByRole('link', { name: 'Open docs' }).click(),
-  ]);
-  await newPage.waitForLoadState();
-  await expect(newPage).toHaveURL(/\/docs/);
-});
-
-test('multi-user chat', async ({ browser }) => {
-  const userA = await browser.newPage();
-  const userB = await browser.newPage();
-  await userA.goto('/chat');
-  await userB.goto('/chat');
-  await userA.getByLabel('Message').fill('Hello from A');
-  await userA.getByRole('button', { name: 'Send' }).click();
-  await expect(userB.getByText('Hello from A')).toBeVisible();
-});
-```
-
-## Fixtures and Test Hooks
-
-Define custom fixtures to share setup across tests:
-
-```ts
-import { test as base } from '@playwright/test';
-import { LoginPage } from './pages/LoginPage';
-
-export const test = base.extend<{ loginPage: LoginPage }>({
-  loginPage: async ({ page }, use) => {
-    const loginPage = new LoginPage(page);
-    await loginPage.goto();
-    await use(loginPage);
-  },
-});
-export { expect } from '@playwright/test';
-
-// Usage:
-import { test, expect } from './fixtures';
-test('dashboard loads', async ({ loginPage, page }) => {
-  await loginPage.login('admin@test.com', 'pass');
-  await expect(page).toHaveURL('/dashboard');
-});
-```
-
-Run: `npx playwright test`, `npx playwright test --project=chromium`,
-`npx playwright test tests/login.spec.ts`, `npx playwright test --grep "login"`.
-
-## References
-
-In-depth guides covering advanced topics, troubleshooting, and API details:
-
-| Document | Description |
-|----------|-------------|
-| [`references/advanced-patterns.md`](references/advanced-patterns.md) | POM with fixtures, custom/worker fixtures, API+UI testing, parallelism, sharding, custom reporters, multi-browser projects, auth with storageState, iframes, shadow DOM, web components, accessibility (axe-core), performance metrics, HAR recording/replay |
-| [`references/troubleshooting.md`](references/troubleshooting.md) | Flaky test diagnosis, strict mode violations, timing issues, selector strategies, debugging tools (trace viewer, UI mode, inspector, VS Code), CI issues (Docker, screenshots, deps), actionability checks, auto-waiting pitfalls, navigation races, file upload/download, geolocation/permissions |
-| [`references/api-reference.md`](references/api-reference.md) | Complete API reference for Page, BrowserContext, Locator, expect, Route, Frame, Dialog, Download, FileChooser, Mouse, Keyboard, Touchscreen — with method signatures, params, return types, and examples |
-
-## Scripts
-
-Executable helpers for common Playwright workflows:
-
-| Script | Usage |
-|--------|-------|
-| [`scripts/setup-playwright-ci.sh`](scripts/setup-playwright-ci.sh) | `./setup-playwright-ci.sh [--browsers chromium,firefox] [--shards 4]` — Installs Playwright, generates GitHub Actions workflow, configures caching |
-| [`scripts/generate-page-object.sh`](scripts/generate-page-object.sh) | `./generate-page-object.sh --url http://localhost:3000/login --name LoginPage` — Generates POM TypeScript class and companion test file |
-| [`scripts/run-visual-regression.sh`](scripts/run-visual-regression.sh) | `./run-visual-regression.sh [--project chromium] [--ci] [--docker]` — Runs visual regression tests with diff reporting and optional Docker consistency |
-
-## Assets
-
-Copy-ready templates for bootstrapping Playwright projects:
-
-| Template | Description |
-|----------|-------------|
-| [`assets/playwright.config.ts`](assets/playwright.config.ts) | Production-ready config with chromium/firefox/webkit/mobile projects, retries, trace-on-first-retry, HTML+blob reporters, webServer |
-| [`assets/global-setup.ts`](assets/global-setup.ts) | Authentication global setup that logs in and saves storageState for reuse across tests |
-| [`assets/base-page.ts`](assets/base-page.ts) | Abstract base POM class with navigation, screenshots, test-ID utilities, waiting helpers, assertions, form interactions, and network mocking |
-| [`assets/github-actions-playwright.yml`](assets/github-actions-playwright.yml) | GitHub Actions workflow with npm/browser caching, 4-shard matrix, blob report merging, and artifact upload |
-<!-- tested: pass -->
+- **Never use `page.waitForTimeout()`** — use auto-waiting locators/assertions.
+- **Never use `page.$()` / `page.$$()`** — use `page.locator()`.
+- **Avoid CSS class selectors** — use roles, labels, test IDs instead.
+- **Don't share state between tests** — each test must be independent.
+- **Don't put assertions in page objects** — page objects are action containers.
+- **Avoid `force: true`** on clicks — it hides real UI bugs.
