@@ -1,74 +1,338 @@
 ---
 name: grafana-dashboards
 description: >
-  USE when: creating/editing Grafana dashboards, panels, or visualizations; writing PromQL/LogQL/TraceQL queries for Grafana; configuring Grafana data sources (Prometheus, Loki, Tempo, Mimir); setting up Grafana alerting rules, notification policies, or contact points; provisioning dashboards via YAML/JSON/Terraform/grafonnet; building LGTM stack observability; configuring Grafana variables, transformations, or annotations; generating dashboard JSON models; optimizing Grafana performance or query caching.
-  DO NOT USE when: instrumenting application code with OpenTelemetry SDKs (use opentelemetry skill); writing Prometheus recording rules or scrape configs without Grafana context; deploying standalone Loki/Tempo/Mimir without Grafana dashboards; building non-Grafana monitoring UIs (Datadog, New Relic, Kibana); general Kubernetes or Helm work unrelated to Grafana.
+  Use when creating Grafana dashboards, panels, visualizations, provisioning dashboards as code,
+  configuring data sources, templating variables, or alerting in Grafana. Covers dashboard JSON
+  models, panel configuration, transformations, overrides, annotations, unified alerting, Grafonnet,
+  Terraform provisioning, RBAC, and plugin development. Do NOT use for Prometheus query writing
+  (use prometheus-monitoring skill), Kibana dashboards, Datadog dashboards, or general monitoring
+  architecture without Grafana.
 ---
 
-# Grafana Dashboards Skill (Grafana 11.x)
-
-## Architecture
-
-Core primitives: **Data sources** (backends Grafana queries — Prometheus, Loki, Tempo, Mimir, InfluxDB, Elasticsearch, PostgreSQL, MySQL, CloudWatch, Azure Monitor). **Dashboards** — containers of panels in a grid, identified by UID, stored as JSON. **Panels** — individual visualizations bound to queries. **Rows** — collapsible panel groupings. **Folders** — hierarchical organization with permissions (subfolders GA in 11.x). **Organizations** — tenant isolation boundary. **Explore** — ad-hoc query interface.
+# Grafana Dashboards
 
 ## Dashboard JSON Model
 
-```json
-{
-  "uid": "abc123", "title": "Service Overview", "tags": ["production"],
-  "timezone": "browser", "schemaVersion": 39, "editable": true,
-  "graphTooltip": 1, "time": { "from": "now-6h", "to": "now" },
-  "refresh": "30s", "templating": { "list": [] },
-  "annotations": { "list": [] }, "panels": [], "links": []
-}
-```
-
-Panel structure:
+Every Grafana dashboard is a JSON document. Understand the top-level structure:
 
 ```json
 {
-  "id": 1, "type": "timeseries", "title": "Request Rate",
-  "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
-  "datasource": { "type": "prometheus", "uid": "prom-1" },
-  "targets": [{
-    "expr": "rate(http_requests_total{job=\"api\"}[5m])",
-    "legendFormat": "{{method}} {{status}}", "refId": "A"
-  }],
-  "fieldConfig": {
-    "defaults": {
-      "unit": "reqps",
-      "thresholds": { "mode": "absolute", "steps": [
-        { "color": "green", "value": null }, { "color": "red", "value": 1000 }
-      ]}
-    }, "overrides": []
-  }, "options": {}
+  "id": null,
+  "uid": "abc123def",
+  "title": "Service Overview",
+  "tags": ["production", "backend"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [],
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 0,
+  "links": [],
+  "fiscalYearStartMonth": 0
 }
 ```
 
-Set `graphTooltip` to `1` (shared crosshair) or `2` (shared tooltip). Use `"editable": false` for provisioned dashboards.
+Set `uid` explicitly for stable references across environments. Use `schemaVersion` matching your Grafana version. Set `graphTooltip: 1` for shared crosshair or `2` for shared tooltip across panels.
 
 ## Panel Types
 
-| Type | `type` value | Use case |
-|------|-------------|----------|
-| Time series | `timeseries` | Trends, rates, gauges over time |
-| Stat | `stat` | Single KPIs, sparklines |
-| Gauge | `gauge` | Value vs min/max range |
-| Bar chart | `barchart` | Categorical comparisons |
-| Table | `table` | Tabular multi-column data |
-| Logs | `logs` | Log streams (Loki) |
-| Traces | `traces` | Trace waterfall (Tempo) |
-| Heatmap | `heatmap` | Distribution over time |
-| Geomap | `geomap` | Geographic data |
-| Canvas | `canvas` | Custom interactive diagrams |
-| Pie chart | `piechart` | Proportional data |
-| Histogram | `histogram` | Frequency distribution |
-| Text | `text` | Markdown documentation |
-| Node graph | `nodeGraph` | Service dependency maps |
+Choose the right visualization for the data:
 
-## Data Sources
+| Panel | Use Case |
+|-------|----------|
+| **Time series** | Metrics over time — lines, bars, points. Primary workhorse. |
+| **Stat** | Single KPI with optional sparkline. Use for current value, total, or average. |
+| **Gauge** | Value relative to min/max with thresholds (disk usage, CPU%). |
+| **Bar gauge** | Horizontal/vertical bars with threshold coloring. Compare across instances. |
+| **Table** | Tabular data, logs summary, multi-column detail views. |
+| **Heatmap** | Distribution over time (latency buckets, request density). |
+| **Histogram** | Statistical distribution of values across bins. |
+| **Logs** | Log stream display. Integrates with Loki, Elasticsearch. |
+| **Node graph** | Service dependency maps, trace topology, network graphs. |
+| **Geomap** | Geospatial data on interactive maps. |
+| **Canvas** | Free-form layout with custom elements, dynamic positioning. |
 
-Provision via YAML in `provisioning/datasources/`:
+Panel JSON structure:
+
+```json
+{
+  "type": "timeseries",
+  "title": "Request Rate",
+  "id": 1,
+  "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+  "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+  "targets": [
+    {
+      "expr": "rate(http_requests_total{job=\"$job\"}[5m])",
+      "legendFormat": "{{method}} {{status}}"
+    }
+  ],
+  "fieldConfig": {
+    "defaults": {
+      "unit": "reqps",
+      "thresholds": {
+        "mode": "absolute",
+        "steps": [
+          { "color": "green", "value": null },
+          { "color": "yellow", "value": 500 },
+          { "color": "red", "value": 1000 }
+        ]
+      }
+    },
+    "overrides": []
+  },
+  "options": {
+    "tooltip": { "mode": "multi" },
+    "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }
+  }
+}
+```
+
+Use `gridPos` for layout: `w` max is 24. Standard row height is `h: 8`.
+
+## Query Editors
+
+Configure `targets` based on data source type:
+
+**Prometheus**: Use `expr` with PromQL. Set `legendFormat` with `{{label}}` syntax. Use `$__rate_interval` for rate queries.
+
+**Loki**: Use `expr` with LogQL. Set `queryType` to `range` or `instant`. Use line filters and label matchers.
+
+**Elasticsearch**: Use `bucketAggs` and `metrics` arrays. Configure `timeField` and index pattern.
+
+**InfluxDB**: Use Flux or InfluxQL via `query` field. Set `resultFormat` to `time_series` or `table`.
+
+**MySQL/PostgreSQL**: Use raw SQL in `rawSql`. Reference `$__timeFilter(time_column)` and `$__timeGroup(time_column, $__interval)` macros.
+
+**CloudWatch**: Set `namespace`, `metricName`, `dimensions`, `statistic`, and `period`.
+
+## Templating Variables
+
+Define variables in `templating.list` to make dashboards dynamic and reusable.
+
+### Variable Types
+
+**Query** — populate from data source:
+```json
+{
+  "name": "instance",
+  "type": "query",
+  "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+  "query": "label_values(up{job=\"$job\"}, instance)",
+  "refresh": 2,
+  "multi": true,
+  "includeAll": true,
+  "sort": 1
+}
+```
+
+**Custom** — static list: `"query": "us-east-1,us-west-2,eu-west-1"`, `"type": "custom"`.
+
+**Interval** — time intervals: `"query": "1m,5m,15m,1h,6h,1d"`, `"type": "interval"`. Use `$__auto_interval_<name>` for auto.
+
+**Datasource** — select data source at runtime: `"type": "datasource"`, `"query": "prometheus"`.
+
+**Text box** — free-form input: `"type": "textbox"`, `"query": ""`.
+
+**Constant** — hidden fixed value: `"type": "constant"`, `"query": "production"`, `"hide": 2`.
+
+### Chaining and Multi-Value
+
+Chain variables by referencing parent variables in child queries: `label_values(up{job="$job"}, instance)`. Set `refresh: 2` (on time range change) for dependent variables. For multi-value, use `multi: true` and format with `${variable:pipe}`, `${variable:regex}`, or `${variable:csv}` depending on data source requirements. Use `includeAll: true` with an `allValue` of `.*` for regex-based sources.
+
+## Transformations
+
+Apply transformations in the panel's Transform tab. Chain them — each processes the previous output:
+
+- **Filter by name** — select fields by name or regex pattern
+- **Filter by value** — include/exclude rows matching conditions (greater than, regex, null)
+- **Organize fields** — rename, reorder, hide columns
+- **Join by field** — SQL-like join on a shared field across queries (inner, outer)
+- **Reduce** — collapse time series to single values (last, mean, max, min, count, sum)
+- **Add field from calculation** — derive new fields (binary operations, unary, row index, percentage)
+- **Group by** — aggregate rows by field values with sum, mean, count, min, max
+- **Merge** — combine all query results into a single table
+- **Series to rows** — convert each series into a table row for side-by-side comparison
+- **Sort by** — order results by a field
+- **Limit** — restrict number of rows returned
+- **Concatenate fields** — combine frames into one
+
+Order matters: filter first, then reduce, then organize for clean output.
+
+## Overrides
+
+### Field Overrides
+
+Override defaults for specific fields in `fieldConfig.overrides`:
+
+```json
+{
+  "overrides": [
+    {
+      "matcher": { "id": "byName", "options": "error_rate" },
+      "properties": [
+        { "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } },
+        { "id": "custom.axisPlacement", "value": "right" },
+        { "id": "unit", "value": "percentunit" }
+      ]
+    }
+  ]
+}
+```
+
+Matchers: `byName`, `byRegexp`, `byType`, `byFrameRefID`. Override any field config property: unit, decimals, color, axis, thresholds, display name.
+
+### Value Mappings
+
+Map raw values to display text/colors: `{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }`.
+
+Types: `value` (exact match), `range` (numeric range), `regex` (pattern match), `special` (null, NaN, boolean).
+
+### Thresholds
+
+Define in `fieldConfig.defaults.thresholds`. Mode `absolute` for fixed values, `percentage` for relative. Steps are evaluated bottom-up — first matching step wins.
+
+### Color Schemes
+
+Set `fieldConfig.defaults.color.mode`: `fixed`, `palette-classic`, `continuous-GrYlRd`, `continuous-BlYlRd`, `thresholds`, `shades`. Use `thresholds` mode to color by threshold steps.
+
+## Annotations
+
+Mark events on time-series panels for contextual overlay.
+
+**Native annotations** — manually added via UI, stored in Grafana database.
+
+**Data source annotations** — query-driven:
+```json
+{
+  "annotations": {
+    "list": [
+      {
+        "name": "Deployments",
+        "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+        "expr": "changes(deployment_timestamp{app=\"$app\"}[1m]) > 0",
+        "enable": true,
+        "iconColor": "#FF6600",
+        "titleFormat": "Deploy: {{version}}",
+        "tagKeys": "app,environment",
+        "useValueForTime": false
+      }
+    ]
+  }
+}
+```
+
+**Tag filtering** — use `tagKeys` to add filterable tags. Users filter annotations by tag in the dashboard UI. Set `enable: false` to hide by default but allow toggle.
+
+## Alerting
+
+Grafana Unified Alerting (replaces legacy alerting since Grafana 9+):
+
+### Alert Rules
+
+Define conditions in Grafana-managed or data source-managed (Mimir/Loki) rules. Each rule specifies:
+- Query and condition expressions (reduce + threshold or math)
+- Evaluation group and interval
+- For duration (pending period before firing)
+- Labels for routing and grouping
+- Annotations for notification content (`summary`, `description`, `runbook_url`)
+
+### Contact Points
+
+Define notification destinations: Email, Slack, PagerDuty, OpsGenie, Microsoft Teams, Discord, Webhook, Kafka, Google Chat, AWS SNS. Each contact point holds one or more integrations. Configure message templates using Go template syntax.
+
+### Notification Policies
+
+Route alerts to contact points using label matchers in a hierarchical tree:
+- Default policy at root catches unmatched alerts
+- Child policies match on labels (e.g., `team=platform`, `severity=critical`)
+- Configure `group_by`, `group_wait`, `group_interval`, `repeat_interval`
+- Use `continue: true` to evaluate sibling policies after a match
+
+### Silences and Mute Timings
+
+**Silences** — suppress specific alerts by matcher for a duration. Use for planned maintenance.
+
+**Mute timings** — recurring schedules (weekends, holidays) when notifications are suppressed. Attach to notification policies.
+
+## Dashboard Provisioning
+
+### File-Based YAML
+
+Place provider config in `provisioning/dashboards/`:
+
+```yaml
+apiVersion: 1
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: 'Infrastructure'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true
+```
+
+Place dashboard JSON files in the referenced path. Set `foldersFromFilesStructure: true` to auto-create folders matching directory structure.
+
+### Grafana API
+
+Use HTTP API for programmatic management:
+```bash
+curl -X POST http://localhost:3000/api/dashboards/db \
+  -H "Authorization: Bearer $GRAFANA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"dashboard": {...}, "folderId": 0, "overwrite": true}'
+```
+
+### Terraform / Pulumi
+
+```hcl
+resource "grafana_dashboard" "service" {
+  config_json = file("${path.module}/dashboards/service.json")
+  folder      = grafana_folder.infra.id
+  overwrite   = true
+}
+
+resource "grafana_folder" "infra" {
+  title = "Infrastructure"
+}
+```
+
+Pulumi uses similar patterns via the Grafana provider package.
+
+### Grafonnet (Jsonnet)
+
+Generate dashboard JSON programmatically:
+
+```jsonnet
+local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonnet';
+
+g.dashboard.new('Service Dashboard')
++ g.dashboard.withUid('svc-dash')
++ g.dashboard.withTags(['service', 'production'])
++ g.dashboard.withPanels([
+    g.panel.timeSeries.new('Request Rate')
+    + g.panel.timeSeries.queryOptions.withTargets([
+        g.query.prometheus.new('A', 'rate(http_requests_total[5m])')
+    ])
+    + g.panel.timeSeries.standardOptions.withUnit('reqps')
+    + g.panel.timeSeries.panelOptions.withGridPos(0, 0, 12, 8),
+])
+```
+
+Install with `jb install github.com/grafana/grafonnet/gen/grafonnet-latest`. Render: `jsonnet -J vendor dashboard.jsonnet > dashboard.json`.
+
+## Data Source Configuration and Provisioning
+
+Provision data sources via `provisioning/datasources/`:
 
 ```yaml
 apiVersion: 1
@@ -79,420 +343,122 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     jsonData:
+      timeInterval: '15s'
       httpMethod: POST
-      exemplarTraceIdDestinations:
-        - name: traceID
-          datasourceUid: tempo-uid
   - name: Loki
     type: loki
     access: proxy
     url: http://loki:3100
     jsonData:
       derivedFields:
-        - name: TraceID
-          matcherRegex: "traceID=(\\w+)"
-          url: "$${__value.raw}"
-          datasourceUid: tempo-uid
-  - name: Tempo
-    type: tempo
-    access: proxy
-    url: http://tempo:3200
-    jsonData:
-      tracesToLogsV2: { datasourceUid: loki-uid, filterByTraceID: true }
-      nodeGraph: { enabled: true }
-      serviceMap: { datasourceUid: prom-uid }
+        - datasourceUid: tempo-uid
+          matcherRegex: 'traceID=(\w+)'
+          name: TraceID
+          url: '$${__value.raw}'
 ```
 
-Supported types: `prometheus`, `loki`, `tempo`, `influxdb`, `elasticsearch`, `postgres`, `mysql`, `mssql`, `cloudwatch`, `grafana-azure-monitor-datasource`, `stackdriver`, `graphite`, `jaeger`, `zipkin`, `testdata`.
+Use `secureJsonData` for secrets (API keys, passwords). Reference data sources in panels by `uid` not name for portability.
 
-## Query Languages
+## Dashboard Links, Drilldowns, Data Links
 
-### PromQL (Prometheus/Mimir)
+**Dashboard links** — add to `links` array at dashboard level. Link to other dashboards with variable forwarding: `keepTime: true`, `includeVars: true`.
 
-```promql
-sum by (service) (rate(http_requests_total[5m]))
-histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))
-sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))
-rate(http_requests_total{instance=~"$instance"}[${__rate_interval}])
+**Data links** — on panel fields, link to external URLs or other dashboards. Use `${__value.raw}`, `${__field.name}`, `${__series.name}` variables:
+```json
+{
+  "fieldConfig": {
+    "defaults": {
+      "links": [
+        {
+          "title": "View in Jaeger",
+          "url": "http://jaeger:16686/trace/${__value.raw}",
+          "targetBlank": true
+        }
+      ]
+    }
+  }
+}
 ```
 
-Always use `$__rate_interval` instead of hardcoded intervals — accounts for scrape interval and resolution.
+**Drilldown** — use data links with `${__data.fields.fieldname}` to pass clicked values to target dashboards.
 
-### LogQL (Loki)
+## Repeat Panels and Rows
 
-```logql
-{app="nginx", env="production"} |= "error" != "healthcheck"
-{app="api"} | json | status >= 500 | line_format "{{.method}} {{.path}} {{.status}}"
-sum(rate({app="api"} |= "error" [5m])) by (level)
-{job="syslog"} | pattern "<_> <level> <msg>" | level="ERROR"
-```
+Create dynamic dashboards that expand based on variable values.
 
-### TraceQL (Tempo)
-
-```
-{ span.http.method = "POST" && span.http.status_code >= 500 }
-{ resource.service.name = "checkout" && duration > 2s }
-```
-
-### SQL (PostgreSQL, MySQL)
-
-```sql
-SELECT $__timeGroup(created_at, '1h') AS time, count(*) AS value, status AS metric
-FROM orders WHERE $__timeFilter(created_at) GROUP BY time, status ORDER BY time
-```
-
-Macros: `$__timeFilter(col)`, `$__timeFrom()`, `$__timeTo()`, `$__timeGroup(col, interval)`, `$__unixEpochFilter(col)`.
-
-## Variables
-
-Types: `query` (from data source), `custom` (static CSV), `constant` (hidden fixed), `datasource` (pick data source), `interval` (time intervals), `textbox` (free text), `adhoc` (auto-filter by tag keys).
+**Repeat panel** — set `repeat` on a panel to a multi-value variable name. Set `repeatDirection` to `h` (horizontal) or `v` (vertical). Set `maxPerRow` to control wrapping.
 
 ```json
-{ "templating": { "list": [
-  { "name": "datasource", "type": "datasource", "query": "prometheus" },
-  { "name": "namespace", "type": "query",
-    "datasource": { "uid": "${datasource}" },
-    "query": "label_values(kube_pod_info, namespace)",
-    "refresh": 2, "multi": true, "includeAll": true, "allValue": ".*" },
-  { "name": "pod", "type": "query",
-    "query": "label_values(kube_pod_info{namespace=~\"$namespace\"}, pod)",
-    "refresh": 2, "multi": true, "includeAll": true },
-  { "name": "interval", "type": "interval", "query": "1m,5m,15m,1h",
-    "auto": true, "auto_min": "10s" },
-  { "name": "env", "type": "custom", "query": "production,staging,development" },
-  { "name": "cluster", "type": "constant", "query": "us-east-1" },
-  { "name": "search", "type": "textbox" }
-]}}
+{
+  "repeat": "instance",
+  "repeatDirection": "h",
+  "maxPerRow": 4
+}
 ```
 
-Chain variables by referencing `$parent_var` in child queries. Set `refresh: 1` (dashboard load) or `refresh: 2` (time range change). Use `${var:regex}` for regex-safe values, `${var:pipe}` for pipe-delimited.
+**Repeat row** — set `repeat` on a row panel. All panels within the row repeat for each variable value. Use for per-service or per-environment sections.
 
-## Transformations
+## Dashboard Best Practices
 
-Apply in panel config to reshape results. Execute in order — chain for complex reshaping:
+### Golden Signals Dashboard
 
-- **Filter by name** / **Filter data by values**: include/exclude fields or rows
-- **Group by**: aggregate (sum, mean, count, min, max)
-- **Join by field**: merge queries on common field (outer/inner)
-- **Organize fields**: reorder, rename, hide columns
-- **Calculate field**: binary ops, reduce row, unary
-- **Rename by regex**: batch rename with capture groups
-- **Sort by**: order by field values
-- **Partition by values**: split frame by unique values
-- **Convert field type**: string↔number↔time
-- **Merge** / **Concatenate fields**: combine frames
-- **Format string** / **Transpose**: format values, pivot rows/columns
+Structure around the four golden signals (from Google SRE):
+1. **Latency** — histogram/heatmap of request duration (`histogram_quantile(0.99, ...)`)
+2. **Traffic** — time series of request rate (`rate(http_requests_total[5m])`)
+3. **Errors** — stat/time series of error rate (`rate(http_requests_total{status=~"5.."}[5m])`)
+4. **Saturation** — gauge of resource utilization (CPU, memory, queue depth)
 
-## Alerting (Unified Alerting)
+### USE Method (Resources)
 
-### Alert Rules
+For each resource (CPU, memory, disk, network): **Utilization** (% busy), **Saturation** (queue length), **Errors** (error count). One row per resource.
 
-```yaml
-apiVersion: 1
-groups:
-  - orgId: 1
-    name: sre-alerts
-    folder: Infrastructure
-    interval: 1m
-    rules:
-      - uid: high-error-rate
-        title: High Error Rate
-        condition: C
-        data:
-          - refId: A
-            datasourceUid: prometheus-uid
-            model:
-              expr: sum(rate(http_requests_total{status=~"5.."}[5m]))
-          - refId: B
-            datasourceUid: prometheus-uid
-            model:
-              expr: sum(rate(http_requests_total[5m]))
-          - refId: C
-            datasourceUid: __expr__
-            model:
-              type: math
-              expression: "$A / $B"
-              conditions:
-                - evaluator: { type: gt, params: [0.05] }
-        for: 5m
-        labels: { severity: critical, team: platform }
-        annotations:
-          summary: "Error rate above 5%"
-          runbook_url: "https://wiki.internal/runbooks/high-error-rate"
-```
+### RED Method (Services)
 
-### Contact Points
+For each service: **Rate** (requests/sec), **Errors** (failed requests/sec), **Duration** (latency distribution). One row per service.
 
-```yaml
-apiVersion: 1
-contactPoints:
-  - orgId: 1
-    name: platform-oncall
-    receivers:
-      - uid: slack-platform
-        type: slack
-        settings: { recipient: "#platform-alerts", token: "$SLACK_BOT_TOKEN" }
-      - uid: pagerduty-platform
-        type: pagerduty
-        settings: { integrationKey: "$PD_KEY", severity: critical }
-```
+### SLO Dashboards
 
-Supported: slack, pagerduty, email, webhook, teams, opsgenie, victorops, discord, telegram, googlechat, sns, kafka, line, threema, pushover, sensugo, oncall.
+Display error budget burn rate, SLI compliance over windows (1h, 6h, 1d, 30d). Use stat panels for current burn rate, time series for historical. Alert when burn rate exceeds threshold.
 
-### Notification Policies
+## Grafana as Code
 
-```yaml
-apiVersion: 1
-policies:
-  - orgId: 1
-    receiver: platform-oncall
-    group_by: ['alertname', 'namespace']
-    group_wait: 30s
-    group_interval: 5m
-    repeat_interval: 4h
-    routes:
-      - receiver: pagerduty-platform
-        matchers: ['severity = critical']
-      - receiver: slack-platform
-        matchers: ['severity = warning']
-        repeat_interval: 12h
-```
+### Dashboard-as-Code Workflow
 
-### Silences and Mute Timings
+1. Write dashboards in Grafonnet (Jsonnet) or generate JSON via scripts
+2. Store in version control alongside application code
+3. Validate JSON schema in CI (`grafana dashboard lint` or custom validation)
+4. Deploy via Terraform, provisioning YAML, or Grafana API in CD pipeline
+5. Use `uid` for stable references; avoid relying on numeric `id`
+6. Export existing dashboards via API for migration: `GET /api/dashboards/uid/<uid>`
 
-Mute timings define recurring quiet windows:
+## Authentication and RBAC
 
-```yaml
-apiVersion: 1
-muteTimes:
-  - orgId: 1
-    name: weekends
-    time_intervals:
-      - weekdays: ['saturday', 'sunday']
-```
+**Basic roles**: Viewer (read-only), Editor (create/edit dashboards), Admin (full control).
 
-Reference in policies: `mute_time_intervals: ['weekends']`. Create ad-hoc silences via UI/API for maintenance.
+**Teams** — group users. Assign folder permissions to teams for bulk access control.
 
-## Dashboard Provisioning
+**Folder permissions** — grant View, Edit, or Admin per folder to users/teams. Remove inherited permissions to restrict access.
 
-### File-Based
+**RBAC (Enterprise/Cloud)** — fine-grained permissions: `dashboards:read`, `dashboards:write`, `datasources:query`, `folders:create`. Create custom roles combining specific actions and scopes.
 
-```yaml
-# provisioning/dashboards/default.yaml
-apiVersion: 1
-providers:
-  - name: default
-    folder: General
-    type: file
-    disableDeletion: false
-    updateIntervalSeconds: 30
-    allowUiUpdates: false
-    options:
-      path: /var/lib/grafana/dashboards
-      foldersFromFilesStructure: true
-```
+**Service accounts** — use for API access and CI/CD. Assign roles to service accounts like users. Generate tokens for programmatic access.
 
-### API-Based
+## Plugins
 
+### Panel Plugins
+
+Extend visualization capabilities. Install via `grafana-cli plugins install <plugin-id>` or provision in `plugin` directory. Popular: Flowcharting, Diagram, Plotly, Candlestick, Dynamic Text.
+
+### Data Source Plugins
+
+Connect to additional backends. Each plugin provides query editor and data frame translation. Install and configure like built-in sources.
+
+### App Plugins
+
+Bundle dashboards, data sources, and custom pages into a single installable package. Define in `plugin.json` with routes, includes, and RBAC actions. Use for complete observability solutions (e.g., Grafana Cloud integrations).
+
+Build custom plugins with `@grafana/create-plugin`:
 ```bash
-curl -X POST http://localhost:3000/api/dashboards/db \
-  -H "Authorization: Bearer $GRAFANA_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"dashboard":{"uid":"svc","title":"Service","panels":[]},"overwrite":true,"folderUid":"infra"}'
+npx @grafana/create-plugin@latest
+cd my-plugin && npm install && npm run dev
 ```
-
-### Terraform
-
-```hcl
-resource "grafana_folder" "infra" { title = "Infrastructure" }
-resource "grafana_dashboard" "svc" {
-  folder      = grafana_folder.infra.id
-  config_json = file("${path.module}/dashboards/service.json")
-}
-resource "grafana_data_source" "prom" {
-  type = "prometheus"
-  name = "Prometheus"
-  url  = "http://prometheus:9090"
-  json_data_encoded = jsonencode({ httpMethod = "POST" })
-}
-```
-
-### Grafonnet (Jsonnet)
-
-```jsonnet
-local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonnet';
-g.dashboard.new('Service Overview')
-+ g.dashboard.withUid('svc-overview')
-+ g.dashboard.withRefresh('30s')
-+ g.dashboard.withPanels([
-  g.panel.timeSeries.new('Request Rate')
-  + g.panel.timeSeries.queryOptions.withTargets([
-    g.query.prometheus.new('prometheus', 'sum by (svc) (rate(http_requests_total[5m]))')
-  ])
-  + g.panel.timeSeries.standardOptions.withUnit('reqps')
-  + g.panel.timeSeries.gridPos.withW(12) + g.panel.timeSeries.gridPos.withH(8),
-])
-```
-
-Build: `jsonnet -J vendor dashboard.jsonnet > dashboard.json`
-
-## LGTM Stack
-
-| Component | Signal | Default Port |
-|-----------|--------|-------------|
-| Mimir | Metrics (Prometheus remote write) | 9009 |
-| Loki | Logs (HTTP push / Promtail) | 3100 |
-| Tempo | Traces (OTLP, Jaeger, Zipkin) | 3200 (HTTP), 4317 (gRPC) |
-| Grafana | Visualization | 3000 |
-| Alloy | Collection/routing (OTLP) | 4317, 4318 |
-
-Flow: Apps → Alloy/OTel Collector → Loki/Mimir/Tempo → Grafana. Configure cross-references: exemplars in Prometheus → Tempo traces; derived fields in Loki → Tempo; Tempo service graph → Prometheus metrics.
-
-## Annotations
-
-```json
-{ "annotations": { "list": [
-  { "datasource": { "type": "grafana", "uid": "-- Grafana --" },
-    "enable": true, "name": "Deployments", "iconColor": "blue",
-    "target": { "matchAny": true, "tags": ["deploy"], "type": "tags" } }
-]}}
-```
-
-Push via API: `POST /api/annotations` with `{"dashboardUID":"svc","time":1700000000000,"tags":["deploy"],"text":"v2.3.1"}`.
-
-## Authentication
-
-Configure in `grafana.ini`: OAuth (`[auth.github]`, `[auth.google]`, `[auth.generic_oauth]`), LDAP (`[auth.ldap]` + `ldap.toml`), SAML Enterprise (`[auth.saml]`). Prefer **service accounts** over legacy API keys — they support RBAC, token rotation, fine-grained permissions. Create via Administration → Service accounts.
-
-## Performance
-
-- Use `$__rate_interval` not hardcoded intervals
-- Limit ≤20 panels per dashboard; split into linked dashboards
-- Set refresh ≥30s in production; use `maxDataPoints` to cap samples (default 1500)
-- Enable query caching: `jsonData.cacheLevel: "Low|Medium|High"` (Enterprise)
-- Avoid `.*` regex in label matchers — use specific values
-- Use `graphTooltip: 1` (shared crosshair) for correlated investigation
-- Set `minInterval` on panels to prevent excessive data points
-
-## Common Pitfalls
-
-- **Hardcoded rate intervals**: Use `[$__rate_interval]` not `[5m]` — incorrect rates at different zoom
-- **Variable refresh**: Use `refresh: 2` for time-dependent vars, `refresh: 1` for static label lists
-- **Provisioned edits lost**: File-provisioned dashboards revert on scan unless `allowUiUpdates: true`
-- **Panel ID conflicts**: Set `id: null` when copying panels for auto-assignment
-- **Alert `for` duration**: Too short = flapping, too long = delayed notification
-- **Proxy vs direct**: Use `access: proxy` (server-side) — `direct` exposes credentials to browser
-- **Schema version**: Always export from running Grafana to get correct `schemaVersion`
-- **Timezone**: Use `"utc"` for ops dashboards; `"browser"` varies per user
-- **Multi-value vars**: Use `${var:pipe}` for `a|b|c`, `${var:regex}` for regex-safe matching
-
-## Examples
-
-### Input: "Create HTTP service health dashboard"
-
-```json
-{
-  "uid": "http-health", "title": "HTTP Service Health",
-  "tags": ["http", "sre"], "schemaVersion": 39, "graphTooltip": 1,
-  "templating": { "list": [
-    { "name": "job", "type": "query", "query": "label_values(up, job)", "refresh": 1 }
-  ]},
-  "panels": [
-    { "id": 1, "type": "stat", "title": "Availability",
-      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
-      "targets": [{ "expr": "avg(up{job=\"$job\"})", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "percentunit",
-        "thresholds": { "steps": [{"color":"red","value":null},{"color":"green","value":0.99}] }}}},
-    { "id": 2, "type": "timeseries", "title": "Request Rate",
-      "gridPos": { "x": 6, "y": 0, "w": 18, "h": 8 },
-      "targets": [{ "expr": "sum by (status) (rate(http_requests_total{job=\"$job\"}[$__rate_interval]))",
-        "legendFormat": "{{status}}", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "reqps" } }},
-    { "id": 3, "type": "heatmap", "title": "Latency Distribution",
-      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
-      "targets": [{ "expr": "sum by (le) (rate(http_request_duration_seconds_bucket{job=\"$job\"}[$__rate_interval]))",
-        "format": "heatmap", "refId": "A" }]}
-  ]
-}
-```
-
-### Input: "Add Loki error log panel"
-
-```json
-{
-  "type": "logs", "title": "Application Errors",
-  "datasource": { "type": "loki", "uid": "loki-1" },
-  "targets": [{ "expr": "{app=\"$app\"} |= \"error\" | json | level=\"error\" | line_format \"{{.timestamp}} [{{.level}}] {{.message}}\"", "refId": "A" }],
-  "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true, "sortOrder": "Descending", "dedupStrategy": "none" },
-  "gridPos": { "x": 0, "y": 0, "w": 24, "h": 10 }
-}
-```
-
-### Input: "Alert on high memory"
-
-```yaml
-apiVersion: 1
-groups:
-  - orgId: 1
-    name: infra-memory
-    folder: Infrastructure
-    interval: 1m
-    rules:
-      - uid: high-memory
-        title: High Memory Usage
-        condition: B
-        data:
-          - refId: A
-            datasourceUid: prometheus
-            model:
-              expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100
-          - refId: B
-            datasourceUid: __expr__
-            model:
-              type: threshold
-              expression: A
-              conditions:
-                - evaluator: { type: gt, params: [85] }
-        for: 10m
-        labels: { severity: warning }
-        annotations:
-          summary: "Memory usage above 85% on {{ $labels.instance }}"
-```
-
----
-
-## Additional Resources
-
-### References
-
-In-depth guides in `references/`:
-
-| File | Topics |
-|------|--------|
-| `references/advanced-patterns.md` | Library panels, dashboard links & drilldowns, variable chaining, repeating panels/rows, mixed data sources, correlations, Grafana Scenes, plugin development, k6 integration, SLO/business/capacity dashboards |
-| `references/troubleshooting.md` | Slow loading, query timeouts, data source errors, variable performance, alerting issues, notifications, provisioning conflicts, permissions, LDAP/OAuth, rendering, time zones, missing data, reverse proxy, upgrades |
-| `references/promql-logql-guide.md` | PromQL deep dive (vectors, aggregation, rate/irate, histogram_quantile, recording rules, subqueries), LogQL (selectors, filters, parsers, metrics from logs, pattern matching), TraceQL, SQL macros, Flux |
-
-### Scripts
-
-Executable utilities in `scripts/`:
-
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| `scripts/grafana-init.sh` | Local Grafana + Docker setup with provisioned data sources | `./grafana-init.sh [prometheus\|loki\|postgres\|all]` |
-| `scripts/dashboard-export.sh` | Export all dashboards as JSON organized by folder | `./dashboard-export.sh <URL> <API_KEY> [OUTPUT_DIR]` |
-| `scripts/alert-rules-sync.sh` | Export/import/sync alert rules between instances | `./alert-rules-sync.sh sync <SRC_URL> <SRC_KEY> <TGT_URL> <TGT_KEY>` |
-
-### Assets
-
-Templates and configs in `assets/`:
-
-| File | Description |
-|------|-------------|
-| `assets/docker-compose.yml` | Full LGTM stack (Grafana, Prometheus, Loki, Tempo) with node-exporter |
-| `assets/dashboard-template.json` | Production dashboard with golden signals, variables, annotations, logs panel |
-| `assets/provisioning/datasources.yml` | Prometheus + Loki + Tempo with exemplars, derived fields, trace-to-logs |
-| `assets/provisioning/dashboards.yml` | File-based dashboard provisioning config |
-| `assets/alert-rule-template.json` | Unified alerting: 3 alert rules, contact point, notification policy, mute timing |
-
-<!-- tested: pass -->
