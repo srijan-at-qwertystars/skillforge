@@ -1,0 +1,65 @@
+# ci-workflow.template.yml
+# GitHub Actions workflow for Biome linting and formatting checks.
+# Copy to .github/workflows/biome.yml in your project.
+#
+# Features:
+#   - Runs biome ci on push and PR
+#   - GitHub annotations on lint/format issues
+#   - Optional: diff-only mode for large repos
+#   - Optional: caching for faster runs
+
+name: Code Quality
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel in-progress runs on the same branch/PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  biome:
+    name: Biome Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Option A: Use setup-biome action (no npm install needed)
+      - name: Setup Biome
+        uses: biomejs/setup-biome@v2
+        with:
+          version: latest  # Or pin: "2.2.7"
+
+      # Option B: Use project's Biome via npm (uncomment below, comment Option A)
+      # - name: Setup Node.js
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: 22
+      #     cache: npm
+      #
+      # - name: Install dependencies
+      #   run: npm ci
+
+      # --- Full check (all files) ---
+      - name: Run Biome CI
+        run: biome ci --reporter=github .
+        # For npm-installed Biome, use: npx biome ci --reporter=github .
+
+      # --- Alternative: Diff-only check (faster for large repos) ---
+      # - name: Run Biome CI (changed files only)
+      #   if: github.event_name == 'pull_request'
+      #   run: biome ci --changed --since=origin/${{ github.base_ref }} --reporter=github .
+
+      # --- Alternative: Separate lint and format steps ---
+      # - name: Lint
+      #   run: biome lint --reporter=github .
+      #
+      # - name: Format check
+      #   run: biome format .

@@ -1,0 +1,119 @@
+# Grafana Provisioning Configuration Templates
+#
+# Copy and customize for your environment.
+# Place datasources YAML in: /etc/grafana/provisioning/datasources/
+# Place dashboards YAML in:  /etc/grafana/provisioning/dashboards/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# DATASOURCES
+# File: provisioning/datasources/datasources.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: 1
+
+# Remove datasources before applying (useful for renames)
+deleteDatasources: []
+  # - name: Old Datasource
+  #   orgId: 1
+
+datasources:
+  # ── Prometheus ────────────────────────────────────────────────────────────
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus-main
+    access: proxy                         # proxy = via Grafana backend (recommended)
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false                       # Prevent UI edits to provisioned datasource
+    orgId: 1
+    version: 1
+    jsonData:
+      timeInterval: "15s"                 # Default scrape interval for $__rate_interval
+      httpMethod: POST                    # POST avoids URL length limits for large queries
+      exemplarTraceIdDestinations:
+        - name: traceID
+          datasourceUid: tempo-main
+      incrementalQuerying: true           # Enable incremental queries for better performance
+      incrementalQueryOverlapWindow: "10m"
+
+  # ── Loki ──────────────────────────────────────────────────────────────────
+  - name: Loki
+    type: loki
+    uid: loki-main
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    orgId: 1
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: TraceID                   # Extracted field linking logs to traces
+          matcherRegex: "traceID=(\\w+)"
+          url: "$${__value.raw}"
+          datasourceUid: tempo-main
+          urlDisplayLabel: "View Trace"
+
+  # ── Tempo (Traces) ────────────────────────────────────────────────────────
+  # - name: Tempo
+  #   type: tempo
+  #   uid: tempo-main
+  #   access: proxy
+  #   url: http://tempo:3200
+  #   editable: false
+  #   jsonData:
+  #     tracesToLogsV2:
+  #       datasourceUid: loki-main
+  #       filterByTraceID: true
+  #     tracesToMetrics:
+  #       datasourceUid: prometheus-main
+  #     nodeGraph:
+  #       enabled: true
+  #     serviceMap:
+  #       datasourceUid: prometheus-main
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  # - name: PostgreSQL
+  #   type: postgres
+  #   uid: postgres-main
+  #   access: proxy
+  #   url: postgres:5432
+  #   editable: false
+  #   jsonData:
+  #     database: mydb
+  #     sslmode: disable
+  #     maxOpenConns: 10
+  #     connMaxLifetime: 14400
+  #   secureJsonData:
+  #     password: "${PG_PASSWORD}"
+
+---
+# ─────────────────────────────────────────────────────────────────────────────
+# DASHBOARD PROVIDERS
+# File: provisioning/dashboards/default.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: 1
+
+providers:
+  # Provider for file-based dashboards
+  - name: default
+    orgId: 1
+    folder: ""                            # Root folder (or specify e.g., "Production")
+    folderUid: ""                         # Explicit folder UID (optional)
+    type: file
+    disableDeletion: false                # Set true to prevent deleting provisioned dashboards
+    updateIntervalSeconds: 30             # How often to scan for changes
+    allowUiUpdates: false                 # false = source files are source of truth
+    options:
+      path: /var/lib/grafana/dashboards   # Path inside the container
+      foldersFromFilesStructure: true     # Subdirectories become Grafana folders
+
+  # Additional provider for team-specific dashboards
+  # - name: team-dashboards
+  #   orgId: 1
+  #   folder: "Team"
+  #   type: file
+  #   disableDeletion: true
+  #   updateIntervalSeconds: 60
+  #   allowUiUpdates: true                # Teams can edit in UI
+  #   options:
+  #     path: /var/lib/grafana/team-dashboards
+  #     foldersFromFilesStructure: false

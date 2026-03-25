@@ -1,0 +1,233 @@
+// biome.strict.template.jsonc
+// Strict Biome configuration for TypeScript projects.
+// Enables all recommended rules plus additional strict rules.
+// Copy to your project root as biome.json or biome.jsonc.
+{
+  "$schema": "https://biomejs.dev/schemas/2.2.7/schema.json",
+
+  // --- File Scope ---
+  "files": {
+    "ignore": [
+      "dist",
+      "build",
+      "coverage",
+      "node_modules",
+      "**/*.min.js",
+      "**/*.bundle.js",
+      "**/*.generated.ts"
+    ],
+    "maxSize": 1048576
+  },
+
+  // --- VCS Integration ---
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "defaultBranch": "main"
+  },
+
+  // --- Global Formatter ---
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+
+  // --- Linter (Strict) ---
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+
+      // Suspicious — catch bugs and anti-patterns
+      "suspicious": {
+        "noExplicitAny": "error",
+        "noConsole": {
+          "level": "warn",
+          "options": { "allow": ["error", "warn"] }
+        },
+        "noDoubleEquals": "error",
+        "noAssignInExpressions": "error",
+        "noConfusingVoidType": "error",
+        "noEmptyInterface": "error",
+        "noMisleadingInstantiator": "error",
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "lodash": "Use lodash-es or native alternatives for tree-shaking",
+              "moment": "Use date-fns or the Temporal API instead"
+            }
+          }
+        }
+      },
+
+      // Correctness — prevent definite errors
+      "correctness": {
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error",
+        "noUnusedPrivateClassMembers": "error",
+        "noUndeclaredVariables": "error",
+        "noConstAssign": "error",
+        "noSwitchDeclarations": "error",
+        "useExhaustiveDependencies": "warn"
+      },
+
+      // Style — enforce consistency
+      "style": {
+        "useConst": "error",
+        "noVar": "error",
+        "useTemplate": "error",
+        "useImportType": "error",
+        "useExportType": "error",
+        "useEnumInitializers": "error",
+        "useNodejsImportProtocol": "error",
+        "useSelfClosingElements": "error",
+        "useShorthandArrayType": "error",
+        "useShorthandAssign": "error",
+        "useCollapsedElseIf": "error",
+        "useSingleVarDeclarator": "error",
+        "useForOf": "warn",
+        "useFilenamingConvention": {
+          "level": "warn",
+          "options": {
+            "requireAscii": true,
+            "filenameCases": ["camelCase", "PascalCase", "kebab-case"]
+          }
+        },
+        "useNamingConvention": {
+          "level": "warn",
+          "options": {
+            "conventions": [
+              { "selector": { "kind": "variable" }, "formats": ["camelCase", "CONSTANT_CASE", "PascalCase"] },
+              { "selector": { "kind": "function" }, "formats": ["camelCase", "PascalCase"] },
+              { "selector": { "kind": "typeLike" }, "formats": ["PascalCase"] },
+              { "selector": { "kind": "enumMember" }, "formats": ["PascalCase", "CONSTANT_CASE"] }
+            ]
+          }
+        }
+      },
+
+      // Complexity — keep code simple
+      "complexity": {
+        "noForEach": "warn",
+        "noExtraBooleanCast": "error",
+        "noUselessCatch": "error",
+        "noUselessConstructor": "error",
+        "noUselessEmptyExport": "error",
+        "noUselessFragments": "error",
+        "noUselessRename": "error",
+        "noUselessTernary": "error",
+        "noUselessTypeConstraint": "error",
+        "useFlatMap": "error",
+        "useOptionalChain": "error",
+        "useLiteralKeys": "error"
+      },
+
+      // Performance
+      "performance": {
+        "noAccumulatingSpread": "error",
+        "noBarrelFile": "warn",
+        "noDelete": "warn",
+        "noReExportAll": "warn"
+      },
+
+      // Security
+      "security": {
+        "noGlobalEval": "error",
+        "noDangerouslySetInnerHtml": "error"
+      },
+
+      // Nursery (opt-in experimental rules)
+      "nursery": {
+        "noCommonJs": "warn",
+        "noEnum": "warn"
+      }
+    }
+  },
+
+  // --- Assist ---
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": {
+          "level": "on",
+          "options": {
+            "groups": [
+              ":NODE:",
+              ":PACKAGE:",
+              ":BLANK_LINE:",
+              ["./**", "../**"]
+            ]
+          }
+        },
+        "useSortedKeys": "on"
+      }
+    }
+  },
+
+  // --- JavaScript/TypeScript Formatter ---
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always",
+      "bracketSpacing": true,
+      "bracketSameLine": false,
+      "quoteProperties": "asNeeded"
+    }
+  },
+
+  // --- JSON ---
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  },
+
+  // --- CSS ---
+  "css": {
+    "formatter": { "enabled": true, "quoteStyle": "double" },
+    "linter": { "enabled": true }
+  },
+
+  // --- Per-file overrides ---
+  "overrides": [
+    // Relax rules in test files
+    {
+      "include": ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/__tests__/**"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noExplicitAny": "off", "noConsole": "off" },
+          "complexity": { "noForEach": "off" },
+          "style": { "useNamingConvention": "off" }
+        }
+      }
+    },
+    // Allow default exports in config files
+    {
+      "include": ["*.config.ts", "*.config.js", "*.config.mjs", "*.config.cjs"],
+      "linter": {
+        "rules": {
+          "style": { "noDefaultExport": "off" }
+        }
+      }
+    },
+    // Declaration files
+    {
+      "include": ["**/*.d.ts"],
+      "linter": {
+        "rules": {
+          "suspicious": { "noExplicitAny": "off" },
+          "style": { "useNamingConvention": "off" }
+        }
+      }
+    }
+  ]
+}

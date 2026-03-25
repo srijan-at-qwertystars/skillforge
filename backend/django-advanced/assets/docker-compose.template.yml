@@ -1,0 +1,164 @@
+# Django + PostgreSQL + Redis + Celery Development Environment
+#
+# Usage:
+#   cp .env.example .env          # configure environment variables
+#   docker compose up -d          # start all services
+#   docker compose exec web python manage.py migrate
+#   docker compose exec web python manage.py createsuperuser
+#   docker compose logs -f web    # follow web logs
+#
+# Services:
+#   web      — Django app (Gunicorn, port 8000)
+#   db       — PostgreSQL 16 (port 5432)
+#   redis    — Redis 7 (port 6379)
+#   celery   — Celery worker
+#   beat     — Celery Beat scheduler
+#   flower   — Celery monitoring UI (port 5555)
+#
+# Volumes:
+#   pgdata   — PostgreSQL data persistence
+#   static   — Collected static files
+#   media    — User-uploaded media files
+
+services:
+
+  # --- Django Web Application ---
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn config.wsgi:application
+               --bind 0.0.0.0:8000
+               --workers 3
+               --timeout 120
+               --access-logfile -
+               --error-logfile -"
+    env_file: .env
+    environment:
+      - DJANGO_ENV=production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - static:/app/staticfiles
+      - media:/app/media
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # --- PostgreSQL Database ---
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-django_app}
+      POSTGRES_USER: ${DB_USER:-django}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-django_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-django} -d ${DB_NAME:-django_app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Performance tuning for development
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c effective_cache_size=768MB
+        -c work_mem=16MB
+        -c maintenance_work_mem=128MB
+        -c max_connections=100
+        -c log_min_duration_statement=200
+
+  # --- Redis (Cache + Celery Broker) ---
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  # --- Celery Worker ---
+  celery:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      celery -A config worker
+        --loglevel=info
+        --concurrency=2
+        --max-tasks-per-child=1000
+        -Q default,high_priority
+    env_file: .env
+    environment:
+      - DJANGO_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Celery Beat (Periodic Tasks) ---
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      celery -A config beat
+        --loglevel=info
+        --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file: .env
+    environment:
+      - DJANGO_ENV=production
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Flower (Celery Monitoring) — optional, comment out if not needed ---
+  flower:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A config flower --port=5555
+    env_file: .env
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+    driver: local
+  static:
+    driver: local
+  media:
+    driver: local
+  redis_data:
+    driver: local

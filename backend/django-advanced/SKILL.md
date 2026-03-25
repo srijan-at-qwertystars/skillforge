@@ -465,3 +465,30 @@ class Migration(migrations.Migration):
     dependencies = [("myapp", "0005_add_slug")]
     operations = [migrations.RunPython(populate_slug, migrations.RunPython.noop)]
 ```
+
+---
+
+## Supplementary Resources
+
+### Reference Documentation (`references/`)
+
+| File | Topics Covered |
+|---|---|
+| [`advanced-patterns.md`](references/advanced-patterns.md) | Custom managers/querysets, multi-DB routing, transactions (atomic/savepoints/on_commit), middleware patterns, signals, forms, admin customization, template tags/filters, context processors, file storage, auth backends |
+| [`troubleshooting.md`](references/troubleshooting.md) | N+1 queries & debug-toolbar, slow migrations, circular imports, migration conflicts, memory leaks, CSRF issues, static files in production, connection pooling, Celery issues, timezone pitfalls |
+| [`api-reference.md`](references/api-reference.md) | ORM QuerySet methods, field lookups, aggregation functions, expressions, model fields, settings reference, URL routing, middleware hooks, signals, management commands, testing utilities, DRF serializer fields |
+
+### Scripts (`scripts/`)
+
+| Script | Description |
+|---|---|
+| [`init-django.sh`](scripts/init-django.sh) | Scaffold project with settings split, env management, optional DRF/Celery/Docker (`--with-drf --with-celery --with-docker`) |
+| [`manage-ops.sh`](scripts/manage-ops.sh) | Wrapper for common operations: migrate, makemigrations, superuser, collectstatic, shell, test, check, dumpdata, loaddata, squash |
+
+### Templates & Assets (`assets/`)
+
+| File | Description |
+|---|---|
+| [`settings-base.template.py`](assets/settings-base.template.py) | Production-ready base settings with django-environ, security headers, logging, DRF/Celery config blocks |
+| [`docker-compose.template.yml`](assets/docker-compose.template.yml) | Django + PostgreSQL 16 + Redis 7 + Celery worker/beat + Flower monitoring with healthchecks |
+| [`conftest.template.py`](assets/conftest.template.py) | pytest-django fixtures: user/admin/staff, API clients, token auth, factory stubs, file uploads, email outbox, Celery eager mode |

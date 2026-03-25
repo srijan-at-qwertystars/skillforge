@@ -101,37 +101,14 @@ Place `biome.json` or `biome.jsonc` at the project root.
 
 ### Rule Severity
 
+Rules accept `"error"` | `"warn"` | `"off"`, or object form with options:
+
 ```jsonc
-{
-  "linter": {
-    "rules": {
-      "recommended": true,
-      "style": {
-        "useConst": "error",            // simple: "error" | "warn" | "off"
-        "noDefaultExport": "off"
-      },
-      "suspicious": {
-        "noConsole": {                   // advanced: with options
-          "level": "warn",
-          "options": { "allow": ["error", "warn", "info"] }
-        }
-      },
-      "correctness": {
-        "useExhaustiveDependencies": {
-          "level": "warn",
-          "options": {
-            "hooks": [
-              { "name": "useMyEffect", "closureIndex": 0, "dependenciesIndex": 1 }
-            ]
-          }
-        }
-      }
-    }
-  }
-}
+"style": { "useConst": "error" },
+"suspicious": { "noConsole": { "level": "warn", "options": { "allow": ["error", "warn"] } } }
 ```
 
-Set `"recommended": true` for curated defaults, then override individual rules. Use `"all": true` for strict mode (all stable rules).
+Set `"recommended": true` for curated defaults, then override individual rules. Use `"all": true` for strict mode. See [`references/api-reference.md`](references/api-reference.md) for all rules.
 
 ## CLI Commands
 
@@ -442,7 +419,9 @@ Assist provides non-lint transforms (e.g., sort object keys). Import organizing 
 
 ## Common Project Templates
 
-### Strict TypeScript
+For full ready-to-use templates, see [`assets/`](assets/). Quick examples:
+
+**Strict TypeScript** — use [`assets/biome.strict.template.jsonc`](assets/biome.strict.template.jsonc) or inline:
 
 ```jsonc
 {
@@ -450,23 +429,17 @@ Assist provides non-lint transforms (e.g., sort object keys). Import organizing 
   "linter": {
     "rules": {
       "recommended": true,
-      "suspicious": {
-        "noExplicitAny": "error",
-        "noConsole": { "level": "warn", "options": { "allow": ["error", "warn"] } }
-      },
+      "suspicious": { "noExplicitAny": "error" },
       "style": { "useConst": "error", "noVar": "error" },
-      "performance": { "noAccumulatingSpread": "error" },
-      "complexity": { "noForEach": "warn" }
+      "performance": { "noAccumulatingSpread": "error" }
     }
   },
   "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
-  "javascript": {
-    "formatter": { "quoteStyle": "single", "semicolons": "always", "trailingCommas": "all" }
-  }
+  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "always" } }
 }
 ```
 
-### React / Next.js
+**React / Next.js** — use [`assets/biome.react.template.jsonc`](assets/biome.react.template.jsonc) or inline:
 
 ```jsonc
 {
@@ -475,17 +448,11 @@ Assist provides non-lint transforms (e.g., sort object keys). Import organizing 
     "rules": {
       "recommended": true,
       "a11y": { "recommended": true },
-      "correctness": {
-        "useExhaustiveDependencies": "warn",
-        "useHookAtTopLevel": "error"
-      }
+      "correctness": { "useExhaustiveDependencies": "warn", "useHookAtTopLevel": "error" }
     }
   },
   "overrides": [
-    {
-      "include": ["app/**/page.tsx", "app/**/layout.tsx"],
-      "linter": { "rules": { "style": { "noDefaultExport": "off" } } }
-    }
+    { "include": ["app/**/page.tsx", "app/**/layout.tsx"], "linter": { "rules": { "style": { "noDefaultExport": "off" } } } }
   ]
 }
 ```
@@ -496,3 +463,30 @@ Assist provides non-lint transforms (e.g., sort object keys). Import organizing 
 - Single binary with no plugin resolution or JS runtime overhead.
 - Use `--changed` in CI for incremental checks on large repos.
 - `biome ci` is optimized for CI with minimal overhead and strict exit codes.
+
+---
+
+## Additional Resources
+
+### Reference Documentation
+
+| Document | Contents |
+|----------|----------|
+| [`references/advanced-patterns.md`](references/advanced-patterns.md) | Rule customization deep-dive, nursery rules, GritQL custom lint rules, per-file overrides, formatter philosophy, bundler integration (Vite/webpack/esbuild), pre-commit hooks, monorepo strategies, Biome Assist, import sorting/organize imports, domains (v2) |
+| [`references/troubleshooting.md`](references/troubleshooting.md) | Parse errors, config validation errors, conflicting rules, ESLint/Prettier migration issues, v1→v2 migration, CI/CD failures, editor integration (VS Code/JetBrains), performance tuning, rule suppression patterns, handling third-party/generated code |
+| [`references/api-reference.md`](references/api-reference.md) | Complete biome.json schema, all linter rule categories with individual rules (suspicious/correctness/style/complexity/a11y/performance/security/nursery), formatter options per language (JS/TS/JSON/CSS/GraphQL), CLI commands and flags, exit codes, reporters, ignore patterns |
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| [`scripts/init-biome.sh`](scripts/init-biome.sh) | Set up Biome in existing project — installs Biome, auto-migrates from ESLint/Prettier if detected, creates biome.json (`--strict` or `--react` modes), configures VS Code, adds npm scripts |
+| [`scripts/lint-check.sh`](scripts/lint-check.sh) | Run Biome checks with modes: `check`, `lint`, `format`, `fix`, `fix-all`, `ci`, `changed`, `staged` — outputs timing and summary |
+
+### Templates
+
+| Template | Use Case |
+|----------|----------|
+| [`assets/biome.strict.template.jsonc`](assets/biome.strict.template.jsonc) | Strict TypeScript config — all recommended + extra strict rules, naming conventions, import sorting, nursery rules |
+| [`assets/biome.react.template.jsonc`](assets/biome.react.template.jsonc) | React/Next.js config — a11y rules, hook validation, Next.js App Router overrides, Storybook support, import groups with React first |
+| [`assets/ci-workflow.template.yml`](assets/ci-workflow.template.yml) | GitHub Actions workflow — Biome CI with annotations, diff-only option, caching |

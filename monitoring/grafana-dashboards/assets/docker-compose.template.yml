@@ -1,0 +1,252 @@
+# Grafana + Prometheus + Loki + Node Exporter Monitoring Stack
+#
+# Usage:
+#   docker compose up -d                    # Start all services
+#   docker compose down                     # Stop all services
+#   docker compose down -v                  # Stop and remove volumes
+#   docker compose logs grafana --follow    # View Grafana logs
+#
+# Access:
+#   Grafana:    http://localhost:3000  (admin / admin)
+#   Prometheus: http://localhost:9090
+#
+# Customization:
+#   - Update prometheus.yml for additional scrape targets
+#   - Add dashboard JSON files to ./grafana/dashboards/
+#   - Modify datasource/dashboard provisioning in ./grafana/provisioning/
+
+services:
+  # ── Grafana ───────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana-oss:11.3.0
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/home.json
+      # Uncomment for embedding support:
+      # - GF_SECURITY_ALLOW_EMBEDDING=true
+      # - GF_AUTH_ANONYMOUS_ENABLED=true
+      # - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Prometheus ────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.54.0
+    container_name: prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"           # Enable /-/reload endpoint
+      - "--web.enable-admin-api"           # Enable admin API for snapshots
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Loki ──────────────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.2.0
+    container_name: loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - loki-data:/loki
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+    networks:
+      - monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Promtail (Log collector for Loki) ─────────────────────────────────────
+  promtail:
+    image: grafana/promtail:3.2.0
+    container_name: promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+    volumes:
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+
+  # ── Node Exporter ─────────────────────────────────────────────────────────
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - monitoring
+
+  # ── cAdvisor (Container metrics) ──────────────────────────────────────────
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    networks:
+      - monitoring
+
+volumes:
+  grafana-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  loki-data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SUPPORTING CONFIG FILES (create these alongside docker-compose.yml)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# prometheus/prometheus.yml:
+# ─────────────────────────
+# global:
+#   scrape_interval: 15s
+#   evaluation_interval: 15s
+#
+# rule_files:
+#   - /etc/prometheus/rules/*.yml
+#
+# scrape_configs:
+#   - job_name: prometheus
+#     static_configs:
+#       - targets: ["localhost:9090"]
+#
+#   - job_name: node-exporter
+#     static_configs:
+#       - targets: ["node-exporter:9100"]
+#
+#   - job_name: cadvisor
+#     static_configs:
+#       - targets: ["cadvisor:8080"]
+#
+#   - job_name: loki
+#     static_configs:
+#       - targets: ["loki:3100"]
+#
+#   - job_name: grafana
+#     static_configs:
+#       - targets: ["grafana:3000"]
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# loki/loki-config.yml:
+# ─────────────────────
+# auth_enabled: false
+# server:
+#   http_listen_port: 3100
+# common:
+#   ring:
+#     instance_addr: 127.0.0.1
+#     kvstore:
+#       store: inmemory
+#   replication_factor: 1
+#   path_prefix: /loki
+# schema_config:
+#   configs:
+#     - from: "2024-01-01"
+#       store: tsdb
+#       object_store: filesystem
+#       schema: v13
+#       index:
+#         prefix: index_
+#         period: 24h
+# storage_config:
+#   filesystem:
+#     directory: /loki/chunks
+# limits_config:
+#   reject_old_samples: true
+#   reject_old_samples_max_age: 168h
+#   max_query_series: 500
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# promtail/promtail-config.yml:
+# ─────────────────────────────
+# server:
+#   http_listen_port: 9080
+# positions:
+#   filename: /tmp/positions.yaml
+# clients:
+#   - url: http://loki:3100/loki/api/v1/push
+# scrape_configs:
+#   - job_name: system
+#     static_configs:
+#       - targets: ["localhost"]
+#         labels:
+#           job: varlogs
+#           __path__: /var/log/*.log
+#   - job_name: docker
+#     static_configs:
+#       - targets: ["localhost"]
+#         labels:
+#           job: docker
+#           __path__: /var/lib/docker/containers/**/*.log
+#     pipeline_stages:
+#       - docker: {}
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# grafana/provisioning/datasources/datasources.yaml:
+#   (See provisioning.template.yml in this directory)
+#
+# grafana/provisioning/dashboards/default.yaml:
+#   (See provisioning.template.yml in this directory)

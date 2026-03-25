@@ -258,7 +258,7 @@ Use `$var` for simple substitution, `${var}` mid-string, `${var:regex}` for rege
 
 ### Dashboard Provider (YAML)
 
-Place in `provisioning/dashboards/`:
+Place in `provisioning/dashboards/`. Set `foldersFromFilesStructure: true` to mirror subdirectory layout as Grafana folders. Set `allowUiUpdates: false` to enforce file-based source of truth.
 
 ```yaml
 apiVersion: 1
@@ -275,11 +275,9 @@ providers:
       foldersFromFilesStructure: true
 ```
 
-`foldersFromFilesStructure: true` mirrors subdirectory layout as Grafana folders.
-
 ### Datasource Provisioning
 
-Place in `provisioning/datasources/`:
+Place in `provisioning/datasources/`. Set explicit `uid` values to match panel references. Use `access: proxy` (routes through Grafana backend).
 
 ```yaml
 apiVersion: 1
@@ -298,34 +296,21 @@ datasources:
     uid: loki-main
     access: proxy
     url: http://loki:3100
-    jsonData:
-      derivedFields:
-        - name: TraceID
-          matcherRegex: "traceID=(\\w+)"
-          url: "$${__value.raw}"
-          datasourceUid: tempo-main
 ```
+
+For full provisioning schemas (datasource, alerting, contact points, notification policies) see `references/api-reference.md` and `assets/provisioning.template.yml`.
 
 ### Directory Layout
 
 ```
 grafana/
   provisioning/
-    dashboards/
-      default.yaml
-    datasources/
-      datasources.yaml
-    alerting/
-      rules.yaml
-      contact-points.yaml
-      policies.yaml
+    dashboards/default.yaml
+    datasources/datasources.yaml
+    alerting/{rules,contact-points,policies}.yaml
   dashboards/
-    infrastructure/
-      node-exporter.json
-      kubernetes.json
-    application/
-      api-overview.json
-      database.json
+    infrastructure/{node-exporter,kubernetes}.json
+    application/{api-overview,database}.json
 ```
 
 ## Alerting (Unified Alerting)
@@ -401,16 +386,7 @@ Route with `matchers` using label selectors. Set `continue: true` to evaluate si
 
 ## Grafana as Code (Grafonnet)
 
-### Grafonnet Jsonnet Library
-
-Install with jsonnet-bundler:
-
-```bash
-jb init
-jb install github.com/grafana/grafonnet/gen/grafonnet-latest@main
-```
-
-### Dashboard Example
+Install with jsonnet-bundler: `jb init && jb install github.com/grafana/grafonnet/gen/grafonnet-latest@main`
 
 ```jsonnet
 local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonnet';
@@ -418,10 +394,8 @@ local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonn
 g.dashboard.new('Service Overview')
 + g.dashboard.withUid('svc-overview')
 + g.dashboard.withTags(['production'])
-+ g.dashboard.withTimezone('browser')
 + g.dashboard.withRefresh('30s')
 + g.dashboard.time.withFrom('now-6h')
-+ g.dashboard.time.withTo('now')
 + g.dashboard.withVariables([
     g.dashboard.variable.query.new('namespace')
     + g.dashboard.variable.query.withDatasource('prometheus', 'prometheus-main')
@@ -441,56 +415,80 @@ g.dashboard.new('Service Overview')
 )
 ```
 
-Build: `jsonnet -J vendor/ dashboard.jsonnet > dashboard.json`
-
-### Terraform Integration
-
-```hcl
-terraform {
-  required_providers {
-    grafana  = { source = "grafana/grafana", version = "~> 3.0" }
-    jsonnet  = { source = "alxrem/jsonnet", version = "~> 2.4" }
-  }
-}
-provider "grafana" {
-  url  = "https://grafana.example.com"
-  auth = var.grafana_api_key
-}
-resource "grafana_folder" "production" { title = "Production" }
-data "jsonnet_file" "dashboard" {
-  source  = "${path.module}/dashboards/service.jsonnet"
-  ext_str = { namespace = "production" }
-}
-resource "grafana_dashboard" "service" {
-  folder      = grafana_folder.production.id
-  config_json = data.jsonnet_file.dashboard.rendered
-}
-```
+Build: `jsonnet -J vendor/ dashboard.jsonnet > dashboard.json`. For Terraform integration and full Grafonnet API reference, see `references/api-reference.md`.
 
 ## Best Practices
-
-### Dashboard Organization
 
 - One dashboard per service/domain. Avoid mega-dashboards with 30+ panels.
 - Use folders: `Infrastructure/`, `Application/`, `Business/`, `Alerts/`.
 - Tag consistently: environment, team, service. Use dashboard links for drill-downs.
-
-### Performance
-
 - Limit to 15-20 panels per dashboard; each fires a separate query.
 - Use `$__rate_interval` over hardcoded intervals. Set `instant: true` for stat/gauge/table.
-- Use `min_step` or `intervalMs` to prevent excessive data points.
 - Avoid unbounded regex like `{__name__=~".*"}`; always scope with at least one label.
-- Set `refresh` to 30s for ops dashboards, 5m+ for business dashboards.
+- Set `refresh` to 30s for ops, 5m+ for business dashboards.
+- Repeat panels across variable values: set `"repeat": "instance"`, `"repeatDirection": "h"`, `"maxPerRow": 4`. For rows: set `"repeat"` on `"type": "row"`.
+- Export: remove `id`, `version` before committing to Git. Keep `uid` stable.
+- Use folder-level permissions for team access. See `references/advanced-patterns.md` for organization strategies.
 
-### Repeating Panels & Rows
+## Reference Documents
 
-Repeat a panel across variable values: set `"repeat": "instance"`, `"repeatDirection": "h"`, `"maxPerRow": 4`. For row repeats: set `"repeat": "namespace"` on a row panel (`"type": "row"`). Use `"collapsed": true` on rows for large dashboards.
+### Advanced Patterns (`references/advanced-patterns.md`)
 
-### Export & Version Control
+Deep-dive into complex dashboard configurations:
+- **Complex PromQL**: Multi-window rate comparison, Apdex scores, SLO burn rates, subqueries, multi-quantile overlays
+- **Multi-datasource dashboards**: Mixed datasource panels, cross-source joins with transformations
+- **Variable chaining**: Deep chains (cluster→namespace→service→pod), formatting syntax, ad-hoc filters
+- **Row/panel repeating**: Repeat per variable, nested repeat, grid layout control
+- **Dynamic thresholds**: Absolute/percentage modes, threshold lines on time series
+- **Value mappings**: Value, range, regex, and special (null/NaN/bool) mappings
+- **Field overrides**: Matcher types, per-field styling, axis placement, stacking
+- **Link patterns**: Data links with field/value variables, dashboard-level links, drill-downs
+- **Embedded panels**: iframe embedding, public dashboards, required `grafana.ini` settings
+- **Grafana Scenes**: SDK for building dynamic plugin-based dashboards, Scenes vs standard dashboards
+- **Dashboard versioning**: Built-in history, Git-based workflows, JSON cleanup for VCS
+- **Organization strategies**: Folder hierarchy, naming conventions, tag strategy, linking patterns
+- **Transformations**: Merge, join, organize, filter, calculate, group, sort with chaining examples
 
-Export via Dashboard Settings → JSON Model. Remove `id`, `version` before committing to Git. Keep `uid` stable.
+### Troubleshooting (`references/troubleshooting.md`)
 
-### Permissions
+Systematic fixes organized by symptom:
+- **Slow dashboards**: Panel count limits, query optimization checklist, browser performance
+- **Missing data**: Diagnostic flowchart, format mismatches, stale variables, NaN handling
+- **Variable failures**: Empty dropdowns, chained variable quoting, multi-value regex matchers
+- **Provisioning errors**: File path/permission checks, UID collisions, `allowUiUpdates` behavior
+- **Panel rendering**: Wrong visualization type, Y-axis issues, legend config, null value handling
+- **Alerting problems**: Rules not firing, missing notifications, silence/mute checks, multi-dimensional alerts
+- **Data source connections**: Prometheus/Loki-specific errors, proxy vs direct, TLS configuration
+- **Permission issues**: Folder access, service account tokens, datasource permissions
+- **Version migration**: Grafana 9→10→11→12 breaking changes, migration checklist
+- **Diagnostics**: Query inspector, server metrics, database queries, Docker troubleshooting, profiling
 
-Use folder-level permissions for team access. Assign Viewer/Editor/Admin per folder. Use org roles for broad access, folder permissions for fine-grained control.
+### API Reference (`references/api-reference.md`)
+
+Complete schema and API documentation:
+- **Dashboard JSON model**: All top-level fields with types, full skeleton template
+- **Panel schema**: Common fields, gridPos, fieldConfig (defaults + overrides), panel-type options (timeseries, stat, table, gauge, logs)
+- **Target/query schema**: Prometheus target fields, Loki target, expression targets for alerts
+- **Templating schema**: Variable types (query, custom, textbox, constant, interval, datasource, adhoc), field reference, Prometheus query functions
+- **Annotation schema**: Datasource-backed annotations, built-in annotation config
+- **Provisioning YAML**: Dashboard provider schema, datasource schema, alert rule/contact point/notification policy schemas
+- **HTTP API**: Dashboard CRUD, folder management, datasource endpoints, alerting API, annotations, service accounts, search parameters
+- **Grafonnet library**: Installation, dashboard/panel/query/variable functions, grid layout utility, build commands
+
+## Scripts
+
+### `scripts/setup-grafana.sh`
+
+Starts Grafana via Docker with provisioning directories and initial datasources pre-configured. Supports `--port`, `--prometheus-url`, `--loki-url`, `--admin-password`, `--grafana-version` flags.
+
+### `scripts/export-dashboards.sh`
+
+Exports all dashboards from a running Grafana instance to JSON files organized by folder. Supports `--token`, `--strip-ids` (for VCS), and `--folder` filtering.
+
+## Asset Templates
+
+| Template | Description |
+|----------|-------------|
+| `assets/dashboard.template.json` | Production dashboard with stat panels (uptime, request rate, error rate, p99, instances, memory), time series (traffic, latency percentiles), table (top endpoints), and logs panel. Includes datasource variable, chained job/instance variables, annotations, and dashboard links. |
+| `assets/provisioning.template.yml` | Complete provisioning config with Prometheus, Loki, and Tempo datasources plus dashboard file provider. Includes comments for PostgreSQL and team-specific provider configurations. |
+| `assets/docker-compose.template.yml` | Full monitoring stack: Grafana + Prometheus + Loki + Promtail + Node Exporter + cAdvisor. Includes healthchecks, named volumes, supporting config file templates in comments. |

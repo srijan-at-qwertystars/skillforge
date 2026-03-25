@@ -1,0 +1,229 @@
+// biome.react.template.jsonc
+// Biome configuration optimized for React and Next.js projects.
+// Includes a11y rules, hook validation, and Next.js-specific overrides.
+// Copy to your project root as biome.json or biome.jsonc.
+{
+  "$schema": "https://biomejs.dev/schemas/2.2.7/schema.json",
+
+  // --- File Scope ---
+  "files": {
+    "ignore": [
+      "dist",
+      "build",
+      ".next",
+      "out",
+      "coverage",
+      "node_modules",
+      "public",
+      "**/*.min.js"
+    ]
+  },
+
+  // --- VCS Integration ---
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true,
+    "defaultBranch": "main"
+  },
+
+  // --- Global Formatter ---
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+
+  // --- Linter ---
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+
+      // Accessibility — critical for React apps
+      "a11y": {
+        "recommended": true,
+        "useAltText": "error",
+        "useAnchorContent": "error",
+        "useButtonType": "error",
+        "useHtmlLang": "error",
+        "useIframeTitle": "error",
+        "useKeyWithClickEvents": "warn",
+        "useKeyWithMouseEvents": "warn",
+        "useMediaCaption": "warn",
+        "useValidAnchor": "error",
+        "noBlankTarget": "error",
+        "noAriaHiddenOnFocusable": "error"
+      },
+
+      // Correctness — React-specific
+      "correctness": {
+        "useExhaustiveDependencies": "warn",
+        "useHookAtTopLevel": "error",
+        "noUnusedImports": "error",
+        "noUnusedVariables": "warn"
+      },
+
+      // Suspicious
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noConsole": {
+          "level": "warn",
+          "options": { "allow": ["error", "warn", "info"] }
+        },
+        "noDoubleEquals": "error",
+        "noCommentText": "error"
+      },
+
+      // Style
+      "style": {
+        "useConst": "error",
+        "noVar": "error",
+        "useImportType": "error",
+        "useExportType": "error",
+        "useSelfClosingElements": "error",
+        "useTemplate": "warn",
+        "useFragmentSyntax": "warn"
+      },
+
+      // Complexity
+      "complexity": {
+        "noUselessFragments": "error",
+        "useOptionalChain": "error",
+        "useFlatMap": "error",
+        "noExtraBooleanCast": "error"
+      },
+
+      // Performance
+      "performance": {
+        "noAccumulatingSpread": "error"
+      },
+
+      // Security — critical for web apps
+      "security": {
+        "noDangerouslySetInnerHtml": "error",
+        "noDangerouslySetInnerHtmlWithChildren": "error",
+        "noGlobalEval": "error"
+      }
+    }
+  },
+
+  // --- Assist ---
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": {
+          "level": "on",
+          "options": {
+            "groups": [
+              ":NODE:",
+              // React always first in packages
+              ["react", "react-dom", "react-dom/**"],
+              ":PACKAGE:",
+              ":BLANK_LINE:",
+              // Project aliases (adjust to match your tsconfig paths)
+              ["@/**", "@app/**", "@components/**", "@hooks/**", "@lib/**", "@utils/**"],
+              ":BLANK_LINE:",
+              ["./**", "../**"]
+            ]
+          }
+        }
+      }
+    }
+  },
+
+  // --- JavaScript/TypeScript Formatter ---
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "jsxQuoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always",
+      "bracketSpacing": true,
+      "bracketSameLine": false
+    }
+  },
+
+  // --- JSON ---
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  },
+
+  // --- CSS ---
+  "css": {
+    "formatter": { "enabled": true, "quoteStyle": "double" },
+    "linter": { "enabled": true }
+  },
+
+  // --- Per-file overrides ---
+  "overrides": [
+    // Next.js App Router — must use default exports
+    {
+      "include": [
+        "app/**/page.tsx",
+        "app/**/layout.tsx",
+        "app/**/loading.tsx",
+        "app/**/error.tsx",
+        "app/**/not-found.tsx",
+        "app/**/template.tsx",
+        "app/**/default.tsx",
+        "pages/**/*.tsx",
+        "pages/**/*.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": { "noDefaultExport": "off" }
+        }
+      }
+    },
+    // Config files — relaxed rules
+    {
+      "include": [
+        "*.config.ts",
+        "*.config.js",
+        "*.config.mjs",
+        "*.config.cjs",
+        "next.config.*",
+        "tailwind.config.*",
+        "postcss.config.*"
+      ],
+      "linter": {
+        "rules": {
+          "style": { "noDefaultExport": "off" }
+        }
+      }
+    },
+    // Test files
+    {
+      "include": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        "**/__tests__/**",
+        "**/__mocks__/**"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": { "noExplicitAny": "off", "noConsole": "off" },
+          "complexity": { "noForEach": "off" }
+        }
+      }
+    },
+    // Storybook stories — allow default exports
+    {
+      "include": ["**/*.stories.tsx", "**/*.stories.ts"],
+      "linter": {
+        "rules": {
+          "style": { "noDefaultExport": "off" }
+        }
+      }
+    }
+  ]
+}
