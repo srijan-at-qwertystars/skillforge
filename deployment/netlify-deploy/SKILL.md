@@ -446,3 +446,27 @@ export const config = { path: "/" };
 ### CI/CD with GitHub
 
 Netlify auto-deploys when linked to a Git provider. PRs create deploy previews with unique URLs. Use `ignore` to skip unnecessary builds. GitHub commit status checks show deploy state on PRs.
+
+## Additional Resources
+
+### References
+
+- **`references/advanced-patterns.md`** — Edge Functions patterns (geolocation, auth, personalization, rate limiting), scheduled/background function patterns, build plugin development (lifecycle hooks, utilities, publishing), deploy notifications/hooks, Netlify Large Media, Netlify Connect data layer, split testing strategies (branch-based, edge A/B, feature flags), enterprise features (SSO, audit logs, log drains).
+
+- **`references/troubleshooting.md`** — Build failures (OOM, timeouts, Node.js versions, dependency issues), function limits and optimization, deploy preview debugging, redirect/rewrite conflicts and processing order, form detection issues for JS frameworks, Identity/GoTrue errors, large site deployment, CLI connection problems, DNS and SSL/TLS certificate troubleshooting.
+
+- **`references/api-reference.md`** — Netlify REST API (sites, deploys, functions, forms, files, DNS), authentication (PAT, OAuth2), deploy hooks and build hooks, webhook event payloads, Split Testing API, Identity/GoTrue API (signup, login, token refresh, admin endpoints), comprehensive CLI command reference.
+
+### Scripts
+
+- **`scripts/setup-netlify.sh`** — Project initializer. Auto-detects framework (Next.js, Gatsby, Astro, Hugo, SvelteKit, etc.), generates optimized `netlify.toml`, creates functions directory with example, generates `_redirects`, `.env.example`, and updates `.gitignore`. Usage: `./scripts/setup-netlify.sh [--framework <name>]`
+
+- **`scripts/netlify-functions-scaffold.sh`** — Function scaffolding. Creates serverless, edge, scheduled, or background function boilerplate in TypeScript or JavaScript with CORS, error handling, and types. Usage: `./scripts/netlify-functions-scaffold.sh <type> <name> [--js] [--path "/route/*"] [--schedule "0 * * * *"]`
+
+### Assets (Templates)
+
+- **`assets/netlify.toml`** — Comprehensive `netlify.toml` template covering all contexts (production, deploy-preview, branch-deploy), redirects, security headers, cache headers, build processing, and plugin configuration.
+
+- **`assets/serverless-function.ts`** — Production-ready TypeScript serverless function template with CORS, JSON helpers, auth guards, error handling, and typed request/response patterns.
+
+- **`assets/github-actions-netlify.yml`** — GitHub Actions workflow for Netlify: production deploys on push, preview deploys on PRs with comment URL, and optional Lighthouse auditing.

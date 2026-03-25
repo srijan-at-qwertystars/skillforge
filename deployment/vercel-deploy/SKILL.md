@@ -432,47 +432,20 @@ Analytics: page views, custom events. Speed Insights: Core Web Vitals (LCP, FID,
 - PR comments with preview URLs are automatic.
 - Use **Ignored Build Step** to skip builds for irrelevant changes.
 
-### GitHub Actions (Custom Pipeline)
-```yaml
-# .github/workflows/deploy.yml
-name: Deploy to Vercel
-on:
-  push:
-    branches: [main]
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: '22' }
-      - run: npm ci
-      - run: npm run test
-      - run: npm run build
-      - uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-```
+### GitHub Actions / GitLab CI
+Use the Vercel CLI in CI for full control. See `assets/github-actions-vercel.yml` for a complete workflow.
 
-### Required Secrets for CI
+Required secrets (`vercel link` → `.vercel/project.json`):
+- `VERCEL_TOKEN` — from vercel.com/account/tokens
+- `VERCEL_ORG_ID` — `orgId` from project.json
+- `VERCEL_PROJECT_ID` — `projectId` from project.json
+
+CI deploy pattern (works in any CI):
 ```bash
-# Get these values after running `vercel link`
-cat .vercel/project.json  # orgId, projectId
-# Generate token at vercel.com/account/tokens
-```
-
-### GitLab Integration
-Same pattern — use Vercel CLI in `.gitlab-ci.yml`:
-```yaml
-deploy:
-  script:
-    - npm i -g vercel
-    - vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-    - vercel build --prod --token=$VERCEL_TOKEN
-    - vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+npm i -g vercel
+vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+vercel build --prod --token=$VERCEL_TOKEN
+vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
 ```
 
 ## Troubleshooting Quick Reference
@@ -487,3 +460,25 @@ deploy:
 | Monorepo builds everything | Add `npx turbo-ignore` as Ignored Build Step |
 | Function timeout | Increase `maxDuration` in vercel.json (up to plan limit) |
 | Domain not resolving | Verify DNS records; allow up to 48h for propagation |
+
+See `references/troubleshooting.md` for detailed diagnostics and solutions per framework.
+
+## References
+
+Detailed guides in `references/`:
+- **`advanced-patterns.md`** — Edge middleware (auth, geo-routing, A/B testing), ISR/SSR/SSG strategies per framework, cron jobs, image optimization, monorepo build optimization, multi-region deployment, org/team management, Vercel Firewall/DDoS protection.
+- **`troubleshooting.md`** — Build failures by framework (Next.js, SvelteKit, Nuxt, Astro, Vite), function timeouts and memory, cold start optimization, env var issues, preview deployments, DNS propagation, CORS, monorepo root directory, stuck deployments.
+- **`api-reference.md`** — Vercel REST API (deployments, projects, domains, env vars, teams), CLI commands reference, deploy hooks and webhooks, GitHub/GitLab CI integration, `@vercel/sdk` for programmatic deployments, Edge Config API, storage APIs (KV, Blob, Postgres).
+
+## Scripts
+
+Executable helpers in `scripts/`:
+- **`setup-vercel.sh`** — Detects framework, creates `vercel.json` with optimal settings, generates `.env.example` template, configures monorepo if needed. Usage: `./scripts/setup-vercel.sh [--framework nextjs] [--monorepo] [--dry-run]`
+- **`vercel-env-sync.sh`** — Pull/push/diff/sync environment variables between local and Vercel. Usage: `./scripts/vercel-env-sync.sh <pull|push|diff|sync|list> [--env production] [--file .env.local]`
+
+## Assets
+
+Templates and config files in `assets/`:
+- **`vercel.json`** — Comprehensive annotated template covering all `vercel.json` options (functions, crons, redirects, rewrites, headers, regions, images).
+- **`middleware.ts`** — Edge middleware template with toggleable patterns: auth, geo-routing, A/B testing, rate limiting, bot protection, maintenance mode, multi-tenant routing.
+- **`github-actions-vercel.yml`** — Full GitHub Actions workflow: lint → build → deploy (preview/production), PR comment with preview URL, smoke test, optional Slack notification.

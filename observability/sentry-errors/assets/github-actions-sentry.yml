@@ -1,0 +1,216 @@
+# github-actions-sentry.yml — GitHub Actions workflow for Sentry releases & source maps
+#
+# Usage:
+#   1. Copy to .github/workflows/sentry-release.yml in your repo
+#   2. Set repository secrets: SENTRY_AUTH_TOKEN
+#   3. Update SENTRY_ORG and SENTRY_PROJECT values below
+#   4. Adjust build commands and paths for your project
+#
+# Triggers on push to main branch and on release tags (v*).
+# Creates a Sentry release, uploads source maps, associates commits,
+# and marks a deploy.
+
+name: Sentry Release & Source Maps
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+# Prevent concurrent releases
+concurrency:
+  group: sentry-release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SENTRY_ORG: my-org           # Replace with your Sentry org slug
+  SENTRY_PROJECT: my-project   # Replace with your Sentry project slug
+  NODE_VERSION: "20"
+
+jobs:
+  build-and-release:
+    name: Build & Sentry Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for commit association
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="${{ github.sha }}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Release version: ${VERSION}"
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            ENV="production"
+          else
+            ENV="staging"
+          fi
+          echo "environment=${ENV}" >> "$GITHUB_OUTPUT"
+          echo "Environment: ${ENV}"
+
+      - name: Build with source maps
+        run: npm run build
+        env:
+          SENTRY_RELEASE: ${{ steps.version.outputs.version }}
+          NODE_ENV: production
+
+      # --- Option A: Use the official Sentry GitHub Action ---
+
+      - name: Create Sentry release (Action)
+        uses: getsentry/action-release@v3
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ env.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ env.SENTRY_PROJECT }}
+        with:
+          environment: ${{ steps.env.outputs.environment }}
+          version: ${{ steps.version.outputs.version }}
+          sourcemaps: ./dist
+          url_prefix: "~/"
+          set_commits: auto
+          # Uncomment if you want to finalize only on production deploys:
+          # finalize: ${{ steps.env.outputs.environment == 'production' }}
+
+      # --- Option B: Use sentry-cli directly (uncomment to use instead) ---
+
+      # - name: Install sentry-cli
+      #   run: npm install -g @sentry/cli
+
+      # - name: Create Sentry release (CLI)
+      #   env:
+      #     SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      #   run: |
+      #     VERSION="${{ steps.version.outputs.version }}"
+      #     ENV="${{ steps.env.outputs.environment }}"
+      #
+      #     # Create release
+      #     sentry-cli releases new "$VERSION"
+      #
+      #     # Associate commits
+      #     sentry-cli releases set-commits --auto "$VERSION"
+      #
+      #     # Upload source maps
+      #     sentry-cli releases files "$VERSION" upload-sourcemaps ./dist \
+      #       --url-prefix '~/' \
+      #       --validate
+      #
+      #     # Finalize release
+      #     sentry-cli releases finalize "$VERSION"
+      #
+      #     # Create deploy
+      #     sentry-cli releases deploys "$VERSION" new \
+      #       -e "$ENV" \
+      #       -n "GitHub Actions Deploy #${{ github.run_number }}"
+
+      # --- Post-Release ---
+
+      - name: Remove source maps from deployment artifact
+        run: find ./dist -name "*.map" -type f -delete
+
+      # Upload build artifact (for deployment job)
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ steps.version.outputs.version }}
+          path: ./dist
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          echo "### Sentry Release Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Version**: \`${{ steps.version.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Environment**: \`${{ steps.env.outputs.environment }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Source Maps**: Uploaded to Sentry" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Commits**: Auto-associated" >> "$GITHUB_STEP_SUMMARY"
+
+  # --- Optional: Verify release in Sentry ---
+  verify-release:
+    name: Verify Sentry Release
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify release exists in Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          VERSION="${{ needs.build-and-release.outputs.version || github.ref_name }}"
+          RESPONSE=$(curl -s -w "%{http_code}" -o /tmp/release.json \
+            -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+            "https://sentry.io/api/0/organizations/${{ env.SENTRY_ORG }}/releases/${VERSION}/")
+
+          if [[ "$RESPONSE" == "200" ]]; then
+            echo "✅ Release ${VERSION} verified in Sentry"
+            cat /tmp/release.json | python3 -m json.tool | head -20
+          else
+            echo "⚠️ Release ${VERSION} not found (HTTP ${RESPONSE})"
+            echo "This may be expected if the release is still processing."
+          fi
+
+  # --- Optional: Python project release workflow ---
+  # Uncomment and adapt for Python projects
+
+  # python-release:
+  #   name: Python Sentry Release
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #
+  #     - name: Setup Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: "3.12"
+  #
+  #     - name: Install sentry-cli
+  #       run: pip install sentry-cli
+  #
+  #     - name: Create Sentry release
+  #       env:
+  #         SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+  #         SENTRY_ORG: ${{ env.SENTRY_ORG }}
+  #         SENTRY_PROJECT: my-python-project
+  #       run: |
+  #         VERSION=$(sentry-cli releases propose-version)
+  #         sentry-cli releases new "$VERSION"
+  #         sentry-cli releases set-commits --auto "$VERSION"
+  #         sentry-cli releases finalize "$VERSION"
+  #         sentry-cli releases deploys "$VERSION" new -e production

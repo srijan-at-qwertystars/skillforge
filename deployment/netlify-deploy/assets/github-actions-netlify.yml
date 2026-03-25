@@ -1,0 +1,150 @@
+# ==============================================================================
+# GitHub Actions → Netlify Deployment Workflow
+#
+# Deploys to Netlify on push to main (production) and on pull requests (preview).
+# Requires repository secrets:
+#   NETLIFY_AUTH_TOKEN — Personal access token from Netlify
+#   NETLIFY_SITE_ID   — Site ID from Netlify site settings
+#
+# Setup:
+#   1. Copy to .github/workflows/netlify-deploy.yml
+#   2. Set secrets in GitHub repo Settings > Secrets and variables > Actions
+#   3. Get NETLIFY_AUTH_TOKEN: https://app.netlify.com/user/applications#personal-access-tokens
+#   4. Get NETLIFY_SITE_ID: Netlify Site Settings > General > Site ID
+# ==============================================================================
+
+name: Deploy to Netlify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: netlify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+  NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Type check
+        run: npm run typecheck --if-present
+
+      - name: Run tests
+        run: npm test --if-present
+
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Install Netlify CLI
+        run: npm install -g netlify-cli
+
+      # Production deploy (push to main)
+      - name: Deploy to production
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          netlify deploy \
+            --dir=dist \
+            --prod \
+            --message "Production deploy from GitHub Actions — ${{ github.sha }}"
+
+      # Preview deploy (pull requests)
+      - name: Deploy preview
+        if: github.event_name == 'pull_request'
+        id: preview
+        run: |
+          OUTPUT=$(netlify deploy \
+            --dir=dist \
+            --alias=pr-${{ github.event.pull_request.number }} \
+            --message "PR #${{ github.event.pull_request.number }} — ${{ github.event.pull_request.title }}" \
+            --json)
+          echo "deploy_url=$(echo $OUTPUT | jq -r '.deploy_url')" >> "$GITHUB_OUTPUT"
+
+      # Comment preview URL on PR
+      - name: Comment preview URL
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deployUrl = '${{ steps.preview.outputs.deploy_url }}';
+            const body = `## 🚀 Netlify Deploy Preview
+
+            | Resource | URL |
+            |----------|-----|
+            | Preview | [${deployUrl}](${deployUrl}) |
+            | Commit | \`${{ github.event.pull_request.head.sha }}\` |
+
+            *Built from PR #${{ github.event.pull_request.number }}*`;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Netlify Deploy Preview')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: ${{ github.event.pull_request.number }},
+                body,
+              });
+            }
+
+  # Lighthouse audit on production deploys
+  lighthouse:
+    name: Lighthouse Audit
+    needs: build-and-deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Audit production site
+        uses: treosh/lighthouse-ci-action@v12
+        with:
+          urls: |
+            https://${{ secrets.NETLIFY_SITE_NAME }}.netlify.app/
+          budgetPath: .github/lighthouse-budget.json
+          uploadArtifacts: true
+        continue-on-error: true

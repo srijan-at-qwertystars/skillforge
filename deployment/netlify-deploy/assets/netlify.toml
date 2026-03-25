@@ -1,0 +1,214 @@
+# ==============================================================================
+# Comprehensive netlify.toml Template
+# Copy this file to your project root and customize.
+# Docs: https://docs.netlify.com/configure-builds/file-based-configuration/
+# ==============================================================================
+
+# --- Build Settings ---
+[build]
+  # Build command — framework-specific (see comments below)
+  command = "npm run build"
+
+  # Output directory (framework-specific):
+  #   React/Vite/Astro: "dist"
+  #   Next.js:          ".next"     (with @netlify/plugin-nextjs)
+  #   Gatsby/Hugo:      "public"
+  #   SvelteKit:        "build"     (with @sveltejs/adapter-netlify)
+  #   Eleventy:         "_site"
+  publish = "dist"
+
+  # Serverless functions directory
+  functions = "netlify/functions"
+
+  # Edge functions directory
+  edge_functions = "netlify/edge-functions"
+
+  # Monorepo: subdirectory containing the site
+  # base = "packages/frontend"
+
+  # Skip builds when specific files haven't changed
+  # ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- src/"
+
+# Build-time environment variables
+[build.environment]
+  NODE_VERSION = "20"
+  # NPM_VERSION = "10"
+  # YARN_VERSION = "1.22.19"
+  # RUBY_VERSION = "3.2.0"
+  # GO_VERSION = "1.21"
+  # HUGO_VERSION = "0.121.0"
+
+# --- Local Dev Server ---
+[dev]
+  command = "npm run dev"       # framework dev command
+  targetPort = 5173             # port your framework dev server uses
+  port = 8888                   # Netlify dev proxy port
+  autoLaunch = true             # open browser automatically
+  # framework = "#auto"         # auto-detect framework
+
+# --- Functions Configuration ---
+[functions]
+  node_bundler = "esbuild"      # "esbuild" (fast) or "zisi" (compatible)
+  # included_files = ["data/**"]  # include non-JS files in function bundle
+  # external_node_modules = ["sharp"]  # don't bundle these (use node_modules)
+
+# Per-function config
+# [functions."api-handler"]
+#   schedule = "0 */6 * * *"    # scheduled function
+
+# --- Deploy Contexts ---
+# Each context inherits from [build] and can override any setting.
+
+[context.production]
+  command = "npm run build"
+  [context.production.environment]
+    NODE_ENV = "production"
+    API_URL = "https://api.example.com"
+
+[context.deploy-preview]
+  command = "npm run build"
+  [context.deploy-preview.environment]
+    NODE_ENV = "staging"
+    API_URL = "https://api-staging.example.com"
+    ROBOTS = "noindex,nofollow"
+
+[context.branch-deploy]
+  command = "npm run build"
+  [context.branch-deploy.environment]
+    NODE_ENV = "staging"
+    API_URL = "https://api-staging.example.com"
+
+# Named branch context (e.g., "staging" branch)
+# [context.staging]
+#   command = "npm run build:staging"
+#   [context.staging.environment]
+#     API_URL = "https://api-staging.example.com"
+
+# --- Redirects ---
+# Processed top-to-bottom, first match wins.
+# netlify.toml redirects are processed BEFORE _redirects file.
+
+# API proxy to serverless functions
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# External API proxy (hides origin from browser)
+# [[redirects]]
+#   from = "/external-api/*"
+#   to = "https://api.external.com/:splat"
+#   status = 200
+#   force = true
+#   headers = {X-Custom-Header = "value"}
+
+# 301 permanent redirect
+# [[redirects]]
+#   from = "/old-page"
+#   to = "/new-page"
+#   status = 301
+
+# Geo-based redirect
+# [[redirects]]
+#   from = "/*"
+#   to = "/eu/:splat"
+#   status = 302
+#   conditions = {Country = ["DE", "FR", "IT", "ES"]}
+
+# Role-gated (requires Netlify Identity)
+# [[redirects]]
+#   from = "/admin/*"
+#   to = "/login"
+#   status = 302
+#   conditions = {Role = ["admin"]}
+#   force = true
+
+# SPA catch-all (MUST be last redirect rule)
+# [[redirects]]
+#   from = "/*"
+#   to = "/index.html"
+#   status = 200
+
+# --- Edge Functions Routing ---
+# [[edge_functions]]
+#   path = "/localized/*"
+#   function = "geolocation"
+#
+# [[edge_functions]]
+#   path = "/api/edge/*"
+#   function = "edge-api"
+
+# --- Headers ---
+
+# Security headers (apply to all pages)
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    X-XSS-Protection = "1; mode=block"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
+    # Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    # Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+# Cache immutable assets aggressively
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Cache fonts
+[[headers]]
+  for = "/*.woff2"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Access-Control-Allow-Origin = "*"
+
+# No-cache for HTML (always revalidate)
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# No-cache for service worker
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# --- Build Processing ---
+[build.processing.css]
+  bundle = true
+  minify = true
+
+[build.processing.js]
+  bundle = true
+  minify = true
+
+[build.processing.html]
+  pretty_urls = true
+
+[build.processing.images]
+  compress = true
+
+# --- Plugins ---
+# [[plugins]]
+#   package = "@netlify/plugin-nextjs"
+#
+# [[plugins]]
+#   package = "@netlify/plugin-lighthouse"
+#   [plugins.inputs]
+#     audits = [
+#       { path = "/", thresholds = { performance = 0.9, accessibility = 0.9 } }
+#     ]
+#
+# [[plugins]]
+#   package = "netlify-plugin-checklinks"
+#
+# [[plugins]]
+#   package = "netlify-plugin-submit-sitemap"
+#
+# # Local plugin
+# [[plugins]]
+#   package = "./plugins/my-plugin"

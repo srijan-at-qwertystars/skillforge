@@ -1,0 +1,243 @@
+# =============================================================================
+# GitHub Actions — Vercel Deployment Workflow
+# =============================================================================
+# Deploys to Vercel using the CLI for full control over the build pipeline.
+# Supports preview deployments on PRs and production deploys on main branch.
+#
+# Required secrets (set in GitHub repo → Settings → Secrets):
+#   VERCEL_TOKEN      — Vercel API token (vercel.com/account/tokens)
+#   VERCEL_ORG_ID     — From .vercel/project.json after running `vercel link`
+#   VERCEL_PROJECT_ID — From .vercel/project.json after running `vercel link`
+#
+# Optional secrets:
+#   SLACK_WEBHOOK_URL — Slack webhook for deployment notifications
+# =============================================================================
+
+name: Vercel Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deploy environment'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview
+          - production
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Determine deployment target
+  # ---------------------------------------------------------------------------
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+      is_production: ${{ steps.env.outputs.is_production }}
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+            echo "is_production=${{ inputs.environment == 'production' }}" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+            echo "is_production=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "environment=preview" >> "$GITHUB_OUTPUT"
+            echo "is_production=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Lint and test (optional — remove if you have separate CI)
+  # ---------------------------------------------------------------------------
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'  # Change to 'pnpm' or 'yarn' as needed
+
+      # For pnpm, uncomment:
+      # - uses: pnpm/action-setup@v4
+      #   with:
+      #     version: 9
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Type check
+        run: npm run typecheck --if-present
+
+      - name: Test
+        run: npm run test --if-present
+        env:
+          CI: true
+
+  # ---------------------------------------------------------------------------
+  # Build and deploy to Vercel
+  # ---------------------------------------------------------------------------
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [setup, quality]
+    environment:
+      name: ${{ needs.setup.outputs.environment }}
+      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Pull Vercel Environment
+        run: >
+          vercel pull --yes
+          --environment=${{ needs.setup.outputs.environment }}
+          --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: >
+          vercel build
+          ${{ needs.setup.outputs.is_production == 'true' && '--prod' || '' }}
+          --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        id: deploy
+        run: |
+          URL=$(vercel deploy --prebuilt \
+            ${{ needs.setup.outputs.is_production == 'true' && '--prod' || '' }} \
+            --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "### 🚀 Deployment URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Environment:** ${{ needs.setup.outputs.environment }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**URL:** $URL" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Comment preview URL on PR
+  # ---------------------------------------------------------------------------
+  comment:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Find existing comment
+        uses: peter-evans/find-comment@v3
+        id: find
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '<!-- vercel-preview -->'
+
+      - name: Create or update comment
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          edit-mode: replace
+          body: |
+            <!-- vercel-preview -->
+            ## 🚀 Vercel Preview Deployment
+
+            | Status | URL |
+            |--------|-----|
+            | ✅ Ready | [${{ needs.deploy.outputs.url }}](${{ needs.deploy.outputs.url }}) |
+
+            **Commit:** ${{ github.sha }}
+            **Branch:** ${{ github.head_ref }}
+
+            > _Last updated: ${{ github.event.pull_request.updated_at || github.event.head_commit.timestamp }}_
+
+  # ---------------------------------------------------------------------------
+  # Post-deployment smoke test (optional)
+  # ---------------------------------------------------------------------------
+  smoke-test:
+    if: needs.setup.outputs.is_production == 'true'
+    runs-on: ubuntu-latest
+    needs: [setup, deploy]
+    steps:
+      - name: Health check
+        run: |
+          URL="${{ needs.deploy.outputs.url }}"
+          echo "Testing: $URL"
+
+          # Wait for deployment to be ready
+          for i in {1..10}; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL" || echo "000")
+            if [[ "$STATUS" == "200" ]]; then
+              echo "✅ Health check passed (HTTP $STATUS)"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS — retrying in 10s..."
+            sleep 10
+          done
+
+          echo "❌ Health check failed after 10 attempts"
+          exit 1
+
+      # Optional: API health check
+      # - name: API health check
+      #   run: |
+      #     RESPONSE=$(curl -sf "${{ needs.deploy.outputs.url }}/api/health" || echo '{}')
+      #     echo "API Response: $RESPONSE"
+      #     echo "$RESPONSE" | jq -e '.status == "ok"' || exit 1
+
+  # ---------------------------------------------------------------------------
+  # Notify on deployment (optional — uncomment if using Slack)
+  # ---------------------------------------------------------------------------
+  # notify:
+  #   if: always() && github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-latest
+  #   needs: [setup, deploy, smoke-test]
+  #   steps:
+  #     - name: Slack notification
+  #       if: env.SLACK_WEBHOOK_URL != ''
+  #       env:
+  #         SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #       run: |
+  #         STATUS=${{ needs.deploy.result == 'success' && '✅ Success' || '❌ Failed' }}
+  #         curl -X POST "$SLACK_WEBHOOK_URL" \
+  #           -H "Content-Type: application/json" \
+  #           -d "{
+  #             \"text\": \"Vercel Deployment $STATUS\",
+  #             \"blocks\": [
+  #               {
+  #                 \"type\": \"section\",
+  #                 \"text\": {
+  #                   \"type\": \"mrkdwn\",
+  #                   \"text\": \"*Vercel Deployment $STATUS*\n• Env: ${{ needs.setup.outputs.environment }}\n• URL: ${{ needs.deploy.outputs.url }}\n• Commit: \`${{ github.sha }}\`\"
+  #                 }
+  #               }
+  #             ]
+  #           }"

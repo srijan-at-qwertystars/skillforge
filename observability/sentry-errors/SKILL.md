@@ -407,22 +407,13 @@ use `SENTRY_AUTH_TOKEN` env var.
 | Aspect | SaaS (sentry.io) | Self-Hosted |
 |---|---|---|
 | Setup | Instant, managed | Docker Compose, ~16GB RAM minimum |
-| Features | All features, first access to new ones | Core features, some lag on new releases |
+| Features | All features, first | Core features, some lag on new releases |
 | Scaling | Automatic | Manual (Kafka, PostgreSQL, ClickHouse, Redis) |
-| Cost | Per-event pricing, expensive at scale | Infrastructure cost only, cheaper at high volume |
-| Support | Official support included | Community only, no official support |
-| Data residency | Sentry-managed regions (US/EU) | Full control, any region |
-| Upgrades | Automatic | Manual, monthly calendar versioning (YY.MM.PATCH) |
-| Best for | Most teams, fast iteration | Data sovereignty, regulatory, very high volume |
+| Cost | Per-event pricing | Infrastructure cost only, cheaper at high volume |
+| Data residency | US/EU regions | Full control, any region |
+| Best for | Most teams | Data sovereignty, regulatory, very high volume |
 
-Self-hosted install:
-
-```bash
-git clone https://github.com/getsentry/self-hosted.git
-cd self-hosted
-./install.sh
-docker compose up -d
-```
+Self-hosted: `git clone https://github.com/getsentry/self-hosted.git && cd self-hosted && ./install.sh`
 
 ## Noise Reduction Best Practices
 
@@ -462,14 +453,11 @@ Enable under Project Settings → Inbound Filters:
 
 ### Sampling Strategy
 
-```
-Production:  tracesSampleRate=0.1-0.2, replaySampleRate=0.1
-Staging:     tracesSampleRate=1.0, replaySampleRate=0.5
-Development: tracesSampleRate=1.0, replaySampleRate=1.0
-```
+Production: `tracesSampleRate=0.1-0.2`, `replaySampleRate=0.1` |
+Staging: `tracesSampleRate=1.0`, `replaySampleRate=0.5` |
+Development: all `1.0`
 
-Use `tracesSampler` function for endpoint-specific rates. Always trace critical paths
-(payments, auth) at 100%. Drop health checks and static assets at 0%.
+Use `tracesSampler` for endpoint-specific rates. Always trace critical paths (payments, auth) at 100%. Drop health checks at 0%.
 
 ### Operational Hygiene
 
@@ -479,3 +467,34 @@ Use `tracesSampler` function for endpoint-specific rates. Always trace critical 
 - Tag releases in CI so regressions are immediately visible
 - Configure issue alert cooldowns to prevent notification storms
 - Use metric alerts for aggregate trends (error rate, p95 latency) rather than per-event
+
+---
+
+## References
+
+In-depth guides in `references/`:
+
+| File | Topics |
+|---|---|
+| `references/advanced-patterns.md` | Custom integrations/hooks, error grouping & fingerprinting strategies, breadcrumb customization, distributed tracing, custom metrics, SDK transport customization, sampling strategies, session tracking & release health, multi-project/multi-org patterns |
+| `references/troubleshooting.md` | SDK init failures, source map debugging (sentry-cli auth, URL prefix, validation), missing stack traces, high-cardinality transaction names, rate limiting & quota, CORS/ad-blocker issues, Webpack/Vite/esbuild/Next.js source maps, Docker deployment gotchas, performance monitoring data gaps |
+| `references/api-reference.md` | Web API endpoints (projects, issues, events, releases, deploys), authentication (tokens, DSN, scopes), webhook integrations & signature verification, bulk issue operations, release health queries, org/team management, rate limits & cursor pagination, SDK hooks & lifecycle |
+
+## Scripts
+
+Executable helpers in `scripts/`:
+
+| Script | Purpose |
+|---|---|
+| `scripts/setup-sentry.sh` | Interactive setup — detects framework, installs SDK, creates config, sets up `.env`. Supports `--non-interactive --framework <name>`. |
+| `scripts/upload-sourcemaps.sh` | Source map upload automation — validates sentry-cli, creates release, uploads maps, associates commits, finalizes. Supports `--dry-run`, `--delete-maps`, custom `--url-prefix`. |
+
+## Assets
+
+Starter templates in `assets/`:
+
+| File | Description |
+|---|---|
+| `assets/sentry-nextjs.config.ts` | Complete Next.js Sentry config with `withSentryConfig`, plus inline templates for `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation.ts`, and `global-error.tsx` |
+| `assets/sentry-python.config.py` | Production-ready Python init with Django/Flask/FastAPI/Celery auto-detection, event filtering, PII scrubbing, dynamic trace sampling, and multi-tenant helpers |
+| `assets/github-actions-sentry.yml` | GitHub Actions workflow for building, uploading source maps, creating releases, and verifying deploys — supports both `getsentry/action-release` and raw `sentry-cli` |

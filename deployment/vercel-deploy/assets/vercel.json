@@ -1,0 +1,169 @@
+{
+  // ==========================================================================
+  // Comprehensive vercel.json Template
+  // ==========================================================================
+  // Copy to your project root and customize. Remove unused sections.
+  // Schema docs: https://vercel.com/docs/projects/project-configuration
+  // ==========================================================================
+
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+
+  // --------------------------------------------------------------------------
+  // Framework & Build Configuration
+  // --------------------------------------------------------------------------
+  // "framework": Auto-detected. Override: "nextjs" | "svelte" | "nuxt" | "astro" | "remix" | "vite" | null
+  // "framework": "nextjs",
+
+  // Build commands — override auto-detected defaults
+  // "installCommand": "pnpm install --frozen-lockfile",
+  // "buildCommand": "pnpm run build",
+  // "devCommand": "pnpm dev",
+  // "outputDirectory": ".next",
+
+  // Monorepo root directory (relative to repo root)
+  // "rootDirectory": "apps/web",
+
+  // Ignored Build Step — return exit code 0 to skip build
+  // "ignoreCommand": "npx turbo-ignore",
+
+  // --------------------------------------------------------------------------
+  // Deployment Regions
+  // --------------------------------------------------------------------------
+  // Deploy serverless functions to specific regions.
+  // Common: "iad1" (US East), "sfo1" (US West), "cdg1" (Paris), "hnd1" (Tokyo)
+  // Full list: https://vercel.com/docs/functions/configuring-functions/region
+  "regions": ["iad1"],
+
+  // --------------------------------------------------------------------------
+  // Serverless Function Configuration
+  // --------------------------------------------------------------------------
+  // Per-route function settings. Glob patterns match route files.
+  "functions": {
+    "api/**/*.ts": {
+      "memory": 1024,       // 128–3008 MB
+      "maxDuration": 30     // Seconds. Hobby: 10, Pro: 300, Enterprise: 900
+      // "runtime": "nodejs22.x"  // or "edge"
+    }
+    // "api/heavy-task.ts": {
+    //   "memory": 3008,
+    //   "maxDuration": 300
+    // }
+  },
+
+  // --------------------------------------------------------------------------
+  // Cron Jobs (Pro/Enterprise)
+  // --------------------------------------------------------------------------
+  // Scheduled serverless function invocations.
+  // Syntax: minute hour day-of-month month day-of-week
+  // "crons": [
+  //   { "path": "/api/cron/daily-cleanup", "schedule": "0 3 * * *" },
+  //   { "path": "/api/cron/hourly-sync",   "schedule": "0 * * * *" },
+  //   { "path": "/api/cron/weekly-report",  "schedule": "0 10 * * 1" }
+  // ],
+
+  // --------------------------------------------------------------------------
+  // Redirects
+  // --------------------------------------------------------------------------
+  // Processed before rewrites. Limit: 2048 in vercel.json.
+  // For Next.js, prefer next.config.js redirects.
+  "redirects": [
+    // { "source": "/old-path",         "destination": "/new-path",         "permanent": true },
+    // { "source": "/blog/:slug",       "destination": "/posts/:slug",      "permanent": true },
+    // { "source": "/docs/:path(.*)",   "destination": "https://docs.example.com/:path", "permanent": false }
+  ],
+
+  // --------------------------------------------------------------------------
+  // Rewrites
+  // --------------------------------------------------------------------------
+  // URL stays the same, content served from destination.
+  "rewrites": [
+    // API proxy — forward to external backend
+    // { "source": "/api/v1/:path*", "destination": "https://api.example.com/v1/:path*" },
+
+    // SPA fallback — serve index.html for all client routes
+    // { "source": "/(.*)", "destination": "/index.html" }
+  ],
+
+  // --------------------------------------------------------------------------
+  // Headers
+  // --------------------------------------------------------------------------
+  // Applied to responses matching the source pattern.
+  "headers": [
+    // Security headers for all routes
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "X-XSS-Protection", "value": "1; mode=block" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" }
+      ]
+    },
+    // CORS for API routes
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Authorization" }
+      ]
+    },
+    // Long cache for static assets
+    {
+      "source": "/static/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ],
+
+  // --------------------------------------------------------------------------
+  // Clean URLs and Trailing Slashes
+  // --------------------------------------------------------------------------
+  // "cleanUrls": true,        // Remove .html extensions from URLs
+  // "trailingSlash": false,   // Remove trailing slashes
+
+  // --------------------------------------------------------------------------
+  // Environment Variables
+  // --------------------------------------------------------------------------
+  // Prefer Dashboard or CLI for secrets. Use vercel.json for non-sensitive values.
+  // "env": {
+  //   "NEXT_PUBLIC_APP_NAME": "My App",
+  //   "DATABASE_URL": "@database-url"    // @reference resolves to env var
+  // },
+
+  // --------------------------------------------------------------------------
+  // Build Environment Variables
+  // --------------------------------------------------------------------------
+  // Available only during build, not at runtime.
+  "build": {
+    "env": {
+      "GENERATE_SOURCEMAP": "false"
+      // "NODE_OPTIONS": "--max-old-space-size=4096"
+    }
+  },
+
+  // --------------------------------------------------------------------------
+  // Image Optimization (non-Next.js frameworks)
+  // --------------------------------------------------------------------------
+  // For Next.js, configure in next.config.js instead.
+  // "images": {
+  //   "sizes": [640, 750, 828, 1080, 1200, 1920],
+  //   "domains": ["cdn.example.com", "images.example.com"],
+  //   "minimumCacheTTL": 86400,
+  //   "formats": ["image/avif", "image/webp"]
+  // },
+
+  // --------------------------------------------------------------------------
+  // Source visibility
+  // --------------------------------------------------------------------------
+  // "public": false   // Hide source code and deployment logs from public
+
+  // --------------------------------------------------------------------------
+  // GitHub integration
+  // --------------------------------------------------------------------------
+  // "github": {
+  //   "silent": true   // Disable PR comments from Vercel bot
+  // }
+}
