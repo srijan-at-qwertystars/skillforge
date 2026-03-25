@@ -290,6 +290,6 @@
 | backend | nestjs-patterns | Full-featured Node.js framework with NestJS — modules, DI, guards, interceptors, pipes, microservices, testing | tested |
 | database | prisma-orm | Type-safe database client with Prisma — schema, migrations, relations, Client API, extensions, Accelerate | tested |
 | testing | k6-load-testing | Performance and load testing with k6 — scenarios, executors, thresholds, protocols, browser module, CI/CD | tested |
-| database | drizzle-orm | TypeScript-first ORM with Drizzle — SQL-like query builder, schema definition, relations, drizzle-kit migrations, edge runtime | enriched |
-| testing | storybook-testing | Component development and testing with Storybook 8 — CSF3, play functions, interaction testing, visual testing, addons | enriched |
-| cloud | serverless-framework | Serverless application deployment with Serverless Framework v4 — Lambda, API Gateway, events, plugins, stages | enriched |
+| database | drizzle-orm | TypeScript-first ORM with Drizzle — SQL-like query builder, schema definition, relations, drizzle-kit migrations, edge runtime | tested |
+| testing | storybook-testing | Component development and testing with Storybook 8 — CSF3, play functions, interaction testing, visual testing, addons | tested |
+| cloud | serverless-framework | Serverless application deployment with Serverless Framework v4 — Lambda, API Gateway, events, plugins, stages | tested |

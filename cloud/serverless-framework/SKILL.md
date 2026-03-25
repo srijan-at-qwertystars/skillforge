@@ -450,3 +450,5 @@ provider:
 | `assets/serverless.template.yml` | Production serverless.yml with REST + HTTP API, JWT/Cognito auth, API keys with usage plans, DynamoDB (single-table with GSI), SQS with DLQ, scheduled tasks, DynamoDB Streams, CloudWatch alarms |
 | `assets/webpack.config.template.js` | Webpack config for TypeScript bundling with ts-loader, source maps, tree-shaking, AWS SDK externals (for projects not using built-in esbuild) |
 | `assets/ci-workflow.template.yml` | GitHub Actions multi-stage pipeline: test → package → dev → staging → prod, with OIDC auth, manual approval for prod, smoke tests, rollback job |
+
+<!-- tested: pass -->

@@ -490,3 +490,5 @@ Use `title` hierarchy: `'Design System/Atoms/Button'`, `'Features/Auth/LoginForm
 | `main.config.template.ts` | Production `.storybook/main.ts` with framework setup, addon config, TypeScript docgen, Vite/Webpack customization hooks, path aliases, composition refs |
 | `preview.config.template.ts` | Production `.storybook/preview.ts` with global decorators, custom viewports (mobile/tablet/desktop/wide), backgrounds, toolbar globals (theme/locale), MSW loader, lifecycle hooks |
 | `ci-workflow.template.yml` | GitHub Actions: build → interaction tests (sharded) → a11y tests → Chromatic visual regression → GitHub Pages deploy. Uses artifact passing between jobs |
+
+<!-- tested: pass -->

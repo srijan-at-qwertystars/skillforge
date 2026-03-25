@@ -462,3 +462,5 @@ type Status = (typeof statusEnum.enumValues)[number]; // 'draft' | 'published' |
 - **`drizzle.config.template.ts`** — Production drizzle-kit config with env-based DB URL, schema filtering, migration table config, verbose/strict mode.
 - **`schema.template.ts`** — Full example schema: users (with roles, metadata JSONB, soft delete), posts (with status enum, slugs, partial indexes), tags, posts↔tags junction table, comments (self-referencing for threads), relations, and type exports.
 - **`db-client.template.ts`** — Database client setup for Node.js (pg, postgres.js, mysql2, better-sqlite3), Bun (bun:sqlite), Turso/libSQL, Neon Serverless, Cloudflare D1, Vercel Postgres, with connection pool tuning and graceful shutdown patterns.
+
+<!-- tested: pass -->
