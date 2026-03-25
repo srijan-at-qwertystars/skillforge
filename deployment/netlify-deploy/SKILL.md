@@ -470,3 +470,5 @@ Netlify auto-deploys when linked to a Git provider. PRs create deploy previews w
 - **`assets/serverless-function.ts`** — Production-ready TypeScript serverless function template with CORS, JSON helpers, auth guards, error handling, and typed request/response patterns.
 
 - **`assets/github-actions-netlify.yml`** — GitHub Actions workflow for Netlify: production deploys on push, preview deploys on PRs with comment URL, and optional Lighthouse auditing.
+
+<!-- tested: needs-fix -->

@@ -482,3 +482,4 @@ Templates and config files in `assets/`:
 - **`vercel.json`** — Comprehensive annotated template covering all `vercel.json` options (functions, crons, redirects, rewrites, headers, regions, images).
 - **`middleware.ts`** — Edge middleware template with toggleable patterns: auth, geo-routing, A/B testing, rate limiting, bot protection, maintenance mode, multi-tenant routing.
 - **`github-actions-vercel.yml`** — Full GitHub Actions workflow: lint → build → deploy (preview/production), PR comment with preview URL, smoke test, optional Slack notification.
+<!-- tested: needs-fix -->

@@ -498,3 +498,4 @@ Starter templates in `assets/`:
 | `assets/sentry-nextjs.config.ts` | Complete Next.js Sentry config with `withSentryConfig`, plus inline templates for `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`, `instrumentation.ts`, and `global-error.tsx` |
 | `assets/sentry-python.config.py` | Production-ready Python init with Django/Flask/FastAPI/Celery auto-detection, event filtering, PII scrubbing, dynamic trace sampling, and multi-tenant helpers |
 | `assets/github-actions-sentry.yml` | GitHub Actions workflow for building, uploading source maps, creating releases, and verifying deploys — supports both `getsentry/action-release` and raw `sentry-cli` |
+<!-- tested: pass -->
