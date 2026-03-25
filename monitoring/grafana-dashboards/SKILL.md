@@ -492,3 +492,5 @@ Exports all dashboards from a running Grafana instance to JSON files organized b
 | `assets/dashboard.template.json` | Production dashboard with stat panels (uptime, request rate, error rate, p99, instances, memory), time series (traffic, latency percentiles), table (top endpoints), and logs panel. Includes datasource variable, chained job/instance variables, annotations, and dashboard links. |
 | `assets/provisioning.template.yml` | Complete provisioning config with Prometheus, Loki, and Tempo datasources plus dashboard file provider. Includes comments for PostgreSQL and team-specific provider configurations. |
 | `assets/docker-compose.template.yml` | Full monitoring stack: Grafana + Prometheus + Loki + Promtail + Node Exporter + cAdvisor. Includes healthchecks, named volumes, supporting config file templates in comments. |
+
+<!-- tested: pass -->

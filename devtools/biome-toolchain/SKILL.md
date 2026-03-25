@@ -490,3 +490,5 @@ For full ready-to-use templates, see [`assets/`](assets/). Quick examples:
 | [`assets/biome.strict.template.jsonc`](assets/biome.strict.template.jsonc) | Strict TypeScript config — all recommended + extra strict rules, naming conventions, import sorting, nursery rules |
 | [`assets/biome.react.template.jsonc`](assets/biome.react.template.jsonc) | React/Next.js config — a11y rules, hook validation, Next.js App Router overrides, Storybook support, import groups with React first |
 | [`assets/ci-workflow.template.yml`](assets/ci-workflow.template.yml) | GitHub Actions workflow — Biome CI with annotations, diff-only option, caching |
+
+<!-- tested: pass -->

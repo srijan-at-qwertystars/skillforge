@@ -492,3 +492,5 @@ class Migration(migrations.Migration):
 | [`settings-base.template.py`](assets/settings-base.template.py) | Production-ready base settings with django-environ, security headers, logging, DRF/Celery config blocks |
 | [`docker-compose.template.yml`](assets/docker-compose.template.yml) | Django + PostgreSQL 16 + Redis 7 + Celery worker/beat + Flower monitoring with healthchecks |
 | [`conftest.template.py`](assets/conftest.template.py) | pytest-django fixtures: user/admin/staff, API clients, token auth, factory stubs, file uploads, email outbox, Celery eager mode |
+
+<!-- tested: pass -->

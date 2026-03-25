@@ -293,6 +293,6 @@
 | database | drizzle-orm | TypeScript-first ORM with Drizzle — SQL-like query builder, schema definition, relations, drizzle-kit migrations, edge runtime | tested |
 | testing | storybook-testing | Component development and testing with Storybook 8 — CSF3, play functions, interaction testing, visual testing, addons | tested |
 | cloud | serverless-framework | Serverless application deployment with Serverless Framework v4 — Lambda, API Gateway, events, plugins, stages | tested |
-| monitoring | grafana-dashboards | Monitoring dashboards with Grafana — panels, variables, provisioning, alerting, PromQL/LogQL, Grafonnet, dashboard as code | enriched |
-| backend | django-advanced | Advanced Django patterns — ORM queries, CBVs, middleware, DRF, Channels, caching, async views, deployment | enriched |
-| devtools | biome-toolchain | Fast linter and formatter with Biome — rules, formatting, biome.json config, ESLint/Prettier migration, CI/CD | enriched |
+| monitoring | grafana-dashboards | Monitoring dashboards with Grafana — panels, variables, provisioning, alerting, PromQL/LogQL, Grafonnet, dashboard as code | tested |
+| backend | django-advanced | Advanced Django patterns — ORM queries, CBVs, middleware, DRF, Channels, caching, async views, deployment | tested |
+| devtools | biome-toolchain | Fast linter and formatter with Biome — rules, formatting, biome.json config, ESLint/Prettier migration, CI/CD | tested |
