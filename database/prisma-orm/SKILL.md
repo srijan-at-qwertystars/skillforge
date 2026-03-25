@@ -378,3 +378,5 @@ Set `DATABASE_URL` to Accelerate proxy. Keep `DIRECT_DATABASE_URL` for migration
 - **`schema.template.prisma`** — Production schema: User/Profile/Post/Comment/Tag/Category/Session/AuditLog models, enums, all relation types, indexes, soft delete, JSON fields, full-text search
 - **`prisma-service.template.ts`** — Singleton PrismaService: NestJS-compatible (OnModuleInit/OnModuleDestroy), standalone/Next.js global singleton, query logging, slow query warnings, health check, graceful shutdown
 - **`seed.template.ts`** — Database seeding with @faker-js/faker: idempotent upserts, production essentials (admin user, categories), development fake data (users, posts, tags, comments), configurable counts
+
+<!-- tested: pass -->

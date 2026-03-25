@@ -412,3 +412,5 @@ Production-ready templates in `assets/`:
 - **[ci-workflow.template.yml](assets/ci-workflow.template.yml)** — GitHub Actions workflow: smoke on PRs, load on main, optional cloud stress via workflow_dispatch, artifact upload, threshold gates (exit 99 = fail), job summary
 
 - **[docker-compose.template.yml](assets/docker-compose.template.yml)** — k6 + InfluxDB 1.8 + Grafana stack with healthchecks, auto-provisioned datasource, anonymous Grafana access. Import dashboard ID 2587 or 18030
+
+<!-- tested: pass -->

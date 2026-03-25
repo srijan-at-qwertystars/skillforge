@@ -450,3 +450,5 @@ bootstrap();
 | [app-module.template.ts](assets/app-module.template.ts) | Production AppModule with ConfigModule (Joi validation), TypeORM async config, JWT auth guard, rate limiting, global pipes/filters/interceptors, Swagger setup, graceful shutdown |
 | [crud-resource.template.ts](assets/crud-resource.template.ts) | Complete CRUD resource in one file: Entity with UUID + timestamps, Create/Update DTOs with validation, Service with pagination + search + error handling, Controller with full Swagger docs, Module |
 | [docker-compose.template.yml](assets/docker-compose.template.yml) | Dev environment: NestJS app with hot-reload + debugger, PostgreSQL 16 with health checks, Redis 7 with LRU eviction, Adminer DB UI. Includes companion multi-stage Dockerfile |
+
+<!-- tested: pass -->
