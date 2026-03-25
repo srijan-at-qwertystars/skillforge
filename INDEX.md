@@ -287,6 +287,6 @@
 | testing | vitest-testing | Fast unit testing with Vitest — config, mocking, snapshots, coverage, workspace, browser mode, benchmarking, type testing | tested |
 | backend | fastify-patterns | High-performance Node.js with Fastify — plugins, schema validation, hooks, decorators, TypeScript type providers, testing | tested |
 | database | sqlalchemy-patterns | Python ORM with SQLAlchemy 2.0 — declarative mapping, async sessions, relationships, Alembic migrations, query patterns | tested |
-| backend | nestjs-patterns | Full-featured Node.js framework with NestJS — modules, DI, guards, interceptors, pipes, microservices, testing | created |
-| database | prisma-orm | Type-safe database client with Prisma — schema, migrations, relations, Client API, extensions, Accelerate | created |
-| testing | k6-load-testing | Performance and load testing with k6 — scenarios, executors, thresholds, protocols, browser module, CI/CD | created |
+| backend | nestjs-patterns | Full-featured Node.js framework with NestJS — modules, DI, guards, interceptors, pipes, microservices, testing | enriched |
+| database | prisma-orm | Type-safe database client with Prisma — schema, migrations, relations, Client API, extensions, Accelerate | enriched |
+| testing | k6-load-testing | Performance and load testing with k6 — scenarios, executors, thresholds, protocols, browser module, CI/CD | enriched |

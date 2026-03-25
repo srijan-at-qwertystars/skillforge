@@ -423,3 +423,30 @@ async function bootstrap() {
 }
 bootstrap();
 ```
+
+---
+
+## Additional Resources
+
+### Reference Documents (`references/`)
+
+| Document | Contents |
+|----------|----------|
+| [advanced-patterns.md](references/advanced-patterns.md) | Custom providers (useFactory, useExisting, async), dynamic modules (forRoot/forRootAsync, ConfigurableModuleBuilder), circular dependency resolution (forwardRef, ModuleRef), request-scoped & durable providers, lazy loading (LazyModuleLoader), execution context API, reflection/metadata (Reflector), custom microservice transports, hybrid applications, CQRS deep-dive, event sourcing, sagas |
+| [troubleshooting.md](references/troubleshooting.md) | Common errors (circular deps, missing providers, scope bubbling), performance bottlenecks (N+1, connection pooling), memory leak detection & fixes, testing pitfalls (mocking complex DI trees, request-scoped testing), Express migration guide, debugging techniques (Node inspector, VS Code, DI tree inspection), production deployment (Docker, PM2, graceful shutdown) |
+| [api-reference.md](references/api-reference.md) | Core decorators reference (module, controller, route, provider, parameter, metadata, WebSocket, microservice, GraphQL, Swagger), module metadata options, provider types & scopes, lifecycle hooks (startup/shutdown sequence), execution context API interfaces, HttpException hierarchy (all 16 built-in exceptions), built-in pipes, platform adapters (Express vs Fastify), CLI commands reference |
+
+### Scripts (`scripts/`)
+
+| Script | Usage |
+|--------|-------|
+| [init-nestjs.sh](scripts/init-nestjs.sh) | `./init-nestjs.sh my-api [--orm typeorm\|prisma] [--pm npm\|yarn\|pnpm]` — Scaffolds a NestJS project with ConfigModule, validation, Swagger, JWT auth, health checks, throttling, chosen ORM, folder structure, .env, and docker-compose |
+| [generate-resource.sh](scripts/generate-resource.sh) | `./generate-resource.sh users [--path src/modules] [--no-spec]` — Generates a full CRUD resource: module, controller, service, DTOs (create/update with validation + Swagger), entity, and test files |
+
+### Templates (`assets/`)
+
+| Template | Description |
+|----------|-------------|
+| [app-module.template.ts](assets/app-module.template.ts) | Production AppModule with ConfigModule (Joi validation), TypeORM async config, JWT auth guard, rate limiting, global pipes/filters/interceptors, Swagger setup, graceful shutdown |
+| [crud-resource.template.ts](assets/crud-resource.template.ts) | Complete CRUD resource in one file: Entity with UUID + timestamps, Create/Update DTOs with validation, Service with pagination + search + error handling, Controller with full Swagger docs, Module |
+| [docker-compose.template.yml](assets/docker-compose.template.yml) | Dev environment: NestJS app with hot-reload + debugger, PostgreSQL 16 with health checks, Redis 7 with LRU eviction, Adminer DB UI. Includes companion multi-stage Dockerfile |

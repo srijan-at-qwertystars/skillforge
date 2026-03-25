@@ -1,0 +1,147 @@
+# GitHub Actions workflow for k6 load testing with threshold gates.
+#
+# Features:
+#   - Runs on push to main and on PRs
+#   - Smoke test on every PR, full load test on main
+#   - Threshold breach → non-zero exit → pipeline fails
+#   - Uploads JSON results as artifacts
+#   - Optional: push results to Grafana Cloud k6
+#
+# Setup:
+#   1. Place k6 scripts in tests/load/
+#   2. Set K6_CLOUD_TOKEN secret for cloud integration (optional)
+#   3. Adjust scenario files and thresholds to match your SLAs
+
+name: Load Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  # Manual trigger with environment selection
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      test_type:
+        description: 'Test type to run'
+        required: true
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - load
+          - stress
+          - all
+
+env:
+  K6_SCRIPTS_DIR: tests/load
+
+jobs:
+  # ── Smoke Test (runs on all PRs) ──────────────────────────────────────────
+  smoke-test:
+    if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'smoke') || (github.event_name == 'workflow_dispatch' && inputs.test_type == 'all')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run smoke test
+        run: |
+          k6 run \
+            -e ENV=${{ inputs.environment || 'staging' }} \
+            -e CI=true \
+            --out json=results/smoke.json \
+            --summary-trend-stats="avg,min,med,max,p(90),p(95),p(99)" \
+            ${{ env.K6_SCRIPTS_DIR }}/scenarios/smoke.js
+        # Exit code 99 = threshold breach → step fails automatically
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-smoke-results
+          path: results/
+          retention-days: 7
+
+  # ── Load Test (runs on main branch pushes) ────────────────────────────────
+  load-test:
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.test_type == 'load' || inputs.test_type == 'all'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run load test
+        run: |
+          k6 run \
+            -e ENV=${{ inputs.environment || 'staging' }} \
+            -e CI=true \
+            --out json=results/load.json \
+            --summary-trend-stats="avg,min,med,max,p(90),p(95),p(99)" \
+            ${{ env.K6_SCRIPTS_DIR }}/scenarios/load.js
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-load-results
+          path: results/
+          retention-days: 30
+
+  # ── Cloud Test (optional, manual trigger) ─────────────────────────────────
+  cloud-test:
+    if: github.event_name == 'workflow_dispatch' && inputs.test_type == 'stress'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run on Grafana Cloud k6
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+        run: |
+          k6 cloud run \
+            -e ENV=${{ inputs.environment || 'staging' }} \
+            ${{ env.K6_SCRIPTS_DIR }}/scenarios/stress.js
+
+  # ── Summary ───────────────────────────────────────────────────────────────
+  results-summary:
+    needs: [smoke-test, load-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          echo "## Load Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.smoke-test.result }}" == "failure" ]; then
+            echo "❌ **Smoke Test**: FAILED (thresholds breached)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.smoke-test.result }}" == "success" ]; then
+            echo "✅ **Smoke Test**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⏭️ **Smoke Test**: Skipped" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ needs.load-test.result }}" == "failure" ]; then
+            echo "❌ **Load Test**: FAILED (thresholds breached)" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.load-test.result }}" == "success" ]; then
+            echo "✅ **Load Test**: PASSED" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⏭️ **Load Test**: Skipped" >> $GITHUB_STEP_SUMMARY
+          fi

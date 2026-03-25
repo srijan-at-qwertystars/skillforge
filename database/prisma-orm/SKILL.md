@@ -352,3 +352,29 @@ const prisma = new PrismaClient().$extends(withAccelerate())
 await prisma.user.findMany({ cacheStrategy: { ttl: 3600, swr: 600 } })
 ```
 Set `DATABASE_URL` to Accelerate proxy. Keep `DIRECT_DATABASE_URL` for migrations.
+
+## Prisma 6 Changes
+- **Min versions:** Node 18.18+, TypeScript 5.1+
+- **Client generator:** `provider = "prisma-client"`, custom `output` (e.g. `../src/generated/prisma`)
+- **Adapter pattern:** `@prisma/adapter-pg` for PostgreSQL; `new PrismaClient({ adapter })`
+- **M-N tables (PostgreSQL):** implicit join tables now use primary key instead of unique index
+- **`Bytes` → `Uint8Array`**, `NotFoundError` removed (use P2025)
+- **Nested create optimization:** bulk inserts in single DB roundtrip
+- **`relationLoadStrategy`:** choose `'join'` (default) or `'query'` per query
+- **`prisma.config.ts`:** new centralized config file for drivers, paths, custom setup
+
+## Additional Resources
+
+### Reference Docs (`references/`)
+- **`advanced-patterns.md`** — Client extensions deep-dive ($extends: result, model, client, query), computed fields, soft delete, audit logging, multi-tenancy (row-level, schema-level, DB-level), polymorphic relation workarounds, full-text search, JSON field queries, composite types, views, database functions, relation load strategies
+- **`troubleshooting.md`** — Error codes (P2002, P2003, P2025, P2014, P2021, P2034), migration conflicts, drift detection, failed production migrations, shadow database errors, N+1 performance, connection pool exhaustion, slow query diagnosis, memory issues, client generation, edge runtime compatibility, long-running transactions, database-specific issues
+- **`api-reference.md`** — Complete Prisma Client API: all model operations (findUnique/findFirst/findMany/create/update/upsert/delete/createMany/updateMany/deleteMany/count/aggregate/groupBy), filter operators, relation queries (select/include/nested writes/fluent API), raw queries ($queryRaw/$executeRaw/TypedSQL), transaction API, event system, logging, client lifecycle
+
+### Scripts (`scripts/`)
+- **`init-prisma.sh`** — Initialize Prisma in existing project: install deps, configure datasource, generate client, create first migration. Usage: `./init-prisma.sh [provider] [migration-name]`
+- **`migration-ops.sh`** — All migration operations: create, apply, deploy, reset, status, resolve, diff, seed, push, pull, validate, generate, baseline. Usage: `./migration-ops.sh <command> [args]`
+
+### Templates (`assets/`)
+- **`schema.template.prisma`** — Production schema: User/Profile/Post/Comment/Tag/Category/Session/AuditLog models, enums, all relation types, indexes, soft delete, JSON fields, full-text search
+- **`prisma-service.template.ts`** — Singleton PrismaService: NestJS-compatible (OnModuleInit/OnModuleDestroy), standalone/Next.js global singleton, query logging, slow query warnings, health check, graceful shutdown
+- **`seed.template.ts`** — Database seeding with @faker-js/faker: idempotent upserts, production essentials (admin user, categories), development fake data (users, posts, tags, comments), configurable counts

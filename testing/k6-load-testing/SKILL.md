@@ -384,3 +384,31 @@ export default function () {
 }
 // Run: k6 run -e BASE_URL=https://staging.api.com --out json=results.json script.js
 ```
+
+## Reference Documentation
+
+Detailed reference docs live in `references/`:
+
+- **[advanced-patterns.md](references/advanced-patterns.md)** — Complex scenario composition (staggered starts, per-scenario env/tags), custom executor deep-dive (open vs closed model, arrival-rate sizing, externally-controlled), modular test structure (project layout, reusable flows, environment configs), data correlation (token extraction chains, CSRF, response headers), dynamic data generation (UUID, weighted random), custom metrics with business KPIs, handleSummary for custom reports (HTML, JUnit XML), test lifecycle hooks (setup retry, abort conditions), browser module deep-dive (hybrid protocol+browser, screenshots, Web Vitals), gRPC patterns (TLS, server reflection, bidirectional streaming), WebSocket patterns (full-duplex chat simulation), distributed testing (k6-operator on Kubernetes, multi-region)
+
+- **[troubleshooting.md](references/troubleshooting.md)** — Script compilation errors (CommonJS vs ES6, missing exports, open() context), import issues (relative paths, remote modules, Docker mounts), certificate/TLS errors (skip verify, custom CA, TLS version), performance bottlenecks (load generator saturation, connection pool, dropped iterations), memory issues (SharedArray, body discard, logging), result interpretation pitfalls (coordinated omission, misleading averages, warm-up bias), flaky thresholds (stabilization strategies, sample size), CI timeout solutions (fast-fail, resource constraints), output backend configuration (InfluxDB v1/v2, Prometheus Remote Write), debugging with --http-debug, common error messages quick-reference table
+
+- **[api-reference.md](references/api-reference.md)** — Complete k6 JavaScript API: http module (all methods, params, response object, cookies, file upload, expectedStatuses), core functions (check, group, sleep, fail, randomSeed), custom metrics (Counter, Gauge, Rate, Trend with aggregators), full options object (HTTP, TLS, DNS, tags, cloud config), scenarios and all 7 executors, lifecycle functions (init/setup/default/teardown/handleSummary), SharedArray, open(), encoding (base64), crypto (hash, HMAC, randomBytes), execution context (vu, scenario, instance, test.abort), browser module API (page, locator, keyboard, mouse, Web Vitals metrics), HTML parsing, WebSocket socket API, gRPC client API with all status codes, built-in metrics tables, environment globals and CLI flags
+
+## Scripts
+
+Helper scripts in `scripts/`:
+
+- **[setup-k6.sh](scripts/setup-k6.sh)** — Auto-detects OS and installs k6 (macOS/Linux/Windows). Scaffolds a complete project structure with `scenarios/`, `flows/`, `helpers/`, `config/`, `testdata/` directories, environment config module, shared thresholds, reusable request/check helpers, and sample test data. Run: `./scripts/setup-k6.sh [project-dir]`
+
+- **[run-suite.sh](scripts/run-suite.sh)** — Runs k6 test suites with environment selection (`-e staging`), optional JSON/InfluxDB/Cloud output, threshold validation, timestamped result directories, and a pass/fail summary report. Supports `--dry-run` for validation. Run: `./scripts/run-suite.sh -s scenarios/load.js -e staging --json`
+
+## Templates
+
+Production-ready templates in `assets/`:
+
+- **[load-test.template.js](assets/load-test.template.js)** — Full k6 script with multi-scenario (smoke → load → spike), custom metrics, SharedArray data parameterization, data correlation, CI-aware scaling, groups, tags, and custom handleSummary
+
+- **[ci-workflow.template.yml](assets/ci-workflow.template.yml)** — GitHub Actions workflow: smoke on PRs, load on main, optional cloud stress via workflow_dispatch, artifact upload, threshold gates (exit 99 = fail), job summary
+
+- **[docker-compose.template.yml](assets/docker-compose.template.yml)** — k6 + InfluxDB 1.8 + Grafana stack with healthchecks, auto-provisioned datasource, anonymous Grafana access. Import dashboard ID 2587 or 18030

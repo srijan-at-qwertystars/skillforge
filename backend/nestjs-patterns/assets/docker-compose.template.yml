@@ -1,0 +1,133 @@
+# =============================================================================
+# NestJS + PostgreSQL + Redis — Development Environment
+#
+# Usage:
+#   docker compose up -d              # Start all services
+#   docker compose logs -f app        # Follow app logs
+#   docker compose exec app sh        # Shell into app container
+#   docker compose down -v            # Stop and remove volumes
+#
+# Ports:
+#   - 3000: NestJS application
+#   - 5432: PostgreSQL
+#   - 6379: Redis
+#   - 8080: Adminer (DB management UI)
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ── NestJS Application ────────────────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: nestjs-app
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+      - '9229:9229'  # Node.js debugger
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/app_dev
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=dev-secret-change-in-production-min-32-chars
+      - JWT_EXPIRATION=1h
+    volumes:
+      - .:/app
+      - /app/node_modules  # Avoid overwriting container node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: npm run start:debug
+    # For production, use:
+    # command: node dist/main.js
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: nestjs-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_dev
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Optional: init scripts
+      # - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: nestjs-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Adminer (DB Management UI) ────────────────────────────────────────────
+  adminer:
+    image: adminer:latest
+    container_name: nestjs-adminer
+    restart: unless-stopped
+    ports:
+      - '8080:8080'
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+# =============================================================================
+# Companion Dockerfile (save as Dockerfile in project root)
+# =============================================================================
+# FROM node:20-alpine AS development
+# WORKDIR /app
+# COPY package*.json ./
+# RUN npm ci
+# COPY . .
+# EXPOSE 3000 9229
+# CMD ["npm", "run", "start:dev"]
+#
+# FROM node:20-alpine AS builder
+# WORKDIR /app
+# COPY package*.json ./
+# RUN npm ci
+# COPY . .
+# RUN npm run build
+# RUN npm prune --production
+#
+# FROM node:20-alpine AS production
+# WORKDIR /app
+# COPY --from=builder /app/dist ./dist
+# COPY --from=builder /app/node_modules ./node_modules
+# COPY --from=builder /app/package.json ./
+# USER node
+# EXPOSE 3000
+# HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3000/health || exit 1
+# CMD ["node", "dist/main.js"]

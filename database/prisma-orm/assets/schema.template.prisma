@@ -1,0 +1,245 @@
+// ==============================================================================
+// Prisma Schema Template — Production-Ready
+//
+// Features: User/Post/Tag models, enums, all relation types, indexes,
+//           soft delete, timestamps, JSON fields, full-text search
+//
+// Adapt this template:
+//   1. Replace model/field names to match your domain
+//   2. Update datasource provider if not PostgreSQL
+//   3. Remove unused models/features
+//   4. Run: npx prisma migrate dev --name init
+// ==============================================================================
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL") // for migrations behind connection pooler
+}
+
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["fullTextSearchPostgres"]
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum Role {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// =============================================================================
+// User — core authentication/profile model
+// =============================================================================
+
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique @db.VarChar(255)
+  name      String?   @db.VarChar(100)
+  password  String    @db.VarChar(255)
+  role      Role      @default(USER)
+  avatar    String?   @db.VarChar(500)
+  bio       String?   @db.Text
+  metadata  Json?     // flexible user preferences / settings
+  active    Boolean   @default(true)
+
+  // Timestamps
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  // Relations
+  profile   Profile?
+  posts     Post[]
+  comments  Comment[]
+  sessions  Session[]
+
+  // Indexes
+  @@index([email])
+  @@index([role])
+  @@index([active, deletedAt])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// =============================================================================
+// Profile — one-to-one with User
+// =============================================================================
+
+model Profile {
+  id        Int     @id @default(autoincrement())
+  website   String? @db.VarChar(500)
+  location  String? @db.VarChar(100)
+  company   String? @db.VarChar(100)
+  socials   Json?   // { twitter: "...", github: "...", linkedin: "..." }
+
+  // Relation
+  userId    Int     @unique
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+}
+
+// =============================================================================
+// Post — one-to-many with User, many-to-many with Tag
+// =============================================================================
+
+model Post {
+  id          Int        @id @default(autoincrement())
+  title       String     @db.VarChar(255)
+  slug        String     @unique @db.VarChar(255)
+  content     String?    @db.Text
+  excerpt     String?    @db.VarChar(500)
+  status      PostStatus @default(DRAFT)
+  featured    Boolean    @default(false)
+  viewCount   Int        @default(0)
+  publishedAt DateTime?
+
+  // Timestamps
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?  // soft delete
+
+  // Relations
+  authorId    Int
+  author      User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+  tags        PostTag[]  // explicit many-to-many for extra fields
+  categories  Category[] // implicit many-to-many
+
+  // Indexes
+  @@index([authorId])
+  @@index([status, publishedAt])
+  @@index([slug])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@fulltext([title, content])
+  @@map("posts")
+}
+
+// =============================================================================
+// Comment — self-referencing (nested comments / replies)
+// =============================================================================
+
+model Comment {
+  id        Int       @id @default(autoincrement())
+  body      String    @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  authorId  Int
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  postId    Int
+  post      Post      @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  // Self-relation for nested replies
+  parentId  Int?
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("comments")
+}
+
+// =============================================================================
+// Tag — explicit many-to-many with Post (join table has metadata)
+// =============================================================================
+
+model Tag {
+  id    Int       @id @default(autoincrement())
+  name  String    @unique @db.VarChar(50)
+  slug  String    @unique @db.VarChar(50)
+  posts PostTag[]
+
+  @@map("tags")
+}
+
+model PostTag {
+  postId     Int
+  tagId      Int
+  assignedAt DateTime @default(now())
+  assignedBy Int?     // userId who tagged
+
+  post       Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+  @@map("post_tags")
+}
+
+// =============================================================================
+// Category — implicit many-to-many with Post
+// =============================================================================
+
+model Category {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique @db.VarChar(100)
+  slug        String   @unique @db.VarChar(100)
+  description String?  @db.Text
+  posts       Post[]
+
+  // Self-relation for nested categories
+  parentId    Int?
+  parent      Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryTree")
+
+  @@index([parentId])
+  @@map("categories")
+}
+
+// =============================================================================
+// Session — for token/session management
+// =============================================================================
+
+model Session {
+  id           String   @id @default(cuid())
+  token        String   @unique @db.VarChar(500)
+  ipAddress    String?  @db.VarChar(45)
+  userAgent    String?  @db.VarChar(500)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+// =============================================================================
+// AuditLog — immutable audit trail
+// =============================================================================
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  model     String   @db.VarChar(50)
+  action    String   @db.VarChar(20) // create | update | delete
+  recordId  String   @db.VarChar(50)
+  before    Json?
+  after     Json?
+  userId    String?  @db.VarChar(50)
+  ipAddress String?  @db.VarChar(45)
+  timestamp DateTime @default(now())
+
+  @@index([model, recordId])
+  @@index([userId])
+  @@index([timestamp])
+  @@map("audit_logs")
+}
