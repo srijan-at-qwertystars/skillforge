@@ -446,3 +446,19 @@ export const posts = pgTable('posts', {
 export const statusEnum = pgEnum('status', ['draft', 'published', 'archived']);
 type Status = (typeof statusEnum.enumValues)[number]; // 'draft' | 'published' | 'archived'
 ```
+
+## Resources
+
+### Reference Documentation (`references/`)
+- **`advanced-patterns.md`** — Dynamic query building, complex joins, CTEs, window functions, raw SQL fragments, custom column types, database views, materialized views, multi-schema (`pgSchema`), seeding strategies (`drizzle-seed`), migration patterns (generate vs push), connection pool tuning per database, batch API, RLS patterns, prepared statement optimization.
+- **`troubleshooting.md`** — Type mismatches (insert types, relation inference, bigint coercion, JSONB typing), migration conflicts (journal.json merge, schema drift after push), driver issues (pg prepared statements, mysql2 auth, better-sqlite3 native module), performance pitfalls (N+1 avoidance, missing indexes, unbounded queries), drizzle-kit issues (push vs generate tradeoffs, "not enough information" error, studio debugging), edge runtime gotchas (Cloudflare Workers, Vercel Edge, Bun, Deno), TypeScript strict mode fixes, common error messages table, and debugging techniques (query logging, `toSQL()`, migration state inspection).
+- **`api-reference.md`** — Complete Drizzle API: table builders (`pgTable`/`mysqlTable`/`sqliteTable`), column types per dialect (full tables), column modifiers, indexes & constraints (partial indexes, check constraints), enums, relations (one/many/many-to-many), query builder methods (select/insert/update/delete/upsert), all join types, subqueries, operators & filters (comparison, pattern, list, logical, existence, array), `sql` template tag (`sql.raw`, `sql.join`, `sql.empty`), relational query API (`findMany`/`findFirst` with nested `with`/`columns`/`extras`), transactions (nested savepoints, isolation levels), prepared statements, batch API, views, schemas/namespaces, type inference helpers, custom types, drizzle-kit config options, all CLI commands, programmatic migration per driver, and database client initialization for every supported runtime.
+
+### Scripts (`scripts/`)
+- **`init-drizzle.sh`** — Interactive setup: choose dialect/driver, install deps, generate `drizzle.config.ts`, scaffold `src/db/schema.ts` and `src/db/index.ts`, add npm scripts. Usage: `./init-drizzle.sh --dialect pg --driver postgres`
+- **`migration-ops.sh`** — Wrapper for all drizzle-kit operations: generate, migrate, push, pull, studio, drop, check, up, status, reset, seed, fresh. Usage: `./migration-ops.sh generate`
+
+### Templates (`assets/`)
+- **`drizzle.config.template.ts`** — Production drizzle-kit config with env-based DB URL, schema filtering, migration table config, verbose/strict mode.
+- **`schema.template.ts`** — Full example schema: users (with roles, metadata JSONB, soft delete), posts (with status enum, slugs, partial indexes), tags, posts↔tags junction table, comments (self-referencing for threads), relations, and type exports.
+- **`db-client.template.ts`** — Database client setup for Node.js (pg, postgres.js, mysql2, better-sqlite3), Bun (bun:sqlite), Turso/libSQL, Neon Serverless, Cloudflare D1, Vercel Postgres, with connection pool tuning and graceful shutdown patterns.

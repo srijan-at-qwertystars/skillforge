@@ -463,3 +463,30 @@ Colocate stories with components: `Button.tsx` + `Button.stories.tsx` + optional
 Name stories by state: `Default`, `Loading`, `Error`, `Empty`, `Disabled`, `WithLongContent`, `Mobile`.
 
 Use `title` hierarchy: `'Design System/Atoms/Button'`, `'Features/Auth/LoginForm'`, `'Pages/Dashboard'`.
+
+---
+
+## Additional Resources
+
+### Reference Documentation (`references/`)
+
+| File | Contents |
+|------|----------|
+| `advanced-patterns.md` | Complex decorator composition, portable stories (Vitest/Jest reuse), story indexer customization, custom render functions, advanced play functions (multi-step, drag-and-drop, file upload, keyboard nav), test hooks (beforeEach/beforeAll), MSW deep-dive (handler composition, GraphQL), module mocking (subpath imports), viewport/theme matrix testing, design system patterns |
+| `troubleshooting.md` | Build errors (Webpack/Vite config conflicts, TypeScript), missing styles (Tailwind, CSS Modules, static assets), slow startup fixes, HMR issues, play function failures, test-runner flakiness (CI timeouts, sharding), framework-specific issues (Next.js image/router/RSC, Vue plugin registration/Pinia, Angular DI), addon compatibility, SB7→SB8 migration checklist |
+| `api-reference.md` | CSF3 types (Meta, StoryObj, StoryContext), full Meta object spec, StoryObj properties, ArgTypes control types (all 14 types), decorator API with StoryContext shape, play function utilities (within, userEvent, expect, waitFor, fn, step, fireEvent), test-runner API (preVisit/postVisit hooks, a11y/snapshot integration), configuration files (main.ts, preview.ts), addon API |
+
+### Scripts (`scripts/`)
+
+| Script | Purpose |
+|--------|---------|
+| `init-storybook.sh` | Auto-detect framework, initialize Storybook, install addons (essentials, a11y, MSW, test-runner, Chromatic), create example stories, add npm scripts. Usage: `./init-storybook.sh [--framework react-vite\|nextjs\|vue3-vite]` |
+| `visual-test.sh` | Run visual regression tests with test-runner. Supports `--build` (build+serve), `--browsers`, `--a11y`, `--snapshots` (image comparison), `--shard` (CI parallelism), `--update` (update baselines). Usage: `./visual-test.sh --build --snapshots --a11y` |
+
+### Templates (`assets/`)
+
+| Template | Purpose |
+|----------|---------|
+| `main.config.template.ts` | Production `.storybook/main.ts` with framework setup, addon config, TypeScript docgen, Vite/Webpack customization hooks, path aliases, composition refs |
+| `preview.config.template.ts` | Production `.storybook/preview.ts` with global decorators, custom viewports (mobile/tablet/desktop/wide), backgrounds, toolbar globals (theme/locale), MSW loader, lifecycle hooks |
+| `ci-workflow.template.yml` | GitHub Actions: build → interaction tests (sharded) → a11y tests → Chromatic visual regression → GitHub Pages deploy. Uses artifact passing between jobs |

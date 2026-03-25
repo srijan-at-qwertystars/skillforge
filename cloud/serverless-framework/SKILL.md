@@ -412,80 +412,6 @@ provider:
   tracing: { lambda: true, apiGateway: true }  # X-Ray
 ```
 
-## Complete Production Example
-```yaml
-service: order-api
-frameworkVersion: '4'
-org: acme
-app: commerce
-provider:
-  name: aws
-  runtime: nodejs20.x
-  architecture: arm64
-  stage: ${opt:stage, 'dev'}
-  region: us-east-1
-  memorySize: 512
-  timeout: 10
-  environment:
-    TABLE_NAME: ${param:tableName}
-    QUEUE_URL: !Ref OrderQueue
-  tracing: { lambda: true, apiGateway: true }
-  logRetentionInDays: 14
-  iam:
-    role:
-      statements:
-        - Effect: Allow
-          Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:Query]
-          Resource: [!GetAtt OrderTable.Arn, !Sub '${OrderTable.Arn}/index/*']
-        - Effect: Allow
-          Action: sqs:SendMessage
-          Resource: !GetAtt OrderQueue.Arn
-build:
-  esbuild: { bundle: true, minify: true, external: ['@aws-sdk/*'] }
-stages:
-  default:
-    params: { tableName: '${self:service}-${sls:stage}-orders' }
-  prod:
-    params: { tableName: orders-prod }
-functions:
-  createOrder:
-    handler: src/handlers/order.create
-    events: [{ httpApi: { path: /orders, method: POST } }]
-  getOrder:
-    handler: src/handlers/order.get
-    events: [{ httpApi: { path: '/orders/{id}', method: GET } }]
-  processOrder:
-    handler: src/handlers/order.process
-    timeout: 30
-    events:
-      - sqs:
-          arn: !GetAtt OrderQueue.Arn
-          batchSize: 5
-          functionResponseType: ReportBatchItemFailures
-plugins: [serverless-offline]
-package:
-  individually: true
-  patterns: ['!./**', 'src/**', '!src/**/*.test.*']
-resources:
-  Resources:
-    OrderTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${param:tableName}
-        BillingMode: PAY_PER_REQUEST
-        AttributeDefinitions:
-          - { AttributeName: pk, AttributeType: S }
-          - { AttributeName: sk, AttributeType: S }
-        KeySchema:
-          - { AttributeName: pk, KeyType: HASH }
-          - { AttributeName: sk, KeyType: RANGE }
-    OrderQueue:
-      Type: AWS::SQS::Queue
-      Properties:
-        QueueName: ${self:service}-${sls:stage}-orders
-        VisibilityTimeout: 180
-```
-
 ## Key Rules
 - Use `${sls:stage}` (not `${opt:stage}`) in resource names for consistency.
 - Set `package.individually: true` for services with 3+ functions — reduces cold starts.
@@ -497,3 +423,30 @@ resources:
 - Use `.env.{stage}` for local secrets; Dashboard params for deployed secrets.
 - Use `serverless deploy function -f <name>` for fast single-function iteration.
 - Use `serverless dev` for live local development connected to real AWS events.
+
+---
+
+## Extended Resources
+
+### Reference Documentation
+
+| Document | What's Inside |
+|---|---|
+| `references/advanced-patterns.md` | Multi-service architectures, Serverless Compose, output sharing, Step Functions, custom authorizers (Lambda/Cognito/JWT/API key), warming strategies, provisioned concurrency, canary deployments, cross-account and multi-region deployment, monorepo patterns, event-driven architectures |
+| `references/troubleshooting.md` | CloudFormation 500 resource limit, deployment failures, rollback recovery, permission errors, cold start mitigation, large package optimization, timeout issues, API Gateway limits, plugin conflicts, serverless-offline quirks, esbuild issues, debugging Lambda |
+| `references/api-reference.md` | Complete serverless.yml reference: all provider options, function properties, every event type with full options, package config, layers, stages/parameters, variables syntax, custom resources with extensions, plugin API hooks, build config, CLI commands |
+
+### Scripts
+
+| Script | Purpose |
+|---|---|
+| `scripts/init-serverless.sh` | Scaffold a new Serverless v4 project with TypeScript, esbuild, offline plugin, sample handlers, tests, and config. Usage: `./init-serverless.sh my-api [--org acme]` |
+| `scripts/deploy-ops.sh` | Deployment operations wrapper: deploy, remove, invoke, logs, info, print, package, rollback, prune. With stage selection, confirmation prompts, and timing. Usage: `./deploy-ops.sh deploy -s prod` |
+
+### Templates
+
+| Template | Purpose |
+|---|---|
+| `assets/serverless.template.yml` | Production serverless.yml with REST + HTTP API, JWT/Cognito auth, API keys with usage plans, DynamoDB (single-table with GSI), SQS with DLQ, scheduled tasks, DynamoDB Streams, CloudWatch alarms |
+| `assets/webpack.config.template.js` | Webpack config for TypeScript bundling with ts-loader, source maps, tree-shaking, AWS SDK externals (for projects not using built-in esbuild) |
+| `assets/ci-workflow.template.yml` | GitHub Actions multi-stage pipeline: test → package → dev → staging → prod, with OIDC auth, manual approval for prod, smoke tests, rollback job |

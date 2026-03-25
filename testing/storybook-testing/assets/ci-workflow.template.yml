@@ -1,0 +1,192 @@
+# .github/workflows/storybook-ci.yml — Storybook CI/CD Template
+# Covers: build validation, interaction tests, visual regression (Chromatic)
+# Copy to your project's .github/workflows/ directory.
+
+name: Storybook CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: storybook-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build Storybook
+  # ──────────────────────────────────────────────
+  build:
+    name: Build Storybook
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Storybook
+        run: npx storybook build --test --quiet
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-static
+          path: storybook-static/
+          retention-days: 7
+
+  # ──────────────────────────────────────────────
+  # Job 2: Interaction Tests (test-runner)
+  # ──────────────────────────────────────────────
+  test:
+    name: Interaction Tests
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shard: [1, 2]  # Parallelize across 2 shards
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Download Storybook build
+        uses: actions/download-artifact@v4
+        with:
+          name: storybook-static
+          path: storybook-static/
+
+      - name: Run interaction tests
+        run: |
+          npx concurrently -k -s first \
+            "npx http-server storybook-static -p 6006 --silent" \
+            "npx wait-on tcp:6006 && npx test-storybook \
+              --url http://localhost:6006 \
+              --maxWorkers=2 \
+              --shard=${{ matrix.shard }}/2"
+
+  # ──────────────────────────────────────────────
+  # Job 3: Accessibility Tests
+  # ──────────────────────────────────────────────
+  a11y:
+    name: Accessibility Tests
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Install a11y testing deps
+        run: npm install -D axe-playwright
+
+      - name: Download Storybook build
+        uses: actions/download-artifact@v4
+        with:
+          name: storybook-static
+          path: storybook-static/
+
+      - name: Run accessibility tests
+        run: |
+          npx concurrently -k -s first \
+            "npx http-server storybook-static -p 6006 --silent" \
+            "npx wait-on tcp:6006 && npx test-storybook \
+              --url http://localhost:6006 \
+              --maxWorkers=2"
+        # Requires .storybook/test-runner.ts with axe postVisit hook
+
+  # ──────────────────────────────────────────────
+  # Job 4: Chromatic Visual Testing
+  # ──────────────────────────────────────────────
+  chromatic:
+    name: Visual Regression (Chromatic)
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for Chromatic's git comparison
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Storybook build
+        uses: actions/download-artifact@v4
+        with:
+          name: storybook-static
+          path: storybook-static/
+
+      - name: Run Chromatic
+        uses: chromaui/action@latest
+        with:
+          projectToken: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+          storybookBuildDir: storybook-static
+          exitZeroOnChanges: true    # Don't fail on visual changes
+          exitOnceUploaded: true     # Speed up CI
+          onlyChanged: true          # Only test changed stories
+          autoAcceptChanges: main    # Auto-accept on main branch
+          # skip: ${{ github.event.pull_request.draft }}  # Skip draft PRs
+
+  # ──────────────────────────────────────────────
+  # Job 5: Deploy Storybook (main branch only)
+  # ──────────────────────────────────────────────
+  deploy:
+    name: Deploy Storybook
+    needs: [build, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Download Storybook build
+        uses: actions/download-artifact@v4
+        with:
+          name: storybook-static
+          path: storybook-static/
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload to Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: storybook-static/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
