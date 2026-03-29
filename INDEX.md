@@ -95,6 +95,7 @@
 | typescript | [typescript-generics](typescript/typescript-generics/) | Conditional types, mapped types, template literals, infer, variadic tuples, branded types, and utility types | tested |
 | aws | [s3-patterns](aws/s3-patterns/) | Bucket security, presigned URLs, storage classes, lifecycle policies, multipart upload, Express One Zone, and CRR | tested |
 | devops | [github-cli-patterns](devops/github-cli-patterns/) | gh pr/issue/workflow, gh api (REST/GraphQL), releases, extensions, codespaces, search, and automation scripts | tested |
+| devops | [goreleaser](devops/goreleaser/) | Go binary release automation with GoReleaser — multi-platform builds, GitHub/GitLab releases, Homebrew taps, Docker images, and signing | enriched |
 | python | [sqlalchemy-patterns](python/sqlalchemy-patterns/) | SQLAlchemy 2.0, declarative models, relationships, async, Alembic migrations, loading strategies, and performance | tested |
 | kubernetes | [kubernetes-operators](kubernetes/kubernetes-operators/) | CRDs, kubebuilder, operator-sdk, controller-runtime, reconciliation, finalizers, webhooks, and envtest | tested |
 | rust | [rust-web-actix](rust/rust-web-actix/) | Actix Web vs Axum, routing, extractors, Tower middleware, state, SQLx/SeaORM, JWT auth, and deployment | tested |
@@ -308,6 +309,5 @@
 | backend | [encore](backend/encore/) | Encore backend platform — automatic APIs, databases, pub/sub, secrets. Use for rapid backend development. NOT for complex microservices needing custom infrastructure. | tested |
 | web | [wxt](web/wxt/) | WXT web extension framework — cross-browser extensions, Vue/React/Svelte integration. Use for building cross-browser extensions. NOT for single-browser extensions. | enriched |
 | devtools | [oxc](devtools/oxc/) | OXC high-performance linter — Rust-based JS/TS linting, oxlint CLI. Use for fast linting of large codebases. NOT for full ESLint compatibility needs. | tested |
-| devops | [goreleaser](devops/goreleaser/) | GoReleaser binary release automation — .goreleaser.yaml, builds, Docker, Homebrew. Use for automated Go releases. NOT for multi-language pipelines. | created |
-| devops | [nfpm](devops/nfpm/) | nfpm Linux packages — deb/rpm/apk creation, signing, scripts. Use for creating Linux packages. NOT for Windows/macOS packages. | created |
-| devtools | [buf](devtools/buf/) | Buf proto toolchain — lint, breaking change, code generation. Use for proto code quality. NOT for general API design. | created |
+| devops | [nfpm](devops/nfpm/) | nfpm Linux packages — deb/rpm/apk creation, signing, scripts. Use for creating Linux packages. NOT for Windows/macOS packages. | enriched |
+| devtools | [buf](devtools/buf/) | Buf proto toolchain — lint, breaking change, code generation. Use for proto code quality. NOT for general API design. | enriched |
