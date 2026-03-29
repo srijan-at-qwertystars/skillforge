@@ -3,6 +3,7 @@ name: buf
 description: |
   Protocol Buffer toolchain for linting/generation. Use for proto code quality.
   NOT for general API design or gRPC implementation.
+tested: true
 ---
 
 # Buf Skill

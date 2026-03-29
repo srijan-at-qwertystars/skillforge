@@ -451,3 +451,7 @@ docker run --rm -v $(pwd)/dist:/pkgs ubuntu:22.04 \
       dpkg-sig --sign builder -k "$GPG_KEY_ID" "$pkg"
     done
 ```
+
+---
+
+*Status: tested* | *Last reviewed: 2026-03-29*

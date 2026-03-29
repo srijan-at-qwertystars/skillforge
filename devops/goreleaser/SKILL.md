@@ -3,6 +3,7 @@ name: goreleaser
 description: |
   Go binary release automation. Use for automated Go releases.
   NOT for multi-language release pipelines.
+tested: true
 ---
 
 # GoReleaser
