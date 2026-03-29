@@ -311,6 +311,6 @@
 | devtools | [oxc](devtools/oxc/) | OXC high-performance linter — Rust-based JS/TS linting, oxlint CLI. Use for fast linting of large codebases. NOT for full ESLint compatibility needs. | tested |
 | devops | [nfpm](devops/nfpm/) | nfpm Linux packages — deb/rpm/apk creation, signing, scripts. Use for creating Linux packages. NOT for Windows/macOS packages. | tested |
 | devtools | [buf](devtools/buf/) | Buf proto toolchain — lint, breaking change, code generation. Use for proto code quality. NOT for general API design. | tested |
-| devops | [earthly](devops/earthly/) | Earthly build automation — Earthfile syntax, caching, parallelism. Use for reproducible builds. NOT for simple single-step builds. | created |
-| devops | [devbox](devops/devbox/) | Devbox portable dev environments — devbox.json, Nix-based packages. Use for reproducible dev setups. NOT for production deployments. | created |
-| devops | [moon](devops/moon/) | Moon monorepo build system — moon.yml, tasks, remote cache. Use for fast monorepo builds. NOT for single-package projects. | created |
+| devops | [earthly](devops/earthly/) | Earthly build automation — Earthfile syntax, caching, parallelism. Use for reproducible builds. NOT for simple single-step builds. | enriched |
+| devops | [devbox](devops/devbox/) | Devbox portable dev environments — devbox.json, Nix-based packages. Use for reproducible dev setups. NOT for production deployments. | enriched |
+| devops | [moon](devops/moon/) | Moon monorepo build system — moon.yml, tasks, remote cache. Use for fast monorepo builds. NOT for single-package projects. | enriched |
