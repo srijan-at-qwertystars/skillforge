@@ -308,3 +308,6 @@
 | backend | [encore](backend/encore/) | Encore backend platform — automatic APIs, databases, pub/sub, secrets. Use for rapid backend development. NOT for complex microservices needing custom infrastructure. | tested |
 | web | [wxt](web/wxt/) | WXT web extension framework — cross-browser extensions, Vue/React/Svelte integration. Use for building cross-browser extensions. NOT for single-browser extensions. | enriched |
 | devtools | [oxc](devtools/oxc/) | OXC high-performance linter — Rust-based JS/TS linting, oxlint CLI. Use for fast linting of large codebases. NOT for full ESLint compatibility needs. | tested |
+| devops | [goreleaser](devops/goreleaser/) | GoReleaser binary release automation — .goreleaser.yaml, builds, Docker, Homebrew. Use for automated Go releases. NOT for multi-language pipelines. | created |
+| devops | [nfpm](devops/nfpm/) | nfpm Linux packages — deb/rpm/apk creation, signing, scripts. Use for creating Linux packages. NOT for Windows/macOS packages. | created |
+| devtools | [buf](devtools/buf/) | Buf proto toolchain — lint, breaking change, code generation. Use for proto code quality. NOT for general API design. | created |
