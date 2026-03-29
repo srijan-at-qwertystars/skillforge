@@ -268,14 +268,32 @@ RUN --mount=type=ssh,id=gitlab git clone git@gitlab.com:org/repo2.git
 
 CLI usage:
 ```bash
-earthly --secret api_key=$(cat api.key) +build
+earthly --ssh-agent +build
+earthly --ssh-agent-id=github +build
 ```
 
 ## Best Practices
+## Monorepo Patterns
+
+### Root Earthfile
+
+```dockerfile
+VERSION 0.8
+
+# Shared base across all services
+base:
+    FROM golang:1.21-alpine
+    WORKDIR /app
+    RUN apk add --no-cache git ca-certificates
+
+# Run all tests
+all-tests:
     BUILD ./libs/shared+test
+    BUILD ./services/api+test
+    BUILD ./services/worker+test
 
 # Build all
-docker-all:
+all-docker:
     BUILD ./services/api+docker
     BUILD ./services/worker+docker
 ```
@@ -453,3 +471,5 @@ docker-compose:
     FROM +worker
     SAVE IMAGE worker:latest
 ```
+
+<!-- QA Status: tested | 2025-03-29 | Score: 4.0/5 -->

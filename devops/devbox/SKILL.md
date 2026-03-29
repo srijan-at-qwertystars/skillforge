@@ -3,6 +3,7 @@ name: devbox
 description: |
   Portable development environments with Nix. Use for reproducible dev setups.
   NOT for production deployments.
+tested: 2026-03-29
 ---
 
 # Devbox

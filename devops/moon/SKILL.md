@@ -3,6 +3,7 @@ name: moon
 description: |
   Rust-based build system for monorepos. Use for fast monorepo builds with smart caching.
   NOT for single-package projects. Replaces Turborepo/Nx for Rust-native performance.
+tested: 2026-03-29
 ---
 
 # Moon Build System
