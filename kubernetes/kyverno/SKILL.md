@@ -3,6 +3,7 @@ name: kyverno
 description: |
   Kubernetes native policy engine for validation/mutation/generation. Use for Kubernetes policy enforcement.
   NOT for general OPA/Gatekeeper without cloud-native focus.
+tested: 2026-03-29
 ---
 # Kyverno
 

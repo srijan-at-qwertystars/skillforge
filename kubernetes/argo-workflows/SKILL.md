@@ -3,6 +3,7 @@ name: argo-workflows
 description: |
   Kubernetes-native workflow engine for CI/CD, ML, data processing. Use for complex workflows on K8s.
   NOT for simple cron jobs or non-K8s workflow systems.
+tested: 2025-03-29
 ---
 
 # Argo Workflows

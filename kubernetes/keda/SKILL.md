@@ -3,6 +3,7 @@ name: keda
 description: |
   Kubernetes event-driven autoscaling for containers. Use for scaling workloads based on events/queues.
   NOT for simple HPA-based CPU/memory scaling.
+tested: true
 ---
 
 # KEDA: Kubernetes Event-Driven Autoscaling
