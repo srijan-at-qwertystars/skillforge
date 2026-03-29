@@ -305,3 +305,6 @@
 | kubernetes | [kyverno](kubernetes/kyverno/) | Kyverno policy engine — Kubernetes native policy validation/mutation/generation, ClusterPolicy CRD, Kyverno CLI. Use for K8s policy enforcement. NOT for general OPA/Gatekeeper without cloud-native focus. | tested |
 | kubernetes | [keda](kubernetes/keda/) | KEDA event-driven autoscaling — ScaledObject, ScaledJob, TriggerAuthentication, Kafka/Redis/RabbitMQ scalers. Use for event-based K8s scaling. NOT for simple CPU/memory HPA. | tested |
 | kubernetes | [argo-workflows](kubernetes/argo-workflows/) | Argo Workflows — K8s-native workflow engine, DAGs, steps, templates, artifacts, CronWorkflows. Use for complex workflows on K8s. NOT for simple cron jobs. | tested |
+| backend | [encore](backend/encore/) | Encore backend platform — automatic APIs, databases, pub/sub, secrets. Use for rapid backend development. NOT for complex microservices needing custom infrastructure. | created |
+| web | [wxt](web/wxt/) | WXT web extension framework — cross-browser extensions, Vue/React/Svelte integration. Use for building cross-browser extensions. NOT for single-browser extensions. | created |
+| devtools | [oxc](devtools/oxc/) | OXC high-performance linter — Rust-based JS/TS linting, oxlint CLI. Use for fast linting of large codebases. NOT for full ESLint compatibility needs. | created |
