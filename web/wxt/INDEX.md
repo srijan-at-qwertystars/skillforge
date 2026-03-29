@@ -1,6 +1,6 @@
 # WXT Skill
 
-**Status:** enriched
+**Status:** tested
 
 ## Description
 

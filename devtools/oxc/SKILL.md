@@ -3,6 +3,7 @@ name: oxc
 description: |
   High-performance JS/TS linter written in Rust. Use for fast linting of large codebases.
   NOT for projects requiring full ESLint compatibility or custom rules.
+tested: 2026-03-29
 ---
 
 # OXC (Oxidation Compiler)

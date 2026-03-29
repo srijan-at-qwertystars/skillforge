@@ -3,6 +3,7 @@ name: wxt
 description: |
   Web Extension framework for building browser extensions. Use for cross-browser extensions.
   NOT for single-browser specific extensions without cross-browser needs.
+tested: 2026-03-29
 ---
 
 # WXT - Web Extension Framework

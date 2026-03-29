@@ -3,6 +3,7 @@ name: encore
 description: |
   Backend development platform with automatic APIs. Use for rapid backend development.
   NOT for complex microservices requiring custom infrastructure.
+tested: 2026-03-29
 ---
 
 # Encore
