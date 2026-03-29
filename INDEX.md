@@ -8,6 +8,7 @@
 | testing | [pytest-patterns](testing/pytest-patterns/) | Fixtures, parametrize, mocking, conftest organization, plugins, async testing, and anti-patterns | tested |
 | networking | [http-caching](networking/http-caching/) | Cache-Control directives, ETags, CDN strategies, cache invalidation, service worker caching, and debugging | tested |
 | security | [jwt-authentication](security/jwt-authentication/) | Token structure, algorithm selection, refresh token rotation, key management, vulnerabilities, and implementation patterns | tested |
+| security | [sigstore](security/sigstore/) | Container image signing and verification with Sigstore — Cosign, Fulcio, Rekor, keyless signing, policy enforcement | tested |
 | typescript | [typescript-strict-migration](typescript/typescript-strict-migration/) | Strict flag reference, incremental migration strategies, error fixes, narrowing patterns, and CI integration | tested |
 | devops | [github-actions-workflows](devops/github-actions-workflows/) | Workflow anatomy, reusable workflows, composite actions, matrix builds, caching, security, and OIDC | tested |
 | api | [graphql-schema-design](api/graphql-schema-design/) | Schema-first vs code-first, Relay pagination, error handling, federation, DataLoader, and authorization patterns | tested |
@@ -73,7 +74,7 @@
 | devops | [ansible-automation](devops/ansible-automation/) | Playbooks, roles, collections, Jinja2, vault, inventory, Molecule testing, AWX/AAP, and performance tuning | tested |
 | databases | [drizzle-orm](databases/drizzle-orm/) | Schema definition, relational queries, drizzle-kit migrations, prepared statements, type safety, and Drizzle vs Prisma | tested |
 | security | [ci-cd-security](security/ci-cd-security/) | Pipeline hardening, GitHub Actions security, SLSA provenance, Sigstore, SAST/DAST, dependency scanning, and OIDC | tested |
-| web | [rspack-bundler](web/rspack-bundler/) | Fast Rust-based bundler with webpack compatibility — SWC transpilation, module federation, and migration guides | enriched |
+| web | [rspack-bundler](web/rspack-bundler/) | Fast Rust-based bundler with webpack compatibility — SWC transpilation, module federation, and migration guides | tested |
 | web | [svelte-patterns](web/svelte-patterns/) | Svelte 5 runes, SvelteKit routing, load functions, form actions, SSR/SSG, transitions, and deployment adapters | tested |
 | architecture | [error-handling-patterns](architecture/error-handling-patterns/) | Result/Either types, exception hierarchy, RFC 9457 API errors, error boundaries, async errors, and retry patterns | tested |
 | web | [vue-composition-api](web/vue-composition-api/) | Composition API, ref/reactive, composables, Pinia, Vue Router, TypeScript, Nuxt 3, and component patterns | tested |
@@ -300,5 +301,4 @@
 | observability | [sentry-errors](observability/sentry-errors/) | Sentry error tracking and performance monitoring — SDK setup for JS/TS/Python/Go/Ruby/Java, error capturing, context enrichment, source maps, releases, alerts, fingerprinting, session replay, CI/CD integration. Use for Sentry SDK integration. NOT for log aggregation/ELK, Datadog/New Relic, uptime monitoring. | tested |
 | deployment | [vercel-deploy](deployment/vercel-deploy/) | Vercel deployment — vercel.json config, framework presets (Next.js/SvelteKit/Nuxt/Astro/Remix), Edge/Serverless Functions, env management, preview deploys, storage (KV/Blob/Postgres), monorepo support, Analytics. Use for Vercel deployments. NOT for AWS/GCP/Azure, Docker/K8s, Netlify. | tested |
 | deployment | [netlify-deploy](deployment/netlify-deploy/) | Netlify deployment — netlify.toml, build plugins, serverless/edge/scheduled/background functions, deploy contexts, redirects/rewrites, forms, Identity, split testing, CLI workflow. Use for Netlify deployments. NOT for AWS/GCP/Azure, Docker/K8s, Vercel. | tested |
-| backend | [pocketbase](backend/pocketbase/) | PocketBase backend — open-source SQLite BaaS with realtime subscriptions, auth, database, file storage, Go/JS SDKs, self-hosting. Use for rapid prototyping and small-to-medium apps. NOT for large-scale multi-tenant requiring PostgreSQL. | enriched |
-| security | [sigstore](security/sigstore/) | Sigstore security — container image signing with Cosign, keyless signing, Fulcio CA, Rekor transparency log, OCI registry integration, policy enforcement. Use for supply chain security and SLSA compliance. NOT for simple TLS/mTLS without image signing. | enriched |
+| backend | [pocketbase](backend/pocketbase/) | PocketBase backend — open-source SQLite BaaS with realtime subscriptions, auth, database, file storage, Go/JS SDKs, self-hosting. Use for rapid prototyping and small-to-medium apps. NOT for large-scale multi-tenant requiring PostgreSQL. | tested |

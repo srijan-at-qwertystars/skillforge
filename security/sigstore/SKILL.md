@@ -3,6 +3,7 @@ name: sigstore
 description: |
   Container image signing and verification with Sigstore. Use for supply chain security.
   NOT for simple TLS/mTLS without image signing needs.
+tested: 2026-03-29
 ---
 
 # Sigstore: Supply Chain Security

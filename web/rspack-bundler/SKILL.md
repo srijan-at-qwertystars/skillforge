@@ -3,6 +3,7 @@ name: rspack-bundler
 description: |
   Fast Rust-based bundler with webpack compatibility. Use for high-performance builds.
   NOT for simple projects where Vite suffices.
+tested: 2026-03-29
 ---
 
 # Rspack

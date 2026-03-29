@@ -3,6 +3,7 @@ name: pocketbase
 description: |
   Open-source SQLite backend with realtime subscriptions. Use for rapid prototyping.
   NOT for large-scale multi-tenant applications needing PostgreSQL.
+status: tested
 ---
 
 # PocketBase
